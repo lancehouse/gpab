@@ -170,7 +170,12 @@ def query_patterns(region: str, symptom_zones: List[str], active_overlay: Option
     Returns:
         List of (pattern_id, confidence_score) tuples, ranked by score
     """
-    # TODO: Query clinical_kb.db BodyChartTrigger table
+    # TODO: clinical_kb.db has no BodyChartTrigger table (that was the originally
+    # planned schema, superseded by what actually got built — see kb_db.py). The
+    # real schema has condition/condition_feature (region-scoped, free-text
+    # feature_name/feature_value, no body-chart-zone linkage yet). Matching body
+    # chart symptom_zones to conditions needs new logic against condition_feature,
+    # not a lookup against a trigger table.
     return []
 
 
@@ -185,7 +190,14 @@ def query_tests(pattern_ids: List[str], priority_filter: Optional[str] = None) -
     Returns:
         List of special test dicts with metadata
     """
-    # TODO: Query clinical_kb.db SpecialTest + PatternTest
+    # TODO: clinical_kb.db has no SpecialTest/PatternTest tables (originally
+    # planned schema, superseded — see kb_db.py). The real schema's `test` +
+    # `cluster_test` + `cluster` tables map reasonably well onto "tests for a
+    # pattern/cluster id" (see kb_db.load_tests_for_pab_region /
+    # kb_db.load_clusters_for_test for working examples of this join). There is
+    # no essential/supporting priority_filter column on test or cluster_test
+    # today — closest analogs are cluster.cluster_type and cluster_test.display_order,
+    # not a direct flag.
     return []
 
 
@@ -200,7 +212,11 @@ def score_pattern(pattern_id: str, features_present: List[str]) -> float:
     Returns:
         Confidence score 0.0–1.0
     """
-    # TODO: Lookup PatternFeature weights and calculate
+    # TODO: clinical_kb.db has no PatternFeature table (originally planned schema,
+    # superseded). The real analog, condition_feature, has no weight column —
+    # just feature_name/feature_value/feature_domain free text. This function
+    # cannot be implemented against the current schema without a schema addition
+    # (per-feature weights), not just new query logic.
     return 0.0
 
 

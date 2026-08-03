@@ -92,6 +92,8 @@ _UMN_ITEMS: list[tuple[str, str]] = [
     ("Coord impaired", "nr_umn_coord"),
     ("Hoffman's",      "nr_umn_hoffman"),
     ("Tromner",        "nr_umn_tromner"),
+    ("Lhermitte's",    "nr_umn_lhermitte"),
+    ("Inv Supinator",  "nr_umn_inv_sup"),
 ]
 
 _GAP = 2   # char gap between adjacent gangs

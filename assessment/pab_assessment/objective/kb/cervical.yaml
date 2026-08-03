@@ -133,27 +133,3 @@ vbi_sus_rot:
     Stop immediately if any positive signs.
   sn_sp: "Sn low (~50%); clinical utility is in rule-out given serious consequence."
   note: "Negative result does not exclude VAD risk. Combine with risk factor screening."
-
-hoffman_l:
-  label: "Hoffman's Sign (Left)"
-  purpose: >
-    Upper motor neuron (UMN) screen: corticospinal tract involvement
-    (cervical myelopathy, intracranial pathology).
-  position: "Seated, hand relaxed."
-  procedure: >
-    Support the patient's middle finger. Flick the fingernail downward.
-    Positive = reflex flexion of thumb and index finger.
-  sn_sp: "Sn 58% / Sp 78% (cervical myelopathy)"
-  note: "Combine with hyperreflexia, Babinski, and clonus. UMN cluster = urgent referral."
-
-hoffman_r:
-  label: "Hoffman's Sign (Right)"
-  purpose: >
-    Upper motor neuron (UMN) screen: corticospinal tract involvement
-    (cervical myelopathy, intracranial pathology).
-  position: "Seated, hand relaxed."
-  procedure: >
-    Support the patient's middle finger. Flick the fingernail downward.
-    Positive = reflex flexion of thumb and index finger.
-  sn_sp: "Sn 58% / Sp 78% (cervical myelopathy)"
-  note: "Combine with hyperreflexia, Babinski, and clonus. UMN cluster = urgent referral."

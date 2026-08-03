@@ -233,14 +233,13 @@ and Textual resolves their height from the outer `ScrollableContainer` context i
 | Section | Key IDs (examples) |
 |---|---|
 | 01 General | `go_height`, `go_weight`, `go_bmi`, `go_lx_lord`, `go_breath` |
-| 02 Active Movement | `lx_flex_ax_l_range`, `lx_flex_ax_l_ps`, `lx_lf_ax_r_range` … |
+| 02 Active Movement | `lx_flex_ax_l_range`, `lx_lf_ax_r_range` … |
 | 03 Passive/OP | `op_lx_flex_ef`, `op_lx_flex_resp`, `pm_L5_c`, `pm_L5_ul_l/r` |
 | 04 Neurological | `nr_knee_l/r`, `nr_l2_l/r` … `nr_slr_l_deg`, `nr_umn_hyper` |
 | 05 Sensory | `sn_l2_l/r` … `sn_sharp_blunt`, `sn_static_allodynia_detail` |
 | 06 Muscle | `ml_ql_l/r`, `ma_tva`, `sh_hip_flex_l/r`, `sij_sacral` |
 | 07 Functional | `ft_gait`, `ft_tug`, `ft_sls_eo_l/r`, `ft_bal_both` |
 
-Active movement Pain/Stiff suffix: `_ps` field holds `None | "Pain" | "Stiff"`.
 Bilateral ROM rows (Flexion, Extension): only `_l` variants exist — `_r` columns are empty.
 
 ## Report generation (`storage.py`)
@@ -297,14 +296,44 @@ the code, Ctrl+F navigation silently fails and the KB can't be linked correctly.
 
 ---
 
-## Planned — Phase 3 (not yet built)
+## Clinical knowledge base (Ctrl+K / Ctrl+D)
 
-Right-panel clinical knowledge base:
-- `clinical_kb.db` — SQLite reference DB (read-only during sessions, clinician-editable)
-- Tables: Region, ClinicalPattern, PatternFeature, SpecialTest, BodyChartTrigger
-- Context engine in `logic.py`: `query_patterns()`, `query_tests()`, `score_pattern()`
-- Special test widgets with Sn/Sp, collapsible how-to, result checkboxes
-- Right panel updates when: region changes, body chart JSON changes, features ticked
+Two integration points, both reading `clinical_kb.db` — a 12-table SQLite reference
+DB built by the separate `~/Projects/kb` project, never hand-edited directly. Real
+schema (`region`, `condition`, `cluster`, `test`, `cluster_test`, `test_field_map`,
+`condition_feature`, `differentiator`, `red_flag`, `subjective_checklist`,
+`clinical_concept`, `condition_region`) — **not** the `Region/ClinicalPattern/
+PatternFeature/SpecialTest/BodyChartTrigger` schema once sketched here; that was
+superseded before any of it was built.
 
-Do not implement Phase 3 until explicitly requested. Current single-panel layout should
-not be designed in a way that makes adding a right panel structurally difficult.
+- **Ctrl+D** (`objective/kb_db_screen.py`) — full browser, region→condition→cluster→
+  test tree, always DB-only, all regions.
+- **Ctrl+K** (`objective/kb_panel.py` + `objective/kb_loader.py`) — focus-triggered
+  cheat sheet. `KBRegistry.resolve(region, field_id)` is DB-backed for regions in
+  `kb_loader.py`'s `_DB_BACKED_REGIONS` set (**cervical only**, so far), falling back
+  to `objective/kb/*.yaml` for any field with no DB test mapped yet, or if the DB
+  file is unreachable. Every other region still resolves purely from YAML.
+- Shared DB access lives in `objective/kb_db.py` — `find_db()`/`open_db()` (read-only,
+  opens a fresh connection per call, nothing cached), plus query helpers. Both Ctrl+K
+  and Ctrl+D import from here.
+
+**Deploy path:** `~/.local/share/pab/clinical_kb.db` is a **symlink** to
+`~/Projects/kb/output/clinical_kb.db`, not a copy. To publish a KB content change to
+pab: edit `~/Projects/kb/source/*.csv` → `import_kb.py` → `validate_kb.py` → done.
+No pab-side action needed — the next Ctrl+D/Ctrl+K query picks it up immediately,
+no pab restart. (This symlink is `pabd`-only; `pab`/`main` doesn't get it until the
+whole integration is merged, per this project's branch rules.)
+
+**Rollout is cephalad → caudal, one region at a time.** Cervical is live (special
+tests + Ctrl+K, verified against the DB's `cervical`+`headache` content). To add
+another region: confirm/build its `test_field_map` coverage in `~/Projects/kb`, then
+add it to `kb_loader.py`'s `_DB_BACKED_REGIONS`. No other code changes needed —
+`region_section.py`'s widgets were never part of the KB resolution path; they only
+raise focus events that `KBRegistry.resolve()` already handles generically.
+
+**Still not built** — the pattern-matching engine `logic.py` originally sketched
+here (`query_patterns()`/`query_tests()`/`score_pattern()`, auto-suggesting tests
+from body chart findings). Those functions are stubs with docstrings correctly
+pointing at the real schema, but `score_pattern()` specifically needs a schema
+addition (`condition_feature` has no per-feature weight column) before it's
+implementable at all. Do not implement this until explicitly requested.

@@ -47,22 +47,28 @@ muscle_testing:
 # CGH: FRT — side of restriction = symptomatic C1/2 segment
 # Upper cervical instability: pre-manipulation screen
 # VBI: pre-manipulation screen — see also Medical Screening section (risk factors)
-# Myelopathy: Hoffman's — combine with UMN signs in neurological section
+# Myelopathy screening (Hoffman's, Tromner, Babinski, Lhermitte's, Inverted
+# Supinator) lives entirely in Neurological → UMN Signs, not here — Cook
+# Myelopathy Cluster context still resolves via Ctrl+K from those fields.
+# Motor Control: CCFT — see notes reminder (Lean angle / Nod / Lift / Hover)
+# for the graded protocol; this is a single midline test, use L column only.
 #
 # Row IDs are stems — widget creates st_{id}_l and st_{id}_r.
-# For midline tests (distraction, instability, VBI) use the L column clinically;
-# R is available if bilateral comparison is needed.
+# For midline tests (distraction, instability, VBI, CCFT) use the L column
+# clinically; R is available if bilateral comparison is needed.
 special_tests:
   notes_id: st_cx_notes
   groups:
     - label: "Radiculopathy"
       cluster_id: cx_radiculopathy
+      db_cluster_name: "Wainner CPR (recommended threshold: 3 of 4)"
       rows:
         - {id: spurling,    label: "Spurling"}
         - {id: distraction, label: "Distraction"}
 
     - label: "Neurodynamics"
       cluster_id: cx_neurodynamics
+      db_cluster_name: "ULTT Battery (ULTT-1 + ULTT-2b + ULTT-3)"
       rows:
         - {id: ulnt1,  label: "ULNT1"}
         - {id: ulnt2a, label: "ULNT2a"}
@@ -70,15 +76,23 @@ special_tests:
 
     - label: "CGH"
       cluster_id: cx_cgh
+      db_cluster_name: "CGH Diagnostic Cluster (CFRT + Upper Cervical Palpation + DCF Control)"
       rows:
         - {id: frt, label: "FRT"}
 
-    - label: "UC Instability"
-      cluster_id: cx_uc_instability
+    - label: "Sharp-Purser"
+      cluster_id: cx_sharp_purser
+      db_cluster_name: "Sharp-Purser (Transverse Ligament Assessment)"
       rows:
         - {id: sharp_purser, label: "Sharp-Purser"}
+
+    - label: "Alar Ligament"
+      cluster_id: cx_alar_ligament
+      db_cluster_name: "Alar Ligament Cluster (> 2 of 3 tests positive)"
+      rows:
         - {id: ant_shear,    label: "Ant Shear"}
         - {id: alar_sf,      label: "Alar Lig SF"}
+        - {id: alar_rot,     label: "Alar Lig Rot"}
         - {id: lat_trans,    label: "Lat Trans"}
 
     - label: "VBI"
@@ -86,7 +100,20 @@ special_tests:
       rows:
         - {id: vbi_sus_rot, label: "VBI Sus Rot"}
 
-    - label: "Myelopathy"
-      cluster_id: cx_myelopathy
+    - label: "Motor Control"
+      cluster_id: cx_motor_control
       rows:
-        - {id: hoffman, label: "Hoffman's"}
+        - {id: ccft, label: "CCFT"}
+      notes_id: st_ccft_notes
+      notes_label: "Lean angle · Nod · Lift · Hover"
+
+# ── Regional Differential panel (Section 05) — DB-only clusters ─────────────
+# These clusters' members aren't captured by any cervical special_tests widget —
+# Cook Myelopathy's 5 signs are Neurological section UMN FlagButtons
+# (nr_umn_hoffman etc.), left in place there per the existing widgets; this only
+# adds them to the panel's cluster-membership dashboard, it doesn't move or
+# duplicate the Neurological fields.
+extra_clusters:
+  - label: "Cook Myelopathy"
+    cluster_id: cx_myelopathy
+    db_cluster_name: "Cook Myelopathy Cluster (3 of 5)"

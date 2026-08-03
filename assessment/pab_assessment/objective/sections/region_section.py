@@ -462,6 +462,10 @@ class BilateralGridSpecialTestsWidget(Static):
                             yield CycleButton(self._STATES, id=f"st_{right['id']}_l")
                             yield Static("", classes="bg_gap")
                             yield CycleButton(self._STATES, id=f"st_{right['id']}_r")
+            group_notes_id = group.get("notes_id")
+            if group_notes_id:
+                yield Label(group.get("notes_label", "Notes:"))
+                yield GridTextArea(id=group_notes_id, language="plain")
         if self._notes_id:
             yield Label("Notes:")
             yield GridTextArea(id=self._notes_id, language="plain")
@@ -478,6 +482,10 @@ class BilateralGridSpecialTestsWidget(Static):
                 for btn_id in btn_ids:
                     self._grid_pos[btn_id] = len(self._grid)
                     self._grid.append(btn_id)
+            group_notes_id = group.get("notes_id")
+            if group_notes_id:
+                self._grid_pos[group_notes_id] = len(self._grid)
+                self._grid.append(group_notes_id)
         if self._notes_id:
             self._grid_pos[self._notes_id] = len(self._grid)
             self._grid.append(self._notes_id)
@@ -515,23 +523,29 @@ class BilateralGridSpecialTestsWidget(Static):
             self._focus_by_index(event.direction, fid)
         event.stop()
 
+    def _all_notes_ids(self) -> list[str]:
+        ids = [g["notes_id"] for g in self._groups if g.get("notes_id")]
+        if self._notes_id:
+            ids.append(self._notes_id)
+        return ids
+
     def collect(self) -> dict:
         data: dict = {}
         for cb in self.query(CycleButton):
             data[cb.id] = cb.value
-        if self._notes_id:
+        for notes_id in self._all_notes_ids():
             try:
-                data[self._notes_id] = self.query_one(f"#{self._notes_id}", TextArea).text
+                data[notes_id] = self.query_one(f"#{notes_id}", TextArea).text
             except Exception:
-                data[self._notes_id] = ""
+                data[notes_id] = ""
         return data
 
     def load(self, data: dict) -> None:
         for cb in self.query(CycleButton):
             cb.set_value(data.get(cb.id))
-        if self._notes_id:
+        for notes_id in self._all_notes_ids():
             try:
-                self.query_one(f"#{self._notes_id}", TextArea).text = data.get(self._notes_id, "")
+                self.query_one(f"#{notes_id}", TextArea).text = data.get(notes_id, "")
             except Exception:
                 pass
 

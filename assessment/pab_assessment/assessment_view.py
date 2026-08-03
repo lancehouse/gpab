@@ -38,6 +38,27 @@ from .storage import (
 _REPORT_INTERVAL = 60.0  # seconds between background report regeneration
 
 
+def _flatten_region_fields(obj_assessment: dict, region_id: str) -> dict:
+    """Flatten one region's objective dict (special/active_movement/muscle_testing/...)
+    plus the generic Neurological section into a single field-id → value dict for
+    the section 05 Regional Differential panel. Field ids are unique across
+    sections, so a flat merge is safe — this is what lets that panel show DB
+    cluster members that live outside special_tests (e.g. Cervical Rotation ROM,
+    an Active Movement field; Cook Myelopathy's UMN signs, which live in
+    Neurological — a top-level generic section, not nested per-region like
+    special_tests is, so it has to be merged in explicitly rather than picked up
+    by iterating obj_assessment[region_id])."""
+    flat: dict = {}
+    neurological = obj_assessment.get("neurological", {})
+    if isinstance(neurological, dict):
+        flat.update(neurological)
+    region_data = obj_assessment.get(region_id, {})
+    for section_data in region_data.values():
+        if isinstance(section_data, dict):
+            flat.update(section_data)
+    return flat
+
+
 def _exit_generate_all_reports(session_file: str) -> None:
     """Run all report generators serially — called in a non-daemon thread at exit."""
     save_raw_report(session_file)
@@ -421,7 +442,7 @@ class AssessmentView(Container):
             self._active_regions = list(obj_regions)   # sync session-level context
             section_05.set_active_regions(obj_regions)
             for rid in obj_regions:
-                tests = obj_assessment.get(rid, {}).get("special", {})
+                tests = _flatten_region_fields(obj_assessment, rid)
                 section_05.set_region_test_data(rid, tests)
 
         # Update nav indicators and medical tab color
@@ -781,7 +802,7 @@ class AssessmentView(Container):
             obj = load_objective(self.session_file).get("assessment", {})
             logger.debug("RDP push: active_regions=%s", self._active_regions)
             for rid in self._active_regions:
-                tests = obj.get(rid, {}).get("special", {})
+                tests = _flatten_region_fields(obj, rid)
                 logger.debug("RDP push: %s tests sample=%s", rid, dict(list(tests.items())[:3]))
                 section_05.set_region_test_data(rid, tests)
         except Exception as e:

@@ -5,18 +5,14 @@ Layout mirrors kb_viewer.py (separate kb/ project):
   Centre — condition → cluster → test tree
   Right  — detail panel for selected node
 
-DB path search order:
-  1. ~/.local/share/pab/clinical_kb.db  (deployed)
-  2. ~/Projects/kb/output/clinical_kb.db (dev fallback)
-
-Connection is always read-only (mode=ro).
+DB access (path search, read-only connection) lives in kb_db.py, shared with
+kb_loader.py and the special-test widgets.
 """
 
 from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from textual import events
@@ -26,28 +22,10 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Footer, Input, Label, ListItem, ListView, Static, Tree
 
-_DB_CANDIDATES = [
-    Path.home() / ".local/share/pab/clinical_kb.db",
-    Path.home() / "Projects/kb/output/clinical_kb.db",
-]
+from . import kb_db
 
-
-def _find_db() -> Path | None:
-    for p in _DB_CANDIDATES:
-        if p.exists():
-            return p
-    return None
-
-
-def _open_db() -> sqlite3.Connection:
-    path = _find_db()
-    if path is None:
-        raise FileNotFoundError(
-            "clinical_kb.db not found in ~/.local/share/pab/ or ~/Projects/kb/output/"
-        )
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+_find_db = kb_db.find_db
+_open_db = kb_db.open_db
 
 
 # ── Database queries ───────────────────────────────────────────────────────────
@@ -215,22 +193,8 @@ def _load_condition_red_flags(condition_id: int, region_pab_id: str) -> list[sql
 
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
-def _fmt_lr(plr, nlr) -> str:
-    parts = []
-    if plr is not None:
-        parts.append(f"+LR {plr:.2f}")
-    if nlr is not None:
-        parts.append(f"−LR {nlr:.2f}")
-    return "  ".join(parts)
-
-
-def _fmt_snsp(sn, sp) -> str:
-    parts = []
-    if sn is not None:
-        parts.append(f"Sn {sn:.2f}")
-    if sp is not None:
-        parts.append(f"Sp {sp:.2f}")
-    return "  ".join(parts)
+_fmt_lr = kb_db.fmt_lr
+_fmt_snsp = kb_db.fmt_snsp
 
 
 def _cluster_label(row: sqlite3.Row) -> str:

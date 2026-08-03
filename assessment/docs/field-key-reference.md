@@ -529,6 +529,8 @@ Bilateral fields exist as `{key}_l` and `{key}_r`.
 | `nr_umn_coord` | Coordination impaired |
 | `nr_umn_hoffman` | Hoffman's sign positive (FlagButton) |
 | `nr_umn_tromner` | Tromner sign positive (FlagButton) |
+| `nr_umn_lhermitte` | Lhermitte's sign positive (FlagButton) |
+| `nr_umn_inv_sup` | Inverted Supinator sign positive (FlagButton) |
 | `nr_ul_reflex_notes` | UL Reflexes subsection free-text notes |
 | `nr_ul_myotome_notes` | UL Myotomes subsection free-text notes |
 | `nr_ul_derm_notes` | UL Dermatomes subsection free-text notes |
@@ -701,7 +703,7 @@ and `objective/sections/cervical_tables.py` (passive, neck strength).
 | `cx_flex` | `cx_flex_l`, `cx_flex_r` | Cervical flexion (bilateral:true — L only populated) |
 | `cx_ext` | `cx_ext_l`, `cx_ext_r` | Cervical extension (bilateral:true — L only) |
 | `cx_lf` | `cx_lf_l`, `cx_lf_r` | Cervical lateral flexion |
-| `cx_rot` | `cx_rot_l`, `cx_rot_r` | Cervical rotation |
+| `cx_rot` | `cx_rot_ax_l_range`, `cx_rot_ax_r_range` | Cervical rotation — DB-linked (Wainner CPR, "Cervical Rotation ROM (Involved Side)"), surfaces in the Regional Differential panel as a value row |
 | `am_cx_notes` | `am_cx_notes` | Cervical ROM notes |
 
 ### 02 Active Movement — Thoracic ROM (cervical region)
@@ -785,10 +787,16 @@ storage key. KB entry key is the stem (the loader strips `_l`/`_r`).
 | `st_sharp_purser_l` | `st_sharp_purser_r` | `sharp_purser` | Sharp-Purser (UC instability) |
 | `st_ant_shear_l` | `st_ant_shear_r` | `ant_shear` | Anterior shear (transverse lig) |
 | `st_alar_sf_l` | `st_alar_sf_r` | `alar_sf` | Alar ligament side flexion |
-| `st_lat_trans_l` | `st_lat_trans_r` | `lat_trans` | Lateral translation (UC) |
+| `st_alar_rot_l` | `st_alar_rot_r` | `alar_rot` | Alar ligament rotation stress |
+| `st_lat_trans_l` | `st_lat_trans_r` | `lat_trans` | Lateral translation (UC) — no DB test row, YAML-only |
 | `st_vbi_sus_rot_l` | `st_vbi_sus_rot_r` | `vbi_sus_rot` | VBI sustained rotation |
-| `st_hoffman_l` | `st_hoffman_r` | `hoffman` | Hoffman's sign (myelopathy) |
+| `st_ccft_l` | `st_ccft_r` | DB-backed | CCFT (motor control) — L used clinically, R unused |
+| `st_ccft_notes` | — | — | CCFT reminder notes (TextArea, heading "Lean angle · Nod · Lift · Hover") |
 | `st_cx_notes` | — | — | Special tests notes (TextArea) |
+
+Hoffman's sign moved to Neurological → UMN Signs (`nr_umn_hoffman`) along with Tromner,
+Babinski, Lhermitte's, and Inverted Supinator — all five are Cook Myelopathy Cluster
+signs and are grouped there instead of duplicating a bilateral row here.
 
 ---
 

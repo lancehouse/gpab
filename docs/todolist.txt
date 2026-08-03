@@ -2,17 +2,23 @@
 GTK:
 better words in the pain descriptors section.
         whis voice integration repair
-
+        
 TUI:
    
-    rename dermatome location tags wihtin the 05 tab.
- 
-    imaging section in medical
-    
     report: check all input fields for carryover. nb: activity diary.
-    scratchpad notes
     
+    key navigation
     
+    check refactor plan
+    
+    ICD-11
+
+    shoulder region KB pass: add TOS battery (Adson's, Roos/EAST, Wright's) +
+    CRLF as a group, per DB's TOS Battery cluster — flagged during cervical
+    special-tests gap analysis, none of these exist anywhere in pab yet.
+
+
+
     
     
   

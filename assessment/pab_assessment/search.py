@@ -408,8 +408,11 @@ _ASSESSMENT_SECTION_IDS = [
     "05_outcome_measures", "06_diagnosis", "07_barriers", "08_rx_plan", "scratchpad",
 ]
 
-# Objective special test KB fields — (widget_id, region, section_id, human_name, extra_match)
-# widget_id uses st_ prefix (SpecialTestsWidget._rg_id pattern)
+# Objective KB-linked fields — (widget_id, region, section_id, human_name, extra_match)
+# Mostly special tests (st_ prefix, SpecialTestsWidget._rg_id pattern), but also any
+# other objective field clinical_kb.db's test_field_map points at (e.g. ROM values
+# that are themselves a CPR cluster member, like Cervical Rotation ROM for Wainner
+# CPR) — validate_kb.py hard-fails on any test_field_map pab_field_id missing here.
 _OBJ_KB_FIELDS: list[tuple[str, str, str, str, str]] = [
     # ── Cervical ──────────────────────────────────────────────────────────────
     ("st_spurling_l",      "cervical", "obj:08_special", "Spurling's Left",           "foraminal compression radiculopathy arm pain"),
@@ -430,12 +433,22 @@ _OBJ_KB_FIELDS: list[tuple[str, str, str, str, str]] = [
     ("st_ant_shear_r",     "cervical", "obj:08_special", "Anterior Shear R",          "upper cervical instability transverse ligament"),
     ("st_alar_sf_l",       "cervical", "obj:08_special", "Alar Ligament SF L",        "upper cervical instability alar"),
     ("st_alar_sf_r",       "cervical", "obj:08_special", "Alar Ligament SF R",        "upper cervical instability alar"),
+    ("st_alar_rot_l",      "cervical", "obj:08_special", "Alar Ligament Rotation L",  "upper cervical instability alar ligament rotation stress"),
+    ("st_alar_rot_r",      "cervical", "obj:08_special", "Alar Ligament Rotation R",  "upper cervical instability alar ligament rotation stress"),
     ("st_lat_trans_l",     "cervical", "obj:08_special", "Lateral Translation L",     "upper cervical instability lateral stability"),
     ("st_lat_trans_r",     "cervical", "obj:08_special", "Lateral Translation R",     "upper cervical instability lateral stability"),
     ("st_vbi_sus_rot_l",   "cervical", "obj:08_special", "VBI Sustained Rotation L",  "vertebrobasilar insufficiency pre-manipulation screen"),
     ("st_vbi_sus_rot_r",   "cervical", "obj:08_special", "VBI Sustained Rotation R",  "vertebrobasilar insufficiency pre-manipulation screen"),
-    ("st_hoffman_l",       "cervical", "obj:08_special", "Hoffman's Left",            "myelopathy UMN upper motor neuron corticospinal"),
-    ("st_hoffman_r",       "cervical", "obj:08_special", "Hoffman's Right",           "myelopathy UMN upper motor neuron corticospinal"),
+    ("st_ccft_l",          "cervical", "obj:08_special", "CCFT",                      "cranio-cervical flexion test deep cervical flexor motor control cervicogenic headache"),
+    ("st_ccft_r",          "cervical", "obj:08_special", "CCFT (R, unused)",          "cranio-cervical flexion test deep cervical flexor motor control cervicogenic headache"),
+    # ── Neurological — UMN signs (myelopathy screen) ─────────────────────────────
+    ("nr_umn_hoffman",     "neurological", "obj:04_neurological", "Hoffman's",        "myelopathy UMN upper motor neuron corticospinal"),
+    ("nr_umn_tromner",     "neurological", "obj:04_neurological", "Tromner",          "myelopathy UMN upper motor neuron corticospinal"),
+    ("nr_umn_bab",         "neurological", "obj:04_neurological", "Babinski",         "myelopathy UMN upper motor neuron corticospinal"),
+    ("nr_umn_lhermitte",   "neurological", "obj:04_neurological", "Lhermitte's",      "myelopathy UMN electric shock spine flexion"),
+    ("nr_umn_inv_sup",     "neurological", "obj:04_neurological", "Inverted Supinator", "myelopathy UMN inverted radial reflex"),
+    ("cx_rot_ax_l_range",  "cervical", "obj:02_active", "Cervical Rotation ROM (L)", "wainner CPR radiculopathy involved side rotation"),
+    ("cx_rot_ax_r_range",  "cervical", "obj:02_active", "Cervical Rotation ROM (R)", "wainner CPR radiculopathy involved side rotation"),
     # ── Lumbar ────────────────────────────────────────────────────────────────
     ("st_slr_l",         "lumbar",   "obj:08_special", "SLR Left",                  "straight leg raise sciatic radiculopathy disc herniation"),
     ("st_slr_r",         "lumbar",   "obj:08_special", "SLR Right",                 "straight leg raise sciatic radiculopathy disc herniation"),
