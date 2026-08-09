@@ -289,6 +289,21 @@ the code, Ctrl+F navigation silently fails and the KB can't be linked correctly.
    `_render_objective_md` and `_render_objective_raw` (or the assessment equivalents) have
    been checked and updated.
 
+   **Concretely:** `storage.py` does not derive report structure from `sections/yaml/*.yaml`
+   or from Python widget definitions (e.g. `neurological.py`'s `_UMN_ITEMS`) — it hand-maintains
+   its own separate, hardcoded mirror of every region's special-tests groups and every
+   fixed-content section's field list, **duplicated once per report generator**
+   (`_render_objective_md` for the markdown/cleaned/docx report, `_render_objective_raw` for
+   the raw text export — search for the region's group-list variable, e.g. `_CX_ST_GROUPS` and
+   `_CX_ST_GROUPS_R`, and the matching notes-key tuple in both places). A field that's added,
+   renamed, or regrouped in the YAML/widget but not in *both* mirrors is saved correctly (JSON
+   I/O doesn't filter by field) but silently vanishes from every report — no error, no warning,
+   just missing data the clinician entered. This happened for real during the cervical KB
+   integration (2026-08): `st_ccft_notes` and a restructured special-tests group went missing
+   from reports for several sessions before being caught. Grep `storage.py` for the field's
+   region prefix (e.g. `st_sh_`, `nr_umn_`) before considering any region/section restructuring
+   done, not just when adding a single new field.
+
 6. **Always check the mirror half.**
    The codebase has two parallel halves: assessment sections (subjective) and objective
    sections. When changing a field, widget, hotkey, or behaviour in one half, ask whether the

@@ -779,7 +779,8 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
         umn_items = [("Hyperreflexia","nr_umn_hyper"),("Babinski +","nr_umn_bab"),
                      ("Clonus","nr_umn_clonus"),("Romberg +","nr_umn_romberg"),
                      ("Coord impaired","nr_umn_coord"),
-                     ("Hoffman's","nr_umn_hoffman"),("Tromner","nr_umn_tromner")]
+                     ("Hoffman's","nr_umn_hoffman"),("Tromner","nr_umn_tromner"),
+                     ("Lhermitte's","nr_umn_lhermitte"),("Inv Supinator","nr_umn_inv_sup")]
         umn_rows = [[lbl, "Yes" if neu.get(uid) is True else "No" if neu.get(uid) is False else "*(not answered)*"]
                     for lbl, uid in umn_items]
         _maybe_table(sl, "UMN Signs", ["Sign", "Result"], umn_rows)
@@ -985,30 +986,39 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             ("Radiculopathy",  [("Spurling","st_spurling"),("Distraction","st_distraction")]),
             ("Neurodynamics",  [("ULNT1","st_ulnt1"),("ULNT2a","st_ulnt2a"),("ULNT3","st_ulnt3")]),
             ("CGH",            [("FRT","st_frt")]),
-            ("UC Instability", [("Sharp-Purser","st_sharp_purser"),("Ant Shear","st_ant_shear"),
-                                ("Alar Lig SF","st_alar_sf"),("Lat Trans","st_lat_trans")]),
+            ("Sharp-Purser",   [("Sharp-Purser","st_sharp_purser")]),
+            ("Alar Ligament",  [("Ant Shear","st_ant_shear"),("Alar Lig SF","st_alar_sf"),
+                                ("Alar Lig Rot","st_alar_rot"),("Lat Trans","st_lat_trans")]),
             ("VBI",            [("VBI Sus Rot","st_vbi_sus_rot")]),
-            ("Myelopathy",     [("Hoffman's","st_hoffman")]),
+            ("Motor Control",  [("CCFT","st_ccft")]),
         ]
         if any(f"{sid}_l" in spl for _, rows in _CX_ST_GROUPS for _, sid in rows):
             for grp_lbl, rows in _CX_ST_GROUPS:
                 cx_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Cervical — {grp_lbl}", ["Test","Left","Right"], cx_st_rows)
-        for key, lbl in [("st_lx_notes","*Lumbar notes:*"),("st_cx_notes","*Cervical notes:*")]:
+        for key, lbl in [("st_lx_notes","*Lumbar notes:*"),("st_cx_notes","*Cervical notes:*"),
+                          ("st_ccft_notes","*CCFT notes (Lean angle · Nod · Lift · Hover):*")]:
             _maybe_note(sl, lbl, spl.get(key, "").strip())
         _SH_ST_GROUPS = [
             ("Impingement",  [("Hawkins","st_hawkins"),("Neer","st_neer"),
-                              ("Painful Arc","st_painful_arc")]),
+                              ("Painful Arc","st_painful_arc"),("ER Resist","st_er_resist")]),
             ("Rotator Cuff", [("Empty Can","st_empty_can"),("Full Can","st_full_can"),
                               ("ER Lag","st_er_lag"),("Lift-off","st_lift_off"),
-                              ("Belly Press","st_belly_press"),("Drop Arm","st_drop_arm")]),
-            ("AC Joint",     [("Cross-body","st_cross_body"),("AC Stress","st_ac_stress")]),
+                              ("Belly Press","st_belly_press"),("Drop Arm","st_drop_arm"),
+                              ("IR Lag","st_irls"),("Drop Sign (IS)","st_drop_is"),
+                              ("Hornblower","st_hornblower")]),
+            ("AC Joint",     [("Cross-body","st_cross_body"),("AC Stress","st_ac_stress"),
+                              ("AC Resist Ext","st_ac_ext")]),
             ("Biceps/SLAP",  [("Speed's","st_speeds"),("Yergason","st_yergason"),
-                              ("O'Brien","st_obrien")]),
-            ("Instability",  [("Apprehension","st_apprehension"),("Relocation","st_relocation"),
-                              ("Sulcus","st_sulcus")]),
-            ("Scapular",     [("Scap Assist","st_scap_assist"),("Wall Pushup","st_wall_pushup")]),
+                              ("O'Brien","st_obrien"),("Passive Comp","st_pass_comp"),
+                              ("Bicip Groove","st_bicip_groove")]),
+            ("Instability",  [("Apprehension","st_apprehension"),("Relocation","st_relocation")]),
+            ("Sulcus",       [("Sulcus","st_sulcus")]),
+            ("Scapular Assistance", [("Scap Assist","st_scap_assist")]),
+            ("Serratus Anterior",   [("Wall Pushup","st_wall_pushup")]),
+            ("TOS",          [("Adson's","st_adson"),("Roos/EAST","st_roos"),
+                              ("Wright's","st_wright"),("CRLF","st_crlf")]),
         ]
         if any(f"{sid}_l" in spl for _, rows in _SH_ST_GROUPS for _, sid in rows):
             for grp_lbl, rows in _SH_ST_GROUPS:
@@ -1690,7 +1700,8 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
         umn_items = [("Hyperreflexia","nr_umn_hyper"),("Babinski +","nr_umn_bab"),
                      ("Clonus","nr_umn_clonus"),("Romberg +","nr_umn_romberg"),
                      ("Coord impaired","nr_umn_coord"),
-                     ("Hoffman's","nr_umn_hoffman"),("Tromner","nr_umn_tromner")]
+                     ("Hoffman's","nr_umn_hoffman"),("Tromner","nr_umn_tromner"),
+                     ("Lhermitte's","nr_umn_lhermitte"),("Inv Supinator","nr_umn_inv_sup")]
         for lbl, uid in umn_items:
             v = neu.get(uid)
             if clean and v is None:
@@ -1934,17 +1945,19 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
             ("Radiculopathy",  [("Spurling","st_spurling"),("Distraction","st_distraction")]),
             ("Neurodynamics",  [("ULNT1","st_ulnt1"),("ULNT2a","st_ulnt2a"),("ULNT3","st_ulnt3")]),
             ("CGH",            [("FRT","st_frt")]),
-            ("UC Instability", [("Sharp-Purser","st_sharp_purser"),("Ant Shear","st_ant_shear"),
-                                ("Alar Lig SF","st_alar_sf"),("Lat Trans","st_lat_trans")]),
+            ("Sharp-Purser",   [("Sharp-Purser","st_sharp_purser")]),
+            ("Alar Ligament",  [("Ant Shear","st_ant_shear"),("Alar Lig SF","st_alar_sf"),
+                                ("Alar Lig Rot","st_alar_rot"),("Lat Trans","st_lat_trans")]),
             ("VBI",            [("VBI Sus Rot","st_vbi_sus_rot")]),
-            ("Myelopathy",     [("Hoffman's","st_hoffman")]),
+            ("Motor Control",  [("CCFT","st_ccft")]),
         ]
         if any(f"{sid}_l" in spl for _, rows in _CX_ST_GROUPS_R for _, sid in rows):
             for grp_lbl, rows in _CX_ST_GROUPS_R:
                 cx_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Cervical {grp_lbl}","Left","Right"], cx_st_rows_r)
-        for key, lbl in [("st_lx_notes","Lumbar notes"),("st_cx_notes","Cervical notes")]:
+        for key, lbl in [("st_lx_notes","Lumbar notes"),("st_cx_notes","Cervical notes"),
+                          ("st_ccft_notes","CCFT notes (Lean angle / Nod / Lift / Hover)")]:
             v = spl.get(key, "").strip()
             if v:
                 sl.append(f"  {lbl}: {v}")
@@ -1952,16 +1965,23 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 sl.append(f"  {lbl}: (empty)")
         _SH_ST_GROUPS_R = [
             ("Impingement",  [("Hawkins","st_hawkins"),("Neer","st_neer"),
-                              ("Painful Arc","st_painful_arc")]),
+                              ("Painful Arc","st_painful_arc"),("ER Resist","st_er_resist")]),
             ("Rotator Cuff", [("Empty Can","st_empty_can"),("Full Can","st_full_can"),
                               ("ER Lag","st_er_lag"),("Lift-off","st_lift_off"),
-                              ("Belly Press","st_belly_press"),("Drop Arm","st_drop_arm")]),
-            ("AC Joint",     [("Cross-body","st_cross_body"),("AC Stress","st_ac_stress")]),
+                              ("Belly Press","st_belly_press"),("Drop Arm","st_drop_arm"),
+                              ("IR Lag","st_irls"),("Drop Sign (IS)","st_drop_is"),
+                              ("Hornblower","st_hornblower")]),
+            ("AC Joint",     [("Cross-body","st_cross_body"),("AC Stress","st_ac_stress"),
+                              ("AC Resist Ext","st_ac_ext")]),
             ("Biceps/SLAP",  [("Speed's","st_speeds"),("Yergason","st_yergason"),
-                              ("O'Brien","st_obrien")]),
-            ("Instability",  [("Apprehension","st_apprehension"),("Relocation","st_relocation"),
-                              ("Sulcus","st_sulcus")]),
-            ("Scapular",     [("Scap Assist","st_scap_assist"),("Wall Pushup","st_wall_pushup")]),
+                              ("O'Brien","st_obrien"),("Passive Comp","st_pass_comp"),
+                              ("Bicip Groove","st_bicip_groove")]),
+            ("Instability",  [("Apprehension","st_apprehension"),("Relocation","st_relocation")]),
+            ("Sulcus",       [("Sulcus","st_sulcus")]),
+            ("Scapular Assistance", [("Scap Assist","st_scap_assist")]),
+            ("Serratus Anterior",   [("Wall Pushup","st_wall_pushup")]),
+            ("TOS",          [("Adson's","st_adson"),("Roos/EAST","st_roos"),
+                              ("Wright's","st_wright"),("CRLF","st_crlf")]),
         ]
         if any(f"{sid}_l" in spl for _, rows in _SH_ST_GROUPS_R for _, sid in rows):
             for grp_lbl, rows in _SH_ST_GROUPS_R:

@@ -22,7 +22,7 @@ _KB_DIR = Path(__file__).parent / "kb"
 
 _STRIP_SUFFIXES = ("_l", "_r", "_left", "_right")
 
-_DB_BACKED_REGIONS = {"cervical"}
+_DB_BACKED_REGIONS = {"cervical", "shoulder"}
 
 # Fields that are DB-resolvable regardless of which region is active — these
 # aren't tied to a body-region tab (they're Neurological section UMN signs,

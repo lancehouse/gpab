@@ -65,13 +65,16 @@ special_tests:
   groups:
     - label: "Impingement"
       cluster_id: sh_impingement
+      db_cluster_name: "3-of-5 Impingement Cluster"
       rows:
         - {id: hawkins,     label: "Hawkins"}
         - {id: neer,        label: "Neer"}
         - {id: painful_arc, label: "Painful Arc"}
+        - {id: er_resist,   label: "ER Resist"}
 
     - label: "Rotator Cuff"
       cluster_id: sh_rc_integrity
+      db_cluster_name: "Full RCT Lag Sign Battery"
       rows:
         - {id: empty_can,   label: "Empty Can"}
         - {id: full_can,    label: "Full Can"}
@@ -79,29 +82,58 @@ special_tests:
         - {id: lift_off,    label: "Lift-off"}
         - {id: belly_press, label: "Belly Press"}
         - {id: drop_arm,    label: "Drop Arm"}
+        - {id: irls,        label: "IR Lag"}
+        - {id: drop_is,     label: "Drop Sign (IS)"}
+        - {id: hornblower,  label: "Hornblower"}
 
     - label: "AC Joint"
       cluster_id: sh_ac_joint
+      db_cluster_name: "AC Joint Confirm Cluster (CBA + O'Brien + Resisted Extension)"
       rows:
         - {id: cross_body,  label: "Cross-body"}
         - {id: ac_stress,   label: "AC Stress"}
+        - {id: ac_ext,      label: "AC Resist Ext"}
 
     - label: "Biceps / SLAP"
       cluster_id: sh_biceps_slap
+      db_cluster_name: "Biceps TIC (Speed's + Yergason's + Palpation)"
       rows:
-        - {id: speeds,      label: "Speed's"}
-        - {id: yergason,    label: "Yergason"}
-        - {id: obrien,      label: "O'Brien"}
+        - {id: speeds,        label: "Speed's"}
+        - {id: yergason,      label: "Yergason"}
+        - {id: obrien,        label: "O'Brien"}
+        - {id: pass_comp,     label: "Passive Comp"}
+        - {id: bicip_groove,  label: "Bicip Groove"}
 
     - label: "Instability"
       cluster_id: sh_instability
+      db_cluster_name: "Anterior Instability (Apprehension + Relocation)"
       rows:
         - {id: apprehension, label: "Apprehension"}
         - {id: relocation,   label: "Relocation"}
-        - {id: sulcus,       label: "Sulcus"}
 
-    - label: "Scapular"
-      cluster_id: sh_scapular
+    - label: "Sulcus"
+      cluster_id: sh_sulcus
+      db_cluster_name: "Sulcus Sign (Inferior Instability Screen)"
+      rows:
+        - {id: sulcus, label: "Sulcus"}
+
+    - label: "Scapular Assistance"
+      cluster_id: sh_scap_assist
+      db_cluster_name: "Scapular Assistance Test (SAT)"
       rows:
         - {id: scap_assist, label: "Scap Assist"}
+
+    - label: "Serratus Anterior"
+      cluster_id: sh_serratus
+      db_cluster_name: "Serratus Anterior Strength Screen (Wall Push-up)"
+      rows:
         - {id: wall_pushup, label: "Wall Pushup"}
+
+    - label: "TOS"
+      cluster_id: sh_tos
+      db_cluster_name: "TOS Battery (Adson + Eden + Wright + Roos + Tinel)"
+      rows:
+        - {id: adson, label: "Adson's"}
+        - {id: roos,  label: "Roos/EAST"}
+        - {id: wright, label: "Wright's"}
+        - {id: crlf,  label: "CRLF"}

@@ -916,7 +916,23 @@ Field IDs: `sh_acc_{direction}_{side}_{type}` — direction: `inf`, `post`, `ant
 | `st_sulcus_l` | `st_sulcus_r` | `sulcus` | Sulcus sign (inferior instability / MDI) |
 | `st_scap_assist_l` | `st_scap_assist_r` | `scap_assist` | Scapular assistance (dyskinesis) |
 | `st_wall_pushup_l` | `st_wall_pushup_r` | `wall_pushup` | Wall push-up (serratus anterior winging) |
+| `st_er_resist_l` | `st_er_resist_r` | DB-backed | ER resistance (impingement, SIS cluster) |
+| `st_irls_l` | `st_irls_r` | DB-backed | IR lag sign (subscapularis, RCT lag battery) |
+| `st_drop_is_l` | `st_drop_is_r` | DB-backed | Drop sign (infraspinatus) — distinct from Drop Arm |
+| `st_hornblower_l` | `st_hornblower_r` | DB-backed | Hornblower's (teres minor, RCT lag battery) |
+| `st_ac_ext_l` | `st_ac_ext_r` | DB-backed | AC resisted extension (AC Joint Confirm Cluster) |
+| `st_pass_comp_l` | `st_pass_comp_r` | DB-backed | Passive compression (SLAP tear) |
+| `st_bicip_groove_l` | `st_bicip_groove_r` | DB-backed | Bicipital groove tenderness (Biceps TIC cluster) |
+| `st_adson_l` | `st_adson_r` | DB-backed | Adson's (TOS) |
+| `st_roos_l` | `st_roos_r` | DB-backed | Roos/EAST (TOS) |
+| `st_wright_l` | `st_wright_r` | DB-backed | Wright's (TOS) |
+| `st_crlf_l` | `st_crlf_r` | DB-backed | CRLF — helps rule cervical spine in/out of TOS |
 | `st_sh_notes` | — | — | Special tests notes (TextArea) |
+
+Shoulder is fully DB-backed as of this pass (`_DB_BACKED_REGIONS` in `kb_loader.py`) —
+existing rows above still resolve via `kb/shoulder.yaml` as a fallback if the DB is
+unreachable; the 10 new rows have no YAML fallback (no kb/shoulder.yaml entry authored
+for them), so they show nothing rather than stale content if the DB is missing.
 
 ---
 
