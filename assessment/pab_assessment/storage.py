@@ -11,6 +11,7 @@ import re
 import subprocess
 import time
 import logging
+from itertools import zip_longest
 from pathlib import Path
 from typing import Optional
 
@@ -2261,13 +2262,25 @@ def _emit_yaml_subs_raw(section_key: str, section_data: dict, clean: bool,
 def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
     """Section 4 — Pain Classification in tabulated dev format (Reports / Denies columns)."""
 
-    def _join(items: list[str]) -> str:
-        return " · ".join(items) if items else "—"
-
-    def _rd(fields: list[tuple]) -> tuple[str, str]:
+    def _rd_pairs(fields: list[tuple]) -> list[tuple[str, str]]:
+        """One (report, deny) pair per row so each item lands on its own table line —
+        Textual's MarkdownViewer has no raw-HTML support, so "<br>" is not an option; a
+        dot-joined single cell is what was too dense in exported .md/.docx/EMR views."""
         rep = [lbl for lbl, key in fields if pc.get(key) is True]
         den = [lbl for lbl, key in fields if pc.get(key) is False]
-        return _join(rep), _join(den)
+        if not rep and not den:
+            return [("—", "—")]
+        return list(zip_longest(rep or ["—"], den or ["—"], fillvalue=""))
+
+    def _rd_rows(label: str, fields: list[tuple]) -> list[list[str]]:
+        return [[label if i == 0 else "", r, d]
+                for i, (r, d) in enumerate(_rd_pairs(fields))]
+
+    def _score_rows(label: str, fields: list[tuple]) -> list[list[str]]:
+        """One row per scored field (not a Yes/No flag) — same one-item-per-line
+        treatment as _rd_rows, for the FM WPI/SS component scores."""
+        return [[label if i == 0 else "", f"{lbl}: {(pc.get(k) or '').strip() or '—'}", ""]
+                for i, (lbl, k) in enumerate(fields)]
 
     def _any(fields: list[tuple]) -> bool:
         return any(pc.get(key) is not None for _, key in fields)
@@ -2278,11 +2291,10 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
     lh = (pc.get("infl_likelihood") or "").strip()
     if not clean or _any(_INFL) or lh:
         sub_fn("Inflammatory Pain")
-        rep, den = _rd(_INFL)
-        rows = [["Features", rep, den]]
+        rows = _rd_rows("Features", _INFL)
         if lh or not clean:
             rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "Reports", "Denies"], rows))
+        emit_fn(*_md_table(["", "YES = Evidence for", "NO = Evidence against"], rows))
 
     # ── Nociceptive ───────────────────────────────────────────────────────────
     _NOCI_SX = [
@@ -2301,12 +2313,10 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
     interp = (pc.get("noci_interpretation") or "").strip()
     if not clean or _any(_NOCI_SX) or _any(_NOCI_EX) or lh:
         sub_fn("Nociceptive Pain")
-        sx_r, sx_d = _rd(_NOCI_SX)
-        ex_r, ex_d = _rd(_NOCI_EX)
-        rows = [["Subjective", sx_r, sx_d], ["Examination", ex_r, ex_d]]
+        rows = _rd_rows("Subjective", _NOCI_SX) + _rd_rows("Examination", _NOCI_EX)
         if lh or not clean:
             rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "Reports", "Denies"], rows))
+        emit_fn(*_md_table(["", "YES = Evidence for", "NO = Evidence against"], rows))
         if interp:
             emit_fn(f"*{interp}*")
 
@@ -2333,12 +2343,10 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
     interp = (pc.get("neuro_interpretation") or "").strip()
     if not clean or _any(_NEURO_SX) or _any(_NEURO_EX) or lh:
         sub_fn("Neuropathic Pain")
-        sx_r, sx_d = _rd(_NEURO_SX)
-        ex_r, ex_d = _rd(_NEURO_EX)
-        rows = [["Subjective", sx_r, sx_d], ["Examination", ex_r, ex_d]]
+        rows = _rd_rows("Subjective", _NEURO_SX) + _rd_rows("Examination", _NEURO_EX)
         if lh or not clean:
             rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "Reports", "Denies"], rows))
+        emit_fn(*_md_table(["", "YES = Evidence for", "NO = Evidence against"], rows))
         if interp:
             emit_fn(f"*{interp}*")
 
@@ -2368,12 +2376,10 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
     interp = (pc.get("nocip_interpretation") or "").strip()
     if not clean or _any(_NOCIP_SX) or _any(_NOCIP_EX) or lh:
         sub_fn("Nociplastic Pain")
-        sx_r, sx_d = _rd(_NOCIP_SX)
-        ex_r, ex_d = _rd(_NOCIP_EX)
-        rows = [["Subjective", sx_r, sx_d], ["Examination", ex_r, ex_d]]
+        rows = _rd_rows("Subjective", _NOCIP_SX) + _rd_rows("Examination", _NOCIP_EX)
         if lh or not clean:
             rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "Reports", "Denies"], rows))
+        emit_fn(*_md_table(["", "YES = Evidence for", "NO = Evidence against"], rows))
         if interp:
             emit_fn(f"*{interp}*")
 
@@ -2390,8 +2396,7 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
         sub_fn("Central Sensitisation")
         if csi or not clean:
             emit_fn(f"**CSI score:** {csi or '*(not entered)*'}")
-        cs_r, cs_d = _rd(_CS)
-        emit_fn(*_md_table(["Reports", "Denies"], [[cs_r, cs_d]]))
+        emit_fn(*_md_table(["YES = Evidence for", "NO = Evidence against"], [list(p) for p in _rd_pairs(_CS)]))
 
     # ── Fibromyalgia ──────────────────────────────────────────────────────────
     _FM_SC = [("WPI (0–19)","fm_wpi"),("Fatigue (0–3)","fm_fatigue"),
@@ -2406,13 +2411,11 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
         sub_fn("Fibromyalgia")
         rows = []
         if scores_ok or not clean:
-            parts = [f"{lbl}: {(pc.get(k) or '').strip() or '—'}" for lbl, k in _FM_SC]
-            rows.append(["Scores", " · ".join(parts), ""])
+            rows.extend(_score_rows("Scores", _FM_SC))
         if symp_ok or not clean:
-            sy_r, sy_d = _rd(_FM_SY)
-            rows.append(["Symptoms", sy_r, sy_d])
+            rows.extend(_rd_rows("Symptoms", _FM_SY))
         if rows:
-            emit_fn(*_md_table(["Aspect", "Reports / Score", "Denies"], rows))
+            emit_fn(*_md_table(["Aspect", "YES = Evidence for / Score", "NO = Evidence against"], rows))
         # ── FM interpretation ─────────────────────────────────────────────
         def _fm_int(s: str | None) -> int | None:
             v = (s or "").strip()
@@ -2472,10 +2475,9 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
             ("Nociplastic Features",      _BP_NO),
         ]:
             if _any(grp) or not clean:
-                rep, den = _rd(grp)
-                rows.append([row_lbl, rep, den])
+                rows.extend(_rd_rows(row_lbl, grp))
         if rows:
-            emit_fn(*_md_table(["Aspect", "Reports", "Denies"], rows))
+            emit_fn(*_md_table(["Aspect", "YES = Evidence for", "NO = Evidence against"], rows))
         if bp_notes:
             emit_fn(f"*Notes: {bp_notes}*")
 
