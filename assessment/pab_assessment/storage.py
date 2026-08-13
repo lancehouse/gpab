@@ -2259,15 +2259,82 @@ def _emit_yaml_subs_raw(section_key: str, section_data: dict, clean: bool,
             pass
 
 
+
+# Denied-item phrasing for Section 4 evidence-against columns. "No X" reads correctly
+# for bare noun/symptom labels ("No fatigue"); "Not X" (the default) fits adjective/
+# descriptor labels ("Not localised", "Not widespread/multifocal"). A few labels need
+# more than a prefix swap — double negatives ("Not constant" -> "Constant" when denied)
+# or threshold flips ("Symptoms ≥ 3 months" -> "Symptoms < 3 months") — those are
+# spelled out in full below.
+_PAIN_CLASS_NEG_OVERRIDES = {
+    "Constant pain":                              "No constant pain",
+    "Morning stiffness":                          "No morning stiffness",
+    "Night/sleep pain":                           "No night/sleep pain",
+    "Activity improves":                          "No improvement with activity",
+    "Trauma/incident":                            "No trauma/incident",
+    "Responds to analgesia":                      "No response to analgesia",
+    "Not constant":                                "Constant",
+    "Local inflammation":                         "No local inflammation",
+    "Recent onset":                                "No recent onset",
+    "Mechanical reproduction":                    "No mechanical reproduction",
+    "Palpation reproduction":                     "No palpation reproduction",
+    "Local hyperalgesia":                         "No local hyperalgesia",
+    "Antalgic posture":                           "No antalgic posture",
+    "Known nerve injury":                         "No known nerve injury",
+    "Neurological symptoms":                      "No neurological symptoms",
+    "Responds to neuropathic meds":               "No response to neuropathic meds",
+    "Dysaesthesia/allodynia":                     "No dysaesthesia/allodynia",
+    "Positive neurodynamic test":                 "Negative neurodynamic test",
+    "Neurology change":                           "No neurology change",
+    "Hyperalgesia in distribution":               "No hyperalgesia in distribution",
+    "Psychosocial contributors":                  "No psychosocial contributors",
+    "Responds to centrally-acting meds":          "No response to centrally-acting meds",
+    "Disturbed sleep/night pain":                 "No disturbed sleep/night pain",
+    "Dysaesthesia":                                "No dysaesthesia",
+    "Disproportionate exam findings":             "No disproportionate exam findings",
+    "Widespread hyperalgesia/allodynia":          "No widespread hyperalgesia/allodynia",
+    "Diffuse palpation tenderness":               "No diffuse palpation tenderness",
+    "Psychosocial features on exam":              "No psychosocial features on exam",
+    "Light sensitivity":                          "No light sensitivity",
+    "Touch sensitivity":                          "No touch sensitivity",
+    "Noise sensitivity":                          "No noise sensitivity",
+    "Chemical/smell sensitivity":                 "No chemical/smell sensitivity",
+    "Temperature sensitivity":                    "No temperature sensitivity",
+    "Fatigue":                                     "No fatigue",
+    "Sleep disturbance":                          "No sleep disturbance",
+    "Concentration difficulty":                   "No concentration difficulty",
+    "Perceived swelling":                         "No perceived swelling",
+    "Tingling":                                    "No tingling",
+    "Headaches":                                   "No headaches",
+    "IBS":                                         "No IBS",
+    "Depression":                                  "No depression",
+    "Symptoms ≥ 3 months":                        "Symptoms < 3 months",
+    "No alternative explanation":                 "Alternative explanation present",
+    "LBP ≥ 3 months":                              "LBP < 3 months",
+    "Static mechanical allodynia":                "No static mechanical allodynia",
+    "Dynamic mechanical allodynia":               "No dynamic mechanical allodynia",
+    "Heat or cold allodynia":                     "No heat or cold allodynia",
+    "Painful after-sensations":                   "No painful after-sensations",
+    "Hypersensitivity — touch":                   "No hypersensitivity — touch",
+    "Hypersensitivity — movement":                "No hypersensitivity — movement",
+    "Hypersensitivity — pressure":                "No hypersensitivity — pressure",
+    "Hypersensitivity — heat":                    "No hypersensitivity — heat",
+    "Hypersensitivity — cold":                    "No hypersensitivity — cold",
+}
+
+
 def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
     """Section 4 — Pain Classification in tabulated dev format (Reports / Denies columns)."""
+
+    def _neg(lbl: str) -> str:
+        return _PAIN_CLASS_NEG_OVERRIDES.get(lbl, f"Not {lbl}")
 
     def _rd_pairs(fields: list[tuple]) -> list[tuple[str, str]]:
         """One (report, deny) pair per row so each item lands on its own table line —
         Textual's MarkdownViewer has no raw-HTML support, so "<br>" is not an option; a
         dot-joined single cell is what was too dense in exported .md/.docx/EMR views."""
         rep = [lbl for lbl, key in fields if pc.get(key) is True]
-        den = [lbl for lbl, key in fields if pc.get(key) is False]
+        den = [_neg(lbl) for lbl, key in fields if pc.get(key) is False]
         if not rep and not den:
             return [("—", "—")]
         return list(zip_longest(rep or ["—"], den or ["—"], fillvalue=""))
@@ -2294,7 +2361,7 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
         rows = _rd_rows("Features", _INFL)
         if lh or not clean:
             rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "YES = Evidence for", "NO = Evidence against"], rows))
+        emit_fn(*_md_table(["", "Evidence for", "Evidence against"], rows))
 
     # ── Nociceptive ───────────────────────────────────────────────────────────
     _NOCI_SX = [
@@ -2316,7 +2383,7 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
         rows = _rd_rows("Subjective", _NOCI_SX) + _rd_rows("Examination", _NOCI_EX)
         if lh or not clean:
             rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "YES = Evidence for", "NO = Evidence against"], rows))
+        emit_fn(*_md_table(["", "Evidence for", "Evidence against"], rows))
         if interp:
             emit_fn(f"*{interp}*")
 
@@ -2346,7 +2413,7 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
         rows = _rd_rows("Subjective", _NEURO_SX) + _rd_rows("Examination", _NEURO_EX)
         if lh or not clean:
             rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "YES = Evidence for", "NO = Evidence against"], rows))
+        emit_fn(*_md_table(["", "Evidence for", "Evidence against"], rows))
         if interp:
             emit_fn(f"*{interp}*")
 
@@ -2379,7 +2446,7 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
         rows = _rd_rows("Subjective", _NOCIP_SX) + _rd_rows("Examination", _NOCIP_EX)
         if lh or not clean:
             rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "YES = Evidence for", "NO = Evidence against"], rows))
+        emit_fn(*_md_table(["", "Evidence for", "Evidence against"], rows))
         if interp:
             emit_fn(f"*{interp}*")
 
@@ -2396,7 +2463,7 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
         sub_fn("Central Sensitisation")
         if csi or not clean:
             emit_fn(f"**CSI score:** {csi or '*(not entered)*'}")
-        emit_fn(*_md_table(["YES = Evidence for", "NO = Evidence against"], [list(p) for p in _rd_pairs(_CS)]))
+        emit_fn(*_md_table(["Evidence for", "Evidence against"], [list(p) for p in _rd_pairs(_CS)]))
 
     # ── Fibromyalgia ──────────────────────────────────────────────────────────
     _FM_SC = [("WPI (0–19)","fm_wpi"),("Fatigue (0–3)","fm_fatigue"),
@@ -2415,7 +2482,7 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
         if symp_ok or not clean:
             rows.extend(_rd_rows("Symptoms", _FM_SY))
         if rows:
-            emit_fn(*_md_table(["Aspect", "YES = Evidence for / Score", "NO = Evidence against"], rows))
+            emit_fn(*_md_table(["Aspect", "Evidence for / Score", "Evidence against"], rows))
         # ── FM interpretation ─────────────────────────────────────────────
         def _fm_int(s: str | None) -> int | None:
             v = (s or "").strip()
@@ -2477,7 +2544,7 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
             if _any(grp) or not clean:
                 rows.extend(_rd_rows(row_lbl, grp))
         if rows:
-            emit_fn(*_md_table(["Aspect", "YES = Evidence for", "NO = Evidence against"], rows))
+            emit_fn(*_md_table(["Aspect", "Evidence for", "Evidence against"], rows))
         if bp_notes:
             emit_fn(f"*Notes: {bp_notes}*")
 
@@ -2761,8 +2828,6 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     sub("Behaviour of Symptoms")
     txt("aggravating_factors",     s)
     txt("easing_factors",          s)
-    f("mood_influences",           s)
-    txt("mood_text",               s)
     txt("daily_pattern_comments",  s)
     txt("hr24_am",                 s)
     txt("hr24_day",                s)
@@ -2770,6 +2835,8 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     txt("hr24_nocte",              s)
 
     sub("Psychosocial")
+    f("mood_influences",           s)
+    txt("mood_text",               s)
     txt("social_situation",        s)
     txt("financial_status",        s)
     txt("cultural_considerations", s)
@@ -2803,9 +2870,9 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
             val = d.get(key)
             if val is None:
                 continue
-            rows.append([lbl, "Present" if val is True else "Absent"])
+            rows.append([lbl if val is True else f"{lbl} — Absent"])
         if rows:
-            _emit(*_md_table(["Factor", "Status"], rows))
+            _emit(*_md_table(["Factor"], rows))
             _emit("")
 
     def _rf_md(name: str, flags: list, d: dict, action_key: str = None) -> None:
@@ -3460,7 +3527,8 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
 
     # ── clean-mode barrier helper (md) ───────────────────────────────────
     def _barrier_md(prefix: str, items: list, d: dict) -> None:
-        """Render assessed barriers as a markdown table (Present / Absent rows)."""
+        """Render assessed barriers as a markdown table — selected implies present;
+        only an explicit 'No' on the widget shows as Absent."""
         rows = []
         for label, key, sub_items in items:
             val = d.get(key)
@@ -3474,12 +3542,12 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
                         sub_parts.append(sub_label)
                     elif isinstance(sv, str) and sv.strip():
                         sub_parts.append(sv.strip())
-                status = "Present" + (f" ({', '.join(sub_parts)})" if sub_parts else "")
+                entry = label + (f" ({', '.join(sub_parts)})" if sub_parts else "")
             else:
-                status = "Absent"
-            rows.append([label, status])
+                entry = f"{label} — Absent"
+            rows.append([entry])
         if rows:
-            _emit(*_md_table(["Barrier", "Status"], rows))
+            _emit(*_md_table(["Barrier"], rows))
             _emit("")
 
     _NOCI_B = [
@@ -4523,8 +4591,6 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     sub("Behaviour of Symptoms")
     txt("aggravating_factors",    s)
     txt("easing_factors",         s)
-    f("mood_influences",          s)
-    txt("mood_text",              s)
     txt("daily_pattern_comments", s)
     txt("hr24_am",                s)
     txt("hr24_day",               s)
@@ -4532,6 +4598,8 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     txt("hr24_nocte",             s)
 
     sub("Psychosocial")
+    f("mood_influences",          s)
+    txt("mood_text",              s)
     txt("social_situation",       s)
     txt("financial_status",       s)
     txt("cultural_considerations", s)
