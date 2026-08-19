@@ -14,11 +14,12 @@ from dataclasses import dataclass
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, Static
 
 from .field_dictionary_active import ROM_FIELDS
+from .field_dictionary_passive import ROM_FIELDS as PASSIVE_ROM_FIELDS
 from .matcher import GroupedValue, MatchResult, group_resolved
 from .rom_field import RomField
 
@@ -38,29 +39,32 @@ class _Row:
 
 
 class FieldPickerModal(ModalScreen[tuple[RomField, str | None] | str | None]):
-    """Small candidate-list picker for fixing one unresolved row. Dismisses with
-    either a (field, side) tuple, a raw field-id override string, or None (cancelled).
+    """Candidate picker for fixing one unresolved row. Dismisses with either a
+    (field, side) tuple, a raw field-id override string, or None (cancelled).
 
-    Candidates are real clickable Buttons, not digit-key bindings — an
-    earlier digit-binding design conflicted with the override Input (a
-    focused Input eats keypresses as typed characters at the raw key-event
-    layer, before the binding/action system ever runs, so priority=True
-    bindings never fired while it had focus; working around that by starting
-    with no widget focused meant the Input silently didn't respond unless you
-    already knew to press a special key first — confusing in real use).
-    Buttons sidestep the whole conflict: they work by click regardless of
-    what has focus, and the Input can just stay normally focusable so typing
-    into it works immediately, no extra step needed.
+    Bilateral candidates are expanded into two options up front — "Movement —
+    Left" / "Movement — Right" — so picking one is a single tap or keypress,
+    never a second side-picking step. (Older design chained into a separate
+    SidePickerModal for the side; removed once every bilateral option here
+    already carries its side.)
+
+    Options are real clickable Buttons AND have digit hotkeys (1-9, matching
+    on-screen order). An earlier digit-binding attempt was confusing because
+    #override_input had default focus and Input widgets consume every
+    keystroke — including digits — before any Screen-level binding runs, so
+    the bindings silently never fired. Fix: nothing is auto-focused here
+    (Textual falls back to the first focusable widget, one of the option
+    Buttons), so digit bindings fire immediately; Tab/click into the override
+    Input still works for typing an override, and once it has focus digits
+    correctly resume being typed instead of picking — you're no longer
+    picking a candidate at that point. Buttons remain fully clickable
+    regardless, so mouse/touch is an unconditional fallback either way.
     """
 
-    # Explicit selector, not Textual's default "*" (first focusable widget in
-    # document order) — the candidate Buttons come first in compose(), so the
-    # default would auto-focus a Button instead of the Input, silently eating
-    # typed characters again (same failure shape as the original bug, just
-    # relocated). Targeting the Input by id sidesteps composition order entirely.
-    AUTO_FOCUS = "#override_input"
-
-    BINDINGS = [Binding("escape", "cancel", "Cancel", show=True, priority=True)]
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel", show=True, priority=True),
+        *[Binding(str(n), f"pick_hotkey({n})", show=False, priority=True) for n in range(1, 10)],
+    ]
 
     DEFAULT_CSS = """
     FieldPickerModal { align: center middle; background: $background 60%; }
@@ -77,70 +81,48 @@ class FieldPickerModal(ModalScreen[tuple[RomField, str | None] | str | None]):
         super().__init__(**kwargs)
         self._label = label
         self._candidates = candidates
+        # Flat, ordered (field, side) options as rendered — index+1 is the
+        # option's digit hotkey; button ids are just its position ("opt_0", …).
+        self._options: list[tuple[RomField, str | None]] = []
+        for f in candidates:
+            if f.bilateral:
+                self._options.append((f, "l"))
+                self._options.append((f, "r"))
+            else:
+                self._options.append((f, None))
 
     def compose(self) -> ComposeResult:
         with Container(id="picker_box"):
-            yield Static(f'"{self._label}" — pick a field, or type an override below:')
-            for i, f in enumerate(self._candidates):
-                side_hint = " (choose side next)" if f.bilateral else ""
-                yield Button(
-                    f"{f.region.capitalize()} {f.movement}{side_hint}",
-                    id=f"cand_{i}",
-                )
+            yield Static(f'"{self._label}" — pick a field (1-{len(self._options)}), or type an override below:')
+            for i, (f, side) in enumerate(self._options):
+                side_label = " — Left" if side == "l" else " — Right" if side == "r" else ""
+                yield Button(f"{i + 1} · {f.region.capitalize()} {f.movement}{side_label}", id=f"opt_{i}")
             yield Input(placeholder="or type a field id override, then Enter", id="override_input")
 
     @on(Button.Pressed)
-    def _on_candidate_pressed(self, event: Button.Pressed) -> None:
+    def _on_option_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id or ""
-        if not button_id.startswith("cand_"):
+        if not button_id.startswith("opt_"):
             return
-        i = int(button_id.removeprefix("cand_"))
-        chosen = self._candidates[i]
-        # Always dismiss with (field, None) — the caller (GonioImportWizard)
-        # chains to SidePickerModal itself when the field turns out to need a
-        # side. Keeping that chaining in one place avoids two competing
-        # nested-modal paths trying to resolve the same pick.
-        self.dismiss((chosen, None))
+        self._pick(int(button_id.removeprefix("opt_")))
+
+    def action_pick_hotkey(self, n: int) -> None:
+        # Ignored while the override Input has focus — see class docstring.
+        if self.focused is not None and self.focused.id == "override_input":
+            return
+        i = n - 1
+        if 0 <= i < len(self._options):
+            self._pick(i)
+
+    def _pick(self, i: int) -> None:
+        field, side = self._options[i]
+        self.dismiss((field, side))
 
     @on(Input.Submitted, "#override_input")
     def _on_override(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         if text:
             self.dismiss(text)
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-
-class SidePickerModal(ModalScreen[tuple[RomField, str] | None]):
-    """Tiny L/R picker, chained after FieldPickerModal for bilateral fields."""
-
-    BINDINGS = [Binding("escape", "cancel", "Cancel", show=True, priority=True)]
-
-    DEFAULT_CSS = """
-    SidePickerModal { align: center middle; background: $background 60%; }
-    #side_box { width: 40; height: auto; background: $surface; border: solid $primary; padding: 1 2; }
-    #side_box Button { width: 1fr; margin: 0 1; }
-    """
-
-    def __init__(self, rom_field: RomField, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self._field = rom_field
-
-    def compose(self) -> ComposeResult:
-        with Container(id="side_box"):
-            yield Static(f"{self._field.region.capitalize()} {self._field.movement} — which side?")
-            with Horizontal():
-                yield Button("Left", id="pick_left")
-                yield Button("Right", id="pick_right")
-
-    @on(Button.Pressed, "#pick_left")
-    def _pick_left(self) -> None:
-        self.dismiss((self._field, "l"))
-
-    @on(Button.Pressed, "#pick_right")
-    def _pick_right(self) -> None:
-        self.dismiss((self._field, "r"))
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -191,7 +173,7 @@ class GonioImportWizard(ModalScreen[list[GroupedValue] | None]):
 
     def on_mount(self) -> None:
         table = self.query_one("#wizard_table", DataTable)
-        table.add_columns("", "Measurement", "→ Field", "Value")
+        table.add_columns("", "Mode", "Measurement", "→ Field", "Value")
         self._refresh_table()
         table.focus()
 
@@ -200,6 +182,7 @@ class GonioImportWizard(ModalScreen[list[GroupedValue] | None]):
         table.clear()
         for row in self._rows:
             icon = "✓" if row.resolved else "⚠"
+            mode = row.result.measurement.rom_type
             if row.resolved:
                 assert row.field is not None
                 side = _SIDE_LABEL[row.side]
@@ -207,7 +190,7 @@ class GonioImportWizard(ModalScreen[list[GroupedValue] | None]):
             else:
                 target = "— needs review —"
             value = f"{round(row.result.measurement.primary_range_deg)}°"
-            table.add_row(icon, row.result.measurement.label or "(no label)", target, value)
+            table.add_row(icon, mode, row.result.measurement.label or "(no label)", target, value)
 
     def action_fix_row(self) -> None:
         table = self.query_one("#wizard_table", DataTable)
@@ -225,16 +208,10 @@ class GonioImportWizard(ModalScreen[list[GroupedValue] | None]):
                 # Free-text override: treat as a literal field id, bypass the dictionary.
                 self._apply_override(idx, picked)
             elif isinstance(picked, tuple) and len(picked) == 2:
+                # FieldPickerModal already expands bilateral candidates into
+                # separate Left/Right options, so side is always resolved here.
                 field, side = picked
-                if field.bilateral and side is None:
-                    # Needs a follow-up side pick.
-                    def _after_side(side_result) -> None:
-                        if side_result is not None:
-                            f2, s2 = side_result
-                            self._set_row_field(idx, f2, s2)
-                    self.app.push_screen(SidePickerModal(field), _after_side)
-                else:
-                    self._set_row_field(idx, field, side)
+                self._set_row_field(idx, field, side)
 
         self.app.push_screen(
             FieldPickerModal(row.result.measurement.label, [c.field for c in row.result.candidates]),
@@ -275,15 +252,21 @@ class GonioImportWizard(ModalScreen[list[GroupedValue] | None]):
             row = self._rows[idx]
             if not row.included:
                 continue
-            from .field_dictionary_active import SECTION_KEY
-            # Best-effort region guess from the field id prefix's region tables;
-            # fall back to "shoulder" only as a last resort — flagged clearly
-            # in the display label so a wrong guess is obvious, not silent.
-            region_guess = next((f.region for f in ROM_FIELDS if field_id.startswith(f.region[:2])), "unknown")
+            # Best-effort region guess from the field id prefix's region tables
+            # (both dictionaries — an override on a PROM row should still
+            # guess correctly); falls back to "unknown" as a last resort,
+            # flagged clearly in the display label so a wrong guess is
+            # obvious, not silent.
+            region_guess = next(
+                (f.region for f in ROM_FIELDS + PASSIVE_ROM_FIELDS if field_id.startswith(f.region[:2])),
+                "unknown",
+            )
             grouped.append(GroupedValue(
                 field_id=field_id,
                 region=region_guess,
-                section_key=SECTION_KEY,
+                # The row's own AROM/PROM section — an override on a PROM
+                # measurement should land in "passive", not always "active".
+                section_key=row.result.section_key,
                 display_label=f"(override) {field_id}",
                 joined_value=str(round(row.result.measurement.primary_range_deg)),
                 source_indices=[row.result.measurement.index],

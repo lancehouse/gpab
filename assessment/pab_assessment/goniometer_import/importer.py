@@ -49,7 +49,10 @@ def load_gonio_measurements(path: Path) -> tuple[str, list[Measurement]]:
         ranges = m.get("ranges", [])
         primary_idx = m.get("primary_channel_index", 0)
         primary = ranges[primary_idx] if 0 <= primary_idx < len(ranges) else 0.0
-        measurements.append(Measurement(i, label, float(primary)))
+        rom_type = str(m.get("rom_type") or "AROM").upper()
+        if rom_type not in ("AROM", "PROM"):
+            rom_type = "AROM"  # missing on pre-toggle files, or anything unexpected
+        measurements.append(Measurement(i, label, float(primary), rom_type))
     return data.get("patient_code", ""), measurements
 
 

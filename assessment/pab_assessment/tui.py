@@ -785,7 +785,8 @@ class PhysioAssessmentTUI(Container):
     def action_import_gonio(self) -> None:
         """Ctrl+G — import goniometer ROM measurements for the open patient from
         ~/PAB/_inbox/goniometer/<code>/, via a fast review wizard, into the
-        matching Active ROM fields (see goniometer_import/). If nothing new is
+        matching AROM or PROM fields per each measurement's phone-set mode
+        (see goniometer_import/). If nothing new is
         pending, falls back to the most recently imported file so a mistake
         spotted after Apply (wrong field/side/angle) can be fixed by re-running
         the wizard and re-applying — safe, since Apply just overwrites the same

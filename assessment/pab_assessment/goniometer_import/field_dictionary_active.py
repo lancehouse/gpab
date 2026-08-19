@@ -1,6 +1,6 @@
-"""Active ROM field dictionary for goniometer import — the DEFAULT target.
-Only switches to field_dictionary_passive.py's fields when the spoken label
-explicitly says "passive" (see matcher.py).
+"""Active ROM field dictionary for goniometer import — matcher.py picks this
+dictionary for any measurement whose Measurement.rom_type is "AROM" (the
+phone app's default). See field_dictionary_passive.py for the "PROM" case.
 
 Extracted from objective/sections/yaml/<region>.yaml's `active_movement.groups`
 — NOT guessed. Each row's actual stored value is the "Ax" (assessment) column

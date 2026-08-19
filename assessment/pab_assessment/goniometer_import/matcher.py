@@ -9,19 +9,22 @@ item resolved unambiguously). A field/side that can't be determined is left
 unresolved rather than guessed — see field_dictionary_active.py's docstring
 for why only ROM (not strength/accessory/PAIVM) fields are even candidates.
 
-Defaults to field_dictionary_active.py's Active-ROM fields (Ax column) —
-that's the everyday target. field_dictionary_passive.py exists for a later
-phase where a label explicitly says "passive" (e.g. "Passive shoulder
-internal rotation"); pass fields=PASSIVE_ROM_FIELDS/section_key="passive"
-to opt into it once that detection is built. Not wired up automatically yet.
+AROM vs PROM is per-measurement, driven by Measurement.rom_type — set by the
+phone app's explicit top-row toggle at capture time (see SessionState.kt's
+RomType), not inferred from the label text. "AROM" matches against
+field_dictionary_active.py, "PROM" against field_dictionary_passive.py; each
+measurement in a batch is matched against its own dictionary independently,
+so one batch can freely mix both.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field as dataclass_field
 
-from .field_dictionary_active import ROM_FIELDS as _DEFAULT_FIELDS
-from .field_dictionary_active import SECTION_KEY as _DEFAULT_SECTION_KEY
+from .field_dictionary_active import ROM_FIELDS as _ACTIVE_FIELDS
+from .field_dictionary_active import SECTION_KEY as _ACTIVE_SECTION_KEY
+from .field_dictionary_passive import ROM_FIELDS as _PASSIVE_FIELDS
+from .field_dictionary_passive import SECTION_KEY as _PASSIVE_SECTION_KEY
 from .rom_field import RomField
 
 _SIDE_WORDS = {
@@ -36,6 +39,7 @@ class Measurement:
     index: int
     label: str
     primary_range_deg: float
+    rom_type: str = "AROM"  # "AROM" or "PROM" — see importer.load_gonio_measurements
 
 
 @dataclass
@@ -51,6 +55,7 @@ class MatchResult:
     side: str | None = None  # 'l' / 'r' / None
     side_inferred: bool = False
     candidates: list[MatchCandidate] = dataclass_field(default_factory=list)
+    section_key: str = _ACTIVE_SECTION_KEY  # which dictionary this was matched against (measurement.rom_type)
 
     @property
     def resolved(self) -> bool:
@@ -98,36 +103,40 @@ def _candidates_for(label_lower: str, fields: list[RomField], limit: int = 3) ->
     return scored[:limit]
 
 
-def match_batch(measurements: list[Measurement], fields: list[RomField] | None = None) -> list[MatchResult]:
+def match_batch(measurements: list[Measurement]) -> list[MatchResult]:
     """Matches every measurement, in order, inferring omitted sides from
-    earlier measurements of the SAME field within this same batch (not
-    globally) — so alternating movements don't cross-contaminate side state.
-    Defaults to the Active-ROM dictionary; pass fields=PASSIVE_ROM_FIELDS to
-    match against Passive/OP instead.
+    earlier measurements of the SAME field *within the same AROM/PROM
+    section* of this same batch (not globally) — so alternating movements
+    don't cross-contaminate side state, and an AROM side never leaks into a
+    PROM inference of the same movement or vice versa. Each measurement is
+    matched against its own dictionary per measurement.rom_type.
     """
-    if fields is None:
-        fields = _DEFAULT_FIELDS
     results: list[MatchResult] = []
-    last_side_by_field: dict[str, str] = {}  # field_prefix -> 'l'/'r'
+    last_side_by_field: dict[tuple[str, str], str] = {}  # (section_key, field_prefix) -> 'l'/'r'
 
     for m in measurements:
+        passive = m.rom_type.upper() == "PROM"
+        fields = _PASSIVE_FIELDS if passive else _ACTIVE_FIELDS
+        section_key = _PASSIVE_SECTION_KEY if passive else _ACTIVE_SECTION_KEY
+
         label_lower = m.label.lower()
         candidates = _candidates_for(label_lower, fields)
         best = candidates[0] if candidates and candidates[0].score > 0 else None
 
-        result = MatchResult(measurement=m, candidates=candidates)
+        result = MatchResult(measurement=m, candidates=candidates, section_key=section_key)
 
         if best is not None:
             result.field = best.field
             stated_side = _detect_side(label_lower)
+            side_key = (section_key, best.field.field_prefix)
 
             if not best.field.bilateral:
                 result.side = None
             elif stated_side is not None:
                 result.side = stated_side
-                last_side_by_field[best.field.field_prefix] = stated_side
+                last_side_by_field[side_key] = stated_side
             else:
-                inferred = last_side_by_field.get(best.field.field_prefix)
+                inferred = last_side_by_field.get(side_key)
                 if inferred is not None:
                     result.side = inferred
                     result.side_inferred = True
@@ -148,29 +157,31 @@ class GroupedValue:
     source_indices: list[int]  # measurement indices contributing, chronological
 
 
-def group_resolved(results: list[MatchResult], section_key: str | None = None) -> list[GroupedValue]:
-    """Groups every RESOLVED result by field_id, joining repeats chronologically
-    as whole-number degrees with ' // ' — pab's own findings-field convention.
-    Unresolved results are the wizard's job, not this function's.
+def group_resolved(results: list[MatchResult]) -> list[GroupedValue]:
+    """Groups every RESOLVED result by (section_key, field_id), joining
+    repeats chronologically as whole-number degrees with ' // ' — pab's own
+    findings-field convention. Keying by section_key too (not just field_id)
+    keeps an AROM and PROM measurement of the same movement from ever
+    merging into one group, even though their field_ids already differ in
+    practice (different id templates per dictionary). Unresolved results are
+    the wizard's job, not this function's.
     """
-    if section_key is None:
-        section_key = _DEFAULT_SECTION_KEY
-
-    buckets: dict[str, list[MatchResult]] = {}
-    order: list[str] = []
+    buckets: dict[tuple[str, str], list[MatchResult]] = {}
+    order: list[tuple[str, str]] = []
     for r in results:
         if not r.resolved:
             continue
         fid = r.field_id()
         assert fid is not None
-        if fid not in buckets:
-            buckets[fid] = []
-            order.append(fid)
-        buckets[fid].append(r)
+        key = (r.section_key, fid)
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(r)
 
     grouped: list[GroupedValue] = []
-    for fid in order:
-        items = buckets[fid]
+    for section_key, fid in order:
+        items = buckets[(section_key, fid)]
         items.sort(key=lambda r: r.measurement.index)
         values = [str(round(r.measurement.primary_range_deg)) for r in items]
         first = items[0]

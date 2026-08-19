@@ -1,6 +1,7 @@
-"""Passive/OP ROM field dictionary for goniometer import — used only when the
-spoken label explicitly says "passive" (see matcher.py). Everyday default is
-field_dictionary_active.py instead.
+"""Passive/OP ROM field dictionary for goniometer import — matcher.py picks
+this dictionary for any measurement whose Measurement.rom_type is "PROM"
+(set by the phone app's top-row AROM/PROM toggle, not spoken text). Everyday
+default is field_dictionary_active.py ("AROM") instead.
 
 Extracted directly from the *_tables.py OP (overpressure/passive ROM) row
 definitions in objective/sections/ — NOT guessed. Only OP rows are included
