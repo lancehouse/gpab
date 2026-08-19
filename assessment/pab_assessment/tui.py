@@ -38,6 +38,9 @@ from .storage import (
     save_raw_report, save_clean_reports, save_docx_report,
 )
 from .assessment_view import AssessmentView, NotesOverlay
+from .goniometer_import import importer as gonio_importer
+from .goniometer_import.matcher import match_batch
+from .goniometer_import.wizard_screen import GonioImportWizard
 
 
 
@@ -461,11 +464,16 @@ class PhysioAssessmentTUI(Container):
         Binding("ctrl+s", "save",          "Save",       show=True),
         Binding("ctrl+u", "reload_chart",  "Reload Chart", show=True),
 
-        Binding("ctrl+g", "toggle_grid",    "Overview",   show=True,  priority=True),
+        Binding("ctrl+t", "toggle_grid",    "Overview",   show=True,  priority=True),
         Binding("ctrl+r", "view_report",     "Report",     show=True,  priority=True),
         Binding("ctrl+n", "toggle_notes",  "Notes",      show=True,  priority=True),
         Binding("ctrl+k", "toggle_kb",     "KB",         show=True,  priority=True),
         Binding("ctrl+f", "search",        "Search",     show=True,  priority=True),
+        # Was ctrl+o — that's the classic termios VDISCARD special character
+        # and can get swallowed by the kernel tty driver before an app ever
+        # sees it, depending on how raw mode is configured. ctrl+g ("Gonio")
+        # isn't one of the reserved special characters.
+        Binding("ctrl+g", "import_gonio",  "Import ROM", show=True,  priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -773,6 +781,72 @@ class PhysioAssessmentTUI(Container):
                 self._show_status(f"Report error: {e}")
 
         asyncio.create_task(_save_then_show())
+
+    def action_import_gonio(self) -> None:
+        """Ctrl+G — import goniometer ROM measurements for the open patient from
+        ~/PAB/_inbox/goniometer/<code>/, via a fast review wizard, into the
+        matching Active ROM fields (see goniometer_import/). If nothing new is
+        pending, falls back to the most recently imported file so a mistake
+        spotted after Apply (wrong field/side/angle) can be fixed by re-running
+        the wizard and re-applying — safe, since Apply just overwrites the same
+        field(s) again rather than appending."""
+        if not self.current_session_file:
+            self._show_status("No session loaded")
+            return
+
+        header = self.query_one("#session_header", SessionHeader)
+        patient_code = header.patient_id.strip()
+        if not patient_code:
+            self._show_status("No patient code on this session")
+            return
+
+        files = gonio_importer.inbox_files_for(patient_code)
+        reimporting = False
+        if not files:
+            files = gonio_importer.imported_files_for(patient_code)[:1]  # most recent only
+            reimporting = True
+        if not files:
+            self._show_status(f"No goniometer data waiting for {patient_code}")
+            return
+
+        # Combine every pending file for this patient into one review pass —
+        # grouping/side-inference then spans the whole visit even if the
+        # phone sent it in more than one batch.
+        combined = []
+        offset = 0
+        for f in files:
+            _, measurements = gonio_importer.load_gonio_measurements(f)
+            for m in measurements:
+                m.index += offset
+            combined.extend(measurements)
+            offset += len(measurements)
+
+        if not combined:
+            self._show_status(f"Goniometer file(s) for {patient_code} had no measurements")
+            return
+
+        results = match_batch(combined)
+
+        def _after_wizard(grouped) -> None:
+            if not grouped:
+                return  # cancelled — nothing written, files stay where they were
+            sf = self.current_session_file
+            gonio_importer.apply_grouped_values(sf, grouped)
+            for f in files:
+                gonio_importer.archive_imported_file(f)
+            verb = "Re-imported" if reimporting else "Imported"
+            self._show_status(f"{verb} {len(grouped)} ROM field(s) for {patient_code}")
+            # Reload everything from disk so the new values show immediately,
+            # same path used for a session switch.
+            try:
+                full_data = json.loads(Path(sf).read_text())
+            except Exception as e:
+                logger.error(f"import_gonio: failed to reload session after apply: {e}")
+                return
+            assessment_view = self.query_one("#assessment_view", AssessmentView)
+            assessment_view.load_session(sf, full_data)
+
+        self.app.push_screen(GonioImportWizard(results), _after_wizard)
 
     def action_toggle_notes(self) -> None:
         """Ctrl+N — toggle the bottom notes overlay."""
