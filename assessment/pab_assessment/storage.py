@@ -384,6 +384,41 @@ def _raw_table(headers: list, rows: list) -> list:
     return [_fmt(headers), divider] + [_fmt(r) for r in rows]
 
 
+# All body-region ids ever used as a top-level key under assessment[region_id]
+# — duplicated here rather than imported from objective/sections/ because
+# storage.py must stay free of UI imports (CLAUDE.md: "No UI logic in
+# storage"). Used only for defensive inclusion in _merged_region_data below;
+# if a new region is added and this list isn't updated, the worst case is
+# that region's report inclusion falls back to being active_regions-gated
+# only (the old behavior), not a new failure mode.
+_KNOWN_REGION_IDS = ("shoulder", "lumbar", "cervical", "hip", "knee", "ankle")
+
+
+def _merged_region_data(obj: dict, active_regions) -> tuple[dict, dict, dict, dict]:
+    """Merges active/passive/muscle/special dicts across every region that's
+    either currently active OR simply has data recorded under it.
+
+    Data-purity fix: a region toggled off in the UI *after* data was entered
+    (or never marked active for some other reason) must not make that data
+    silently vanish from every report output — previously this only walked
+    obj.get("active_regions", []), so a deactivated-but-populated region's
+    entire ROM table (not just one field) disappeared from every report with
+    no indication anything was omitted.
+    """
+    region_ids = set(active_regions or []) | (set(_KNOWN_REGION_IDS) & set(obj.keys()))
+    act: dict = {}
+    pas: dict = {}
+    mus: dict = {}
+    spl: dict = {}
+    for rid in region_ids:
+        rdata = obj.get(rid, {}) or {}
+        act.update(rdata.get("active", {}) or {})
+        pas.update(rdata.get("passive", {}) or {})
+        mus.update(rdata.get("muscle", {}) or {})
+        spl.update(rdata.get("special", {}) or {})
+    return act, pas, mus, spl
+
+
 def _render_objective_md(obj: dict, clean: bool = False) -> list:
     """Render all objective sections as Markdown.
 
@@ -401,13 +436,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
     # Support both old flat schema and new region-based schema
     active_regions = obj.get("active_regions")
     if active_regions is not None:
-        act = {}; pas = {}; mus = {}; spl = {}
-        for _rid in active_regions:
-            _rdata = obj.get(_rid, {}) or {}
-            act.update(_rdata.get("active",  {}) or {})
-            pas.update(_rdata.get("passive", {}) or {})
-            mus.update(_rdata.get("muscle",  {}) or {})
-            spl.update(_rdata.get("special", {}) or {})
+        act, pas, mus, spl = _merged_region_data(obj, active_regions)
     else:
         act  = obj.get("active",  {}) or {}
         pas  = obj.get("passive", {}) or {}
@@ -443,7 +472,19 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
 
     def _maybe_note(sl: list, lbl: str, v: str) -> None:
         if v:
-            sl.append(f"{lbl}: {v}")
+            # Data-purity fix: embedded "\n"s used to be joined straight into
+            # the output list, which CommonMark then renders as a *soft*
+            # break (collapses to a space) — a clinician's multi-paragraph
+            # note visually merged into one run-on paragraph in every
+            # Markdown/docx report, in both clean and full mode. Each line
+            # but the last now gets the standard Markdown hard-break marker
+            # (two trailing spaces) so the line breaks the practitioner
+            # actually typed survive rendering.
+            note_lines = v.split("\n")
+            last = len(note_lines) - 1
+            sl.append(f"{lbl}: {note_lines[0]}" + ("  " if last > 0 else ""))
+            for i, extra in enumerate(note_lines[1:], start=1):
+                sl.append(extra + ("" if i == last else "  "))
             if clean:
                 sl.append("")
         elif not clean:
@@ -493,13 +534,13 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                     v   = act.get(f"{p}_{s}_range", "") or ""
                     txt = f"{v}°" if v else "—"
                     return txt
-                ax_l = _cell(prefix, "ax_l"); reax_l = _cell(prefix, "reax_l")
+                ax_l = _cell(prefix, "ax_l")
                 if bilateral:
-                    tbl_rows.append([label, ax_l, "—", reax_l, "—"])
+                    tbl_rows.append([label, ax_l, "—"])
                 else:
-                    ax_r = _cell(prefix, "ax_r"); reax_r = _cell(prefix, "reax_r")
-                    tbl_rows.append([label, ax_l, ax_r, reax_l, reax_r])
-            _maybe_table(sl, title, ["", "Ax L", "Ax R", "ReAx L", "ReAx R"], tbl_rows)
+                    ax_r = _cell(prefix, "ax_r")
+                    tbl_rows.append([label, ax_l, ax_r])
+            _maybe_table(sl, title, ["", "Ax L", "Ax R"], tbl_rows)
         for key, lbl in [("am_lx_notes","*Lumbar notes*"),("am_tx_notes","*Thoracic notes*")]:
             _maybe_note(sl, lbl, act.get(key, "").strip())
         if any(k.startswith("cx_") or k.startswith("tx_cx_") for k in act):
@@ -515,13 +556,12 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             ]:
                 cx_tbl = []
                 for cx_lbl, cx_pfx, cx_bil in cx_rows_def:
-                    ax_l = _cx_cell(cx_pfx,"ax_l"); reax_l = _cx_cell(cx_pfx,"reax_l")
+                    ax_l = _cx_cell(cx_pfx,"ax_l")
                     if cx_bil:
-                        cx_tbl.append([cx_lbl, ax_l, "—", reax_l, "—"])
+                        cx_tbl.append([cx_lbl, ax_l, "—"])
                     else:
-                        cx_tbl.append([cx_lbl, ax_l, _cx_cell(cx_pfx,"ax_r"),
-                                       reax_l, _cx_cell(cx_pfx,"reax_r")])
-                _maybe_table(sl, cx_title, ["","Ax L","Ax R","ReAx L","ReAx R"], cx_tbl)
+                        cx_tbl.append([cx_lbl, ax_l, _cx_cell(cx_pfx,"ax_r")])
+                _maybe_table(sl, cx_title, ["","Ax L","Ax R"], cx_tbl)
             for key, lbl in [("am_cx_notes","*Cervical notes*"),
                               ("am_tx_cx_notes","*Thoracic (Cx) notes*")]:
                 _maybe_note(sl, lbl, act.get(key, "").strip())
@@ -534,21 +574,19 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                           ("Abduction","sh_abd"),("Int Rotation","sh_ir"),
                           ("Ext Rotation","sh_er"),("Horiz Add","sh_hadd"),
                           ("Hand Bk Back","sh_hbb")]
-            sh_tbl = [[lbl, _sh_cell(p,"ax_l"), _sh_cell(p,"ax_r"),
-                            _sh_cell(p,"reax_l"), _sh_cell(p,"reax_r")]
+            sh_tbl = [[lbl, _sh_cell(p,"ax_l"), _sh_cell(p,"ax_r")]
                       for lbl, p in sh_rom_def]
-            _maybe_table(sl, "Shoulder ROM", ["","Ax L","Ax R","ReAx L","ReAx R"], sh_tbl)
+            _maybe_table(sl, "Shoulder ROM", ["","Ax L","Ax R"], sh_tbl)
             tx_sh_def = [("Flexion","tx_sh_flex",True),("Extension","tx_sh_ext",True),
                          ("Rotation","tx_sh_rot",False)]
             tx_sh_tbl = []
             for sh_lbl, sh_pfx, sh_bil in tx_sh_def:
-                ax_l = _sh_cell(sh_pfx,"ax_l"); reax_l = _sh_cell(sh_pfx,"reax_l")
+                ax_l = _sh_cell(sh_pfx,"ax_l")
                 if sh_bil:
-                    tx_sh_tbl.append([sh_lbl, ax_l, "—", reax_l, "—"])
+                    tx_sh_tbl.append([sh_lbl, ax_l, "—"])
                 else:
-                    tx_sh_tbl.append([sh_lbl, ax_l, _sh_cell(sh_pfx,"ax_r"),
-                                      reax_l, _sh_cell(sh_pfx,"reax_r")])
-            _maybe_table(sl, "Thoracic ROM (Sh)", ["","Ax L","Ax R","ReAx L","ReAx R"], tx_sh_tbl)
+                    tx_sh_tbl.append([sh_lbl, ax_l, _sh_cell(sh_pfx,"ax_r")])
+            _maybe_table(sl, "Thoracic ROM (Sh)", ["","Ax L","Ax R"], tx_sh_tbl)
             for key, lbl in [("am_sh_notes","*Shoulder notes*"),
                               ("am_tx_sh_notes","*Thoracic (Sh) notes*")]:
                 _maybe_note(sl, lbl, act.get(key, "").strip())
@@ -560,10 +598,9 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             hp_rom_def = [("Flexion","hp_flex"),("Extension","hp_ext"),
                           ("Abduction","hp_abd"),("Adduction","hp_add"),
                           ("Int Rotation","hp_ir"),("Ext Rotation","hp_er")]
-            hp_tbl = [[lbl, _hp_cell(p,"ax_l"), _hp_cell(p,"ax_r"),
-                            _hp_cell(p,"reax_l"), _hp_cell(p,"reax_r")]
+            hp_tbl = [[lbl, _hp_cell(p,"ax_l"), _hp_cell(p,"ax_r")]
                       for lbl, p in hp_rom_def]
-            _maybe_table(sl, "Hip ROM", ["","Ax L","Ax R","ReAx L","ReAx R"], hp_tbl)
+            _maybe_table(sl, "Hip ROM", ["","Ax L","Ax R"], hp_tbl)
             _maybe_note(sl, "*Hip notes*", act.get("am_hp_notes", "").strip())
         if any(k.startswith("kn_") for k in act):
             def _kn_cell(p, s):
@@ -571,10 +608,9 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 txt = f"{v}°" if v else "—"
                 return txt
             kn_rom_def = [("Flexion","kn_flex"),("Extension","kn_ext")]
-            kn_tbl = [[lbl, _kn_cell(p,"ax_l"), _kn_cell(p,"ax_r"),
-                            _kn_cell(p,"reax_l"), _kn_cell(p,"reax_r")]
+            kn_tbl = [[lbl, _kn_cell(p,"ax_l"), _kn_cell(p,"ax_r")]
                       for lbl, p in kn_rom_def]
-            _maybe_table(sl, "Knee ROM", ["","Ax L","Ax R","ReAx L","ReAx R"], kn_tbl)
+            _maybe_table(sl, "Knee ROM", ["","Ax L","Ax R"], kn_tbl)
             _maybe_note(sl, "*Knee notes*", act.get("am_kn_notes", "").strip())
         if any(k.startswith("ak_") for k in act):
             def _ak_cell(p, s):
@@ -584,10 +620,9 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             ak_rom_def = [("Dorsiflexion","ak_df"),("Plantarflexion","ak_pf"),
                           ("Inversion","ak_inv"),("Eversion","ak_ev"),
                           ("WB DF (lunge)","ak_wbdf")]
-            ak_tbl = [[lbl, _ak_cell(p,"ax_l"), _ak_cell(p,"ax_r"),
-                            _ak_cell(p,"reax_l"), _ak_cell(p,"reax_r")]
+            ak_tbl = [[lbl, _ak_cell(p,"ax_l"), _ak_cell(p,"ax_r")]
                       for lbl, p in ak_rom_def]
-            _maybe_table(sl, "Ankle ROM", ["","Ax L","Ax R","ReAx L","ReAx R"], ak_tbl)
+            _maybe_table(sl, "Ankle ROM", ["","Ax L","Ax R"], ak_tbl)
             _maybe_note(sl, "*Ankle notes*", act.get("am_ak_notes", "").strip())
         _flush_section("### 02 Active Movement", sl)
 
@@ -1229,13 +1264,7 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
     # Support both old flat schema and new region-based schema
     active_regions = obj.get("active_regions")
     if active_regions is not None:
-        act = {}; pas = {}; mus = {}; spl = {}
-        for _rid in active_regions:
-            _rdata = obj.get(_rid, {}) or {}
-            act.update(_rdata.get("active",  {}) or {})
-            pas.update(_rdata.get("passive", {}) or {})
-            mus.update(_rdata.get("muscle",  {}) or {})
-            spl.update(_rdata.get("special", {}) or {})
+        act, pas, mus, spl = _merged_region_data(obj, active_regions)
     else:
         act  = obj.get("active",  {}) or {}
         pas  = obj.get("passive", {}) or {}
@@ -1311,19 +1340,19 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                     v  = act.get(f"{p}_{s}_range", "") or ""
                     t  = f"{v}°" if v else "-"
                     return t
-                ax_l = _cell(prefix,"ax_l"); reax_l = _cell(prefix,"reax_l")
+                ax_l = _cell(prefix,"ax_l")
                 if bilateral:
-                    tbl_rows.append([lbl, ax_l, "-", reax_l, "-"])
+                    tbl_rows.append([lbl, ax_l, "-"])
                 else:
-                    ax_r = _cell(prefix,"ax_r"); reax_r = _cell(prefix,"reax_r")
-                    tbl_rows.append([lbl, ax_l, ax_r, reax_l, reax_r])
+                    ax_r = _cell(prefix,"ax_r")
+                    tbl_rows.append([lbl, ax_l, ax_r])
             filtered = _filter_rows(tbl_rows)
             if filtered:
                 sl.append(f"  {title}:")
-                sl.extend(_raw_table(["", "Ax L", "Ax R", "ReAx L", "ReAx R"], filtered))
+                sl.extend(_raw_table(["", "Ax L", "Ax R"], filtered))
             elif not clean:
                 sl.append(f"  {title}:")
-                sl.extend(_raw_table(["", "Ax L", "Ax R", "ReAx L", "ReAx R"], tbl_rows))
+                sl.extend(_raw_table(["", "Ax L", "Ax R"], tbl_rows))
         for key, lbl in [("am_lx_notes","Lumbar notes"),("am_tx_notes","Thoracic notes")]:
             v = act.get(key, "").strip()
             if v:
@@ -1343,19 +1372,18 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
             ]:
                 cx_tbl = []
                 for cx_lbl, cx_pfx, cx_bil in cx_rows_def:
-                    ax_l = _cx_cell_r(cx_pfx,"ax_l"); reax_l = _cx_cell_r(cx_pfx,"reax_l")
+                    ax_l = _cx_cell_r(cx_pfx,"ax_l")
                     if cx_bil:
-                        cx_tbl.append([cx_lbl, ax_l, "-", reax_l, "-"])
+                        cx_tbl.append([cx_lbl, ax_l, "-"])
                     else:
-                        cx_tbl.append([cx_lbl, ax_l, _cx_cell_r(cx_pfx,"ax_r"),
-                                       reax_l, _cx_cell_r(cx_pfx,"reax_r")])
+                        cx_tbl.append([cx_lbl, ax_l, _cx_cell_r(cx_pfx,"ax_r")])
                 filtered = _filter_rows(cx_tbl)
                 if filtered:
                     sl.append(f"  {cx_title}:")
-                    sl.extend(_raw_table(["", "Ax L", "Ax R", "ReAx L", "ReAx R"], filtered))
+                    sl.extend(_raw_table(["", "Ax L", "Ax R"], filtered))
                 elif not clean:
                     sl.append(f"  {cx_title}:")
-                    sl.extend(_raw_table(["", "Ax L", "Ax R", "ReAx L", "ReAx R"], cx_tbl))
+                    sl.extend(_raw_table(["", "Ax L", "Ax R"], cx_tbl))
             for key, lbl in [("am_cx_notes","Cervical notes"),
                               ("am_tx_cx_notes","Thoracic (Cx) notes")]:
                 v = act.get(key, "").strip()
@@ -1372,33 +1400,31 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                             ("Abduction","sh_abd"),("Int Rotation","sh_ir"),
                             ("Ext Rotation","sh_er"),("Horiz Add","sh_hadd"),
                             ("Hand Bk Back","sh_hbb")]
-            sh_tbl_r = [[lbl, _sh_cell_r(p,"ax_l"), _sh_cell_r(p,"ax_r"),
-                              _sh_cell_r(p,"reax_l"), _sh_cell_r(p,"reax_r")]
+            sh_tbl_r = [[lbl, _sh_cell_r(p,"ax_l"), _sh_cell_r(p,"ax_r")]
                         for lbl, p in sh_rom_def_r]
             filtered = _filter_rows(sh_tbl_r)
             if filtered:
                 sl.append("  Shoulder ROM:")
-                sl.extend(_raw_table(["","Ax L","Ax R","ReAx L","ReAx R"], filtered))
+                sl.extend(_raw_table(["","Ax L","Ax R"], filtered))
             elif not clean:
                 sl.append("  Shoulder ROM:")
-                sl.extend(_raw_table(["","Ax L","Ax R","ReAx L","ReAx R"], sh_tbl_r))
+                sl.extend(_raw_table(["","Ax L","Ax R"], sh_tbl_r))
             tx_sh_def_r = [("Flexion","tx_sh_flex",True),("Extension","tx_sh_ext",True),
                            ("Rotation","tx_sh_rot",False)]
             tx_sh_tbl_r = []
             for sh_lbl, sh_pfx, sh_bil in tx_sh_def_r:
-                ax_l = _sh_cell_r(sh_pfx,"ax_l"); reax_l = _sh_cell_r(sh_pfx,"reax_l")
+                ax_l = _sh_cell_r(sh_pfx,"ax_l")
                 if sh_bil:
-                    tx_sh_tbl_r.append([sh_lbl, ax_l, "-", reax_l, "-"])
+                    tx_sh_tbl_r.append([sh_lbl, ax_l, "-"])
                 else:
-                    tx_sh_tbl_r.append([sh_lbl, ax_l, _sh_cell_r(sh_pfx,"ax_r"),
-                                        reax_l, _sh_cell_r(sh_pfx,"reax_r")])
+                    tx_sh_tbl_r.append([sh_lbl, ax_l, _sh_cell_r(sh_pfx,"ax_r")])
             filtered = _filter_rows(tx_sh_tbl_r)
             if filtered:
                 sl.append("  Thoracic ROM (Sh):")
-                sl.extend(_raw_table(["","Ax L","Ax R","ReAx L","ReAx R"], filtered))
+                sl.extend(_raw_table(["","Ax L","Ax R"], filtered))
             elif not clean:
                 sl.append("  Thoracic ROM (Sh):")
-                sl.extend(_raw_table(["","Ax L","Ax R","ReAx L","ReAx R"], tx_sh_tbl_r))
+                sl.extend(_raw_table(["","Ax L","Ax R"], tx_sh_tbl_r))
             for key, lbl in [("am_sh_notes","Shoulder notes"),
                               ("am_tx_sh_notes","Thoracic (Sh) notes")]:
                 v = act.get(key, "").strip()
@@ -1414,16 +1440,15 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
             hp_rom_def_r = [("Flexion","hp_flex"),("Extension","hp_ext"),
                             ("Abduction","hp_abd"),("Adduction","hp_add"),
                             ("Int Rotation","hp_ir"),("Ext Rotation","hp_er")]
-            hp_tbl_r = [[lbl, _hp_cell_r(p,"ax_l"), _hp_cell_r(p,"ax_r"),
-                              _hp_cell_r(p,"reax_l"), _hp_cell_r(p,"reax_r")]
+            hp_tbl_r = [[lbl, _hp_cell_r(p,"ax_l"), _hp_cell_r(p,"ax_r")]
                         for lbl, p in hp_rom_def_r]
             filtered = _filter_rows(hp_tbl_r)
             if filtered:
                 sl.append("  Hip ROM:")
-                sl.extend(_raw_table(["","Ax L","Ax R","ReAx L","ReAx R"], filtered))
+                sl.extend(_raw_table(["","Ax L","Ax R"], filtered))
             elif not clean:
                 sl.append("  Hip ROM:")
-                sl.extend(_raw_table(["","Ax L","Ax R","ReAx L","ReAx R"], hp_tbl_r))
+                sl.extend(_raw_table(["","Ax L","Ax R"], hp_tbl_r))
             v = act.get("am_hp_notes", "").strip()
             if v:
                 sl.append(f"  Hip notes: {v}")
@@ -1435,16 +1460,15 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 t  = f"{v}°" if v else "-"
                 return t
             kn_rom_def_r = [("Flexion","kn_flex"),("Extension","kn_ext")]
-            kn_tbl_r = [[lbl, _kn_cell_r(p,"ax_l"), _kn_cell_r(p,"ax_r"),
-                              _kn_cell_r(p,"reax_l"), _kn_cell_r(p,"reax_r")]
+            kn_tbl_r = [[lbl, _kn_cell_r(p,"ax_l"), _kn_cell_r(p,"ax_r")]
                         for lbl, p in kn_rom_def_r]
             filtered = _filter_rows(kn_tbl_r)
             if filtered:
                 sl.append("  Knee ROM:")
-                sl.extend(_raw_table(["","Ax L","Ax R","ReAx L","ReAx R"], filtered))
+                sl.extend(_raw_table(["","Ax L","Ax R"], filtered))
             elif not clean:
                 sl.append("  Knee ROM:")
-                sl.extend(_raw_table(["","Ax L","Ax R","ReAx L","ReAx R"], kn_tbl_r))
+                sl.extend(_raw_table(["","Ax L","Ax R"], kn_tbl_r))
             v = act.get("am_kn_notes", "").strip()
             if v:
                 sl.append(f"  Knee notes: {v}")
@@ -1458,16 +1482,15 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
             ak_rom_def_r = [("Dorsiflexion","ak_df"),("Plantarflexion","ak_pf"),
                             ("Inversion","ak_inv"),("Eversion","ak_ev"),
                             ("WB DF (lunge)","ak_wbdf")]
-            ak_tbl_r = [[lbl, _ak_cell_r(p,"ax_l"), _ak_cell_r(p,"ax_r"),
-                              _ak_cell_r(p,"reax_l"), _ak_cell_r(p,"reax_r")]
+            ak_tbl_r = [[lbl, _ak_cell_r(p,"ax_l"), _ak_cell_r(p,"ax_r")]
                         for lbl, p in ak_rom_def_r]
             filtered = _filter_rows(ak_tbl_r)
             if filtered:
                 sl.append("  Ankle ROM:")
-                sl.extend(_raw_table(["","Ax L","Ax R","ReAx L","ReAx R"], filtered))
+                sl.extend(_raw_table(["","Ax L","Ax R"], filtered))
             elif not clean:
                 sl.append("  Ankle ROM:")
-                sl.extend(_raw_table(["","Ax L","Ax R","ReAx L","ReAx R"], ak_tbl_r))
+                sl.extend(_raw_table(["","Ax L","Ax R"], ak_tbl_r))
             v = act.get("am_ak_notes", "").strip()
             if v:
                 sl.append(f"  Ankle notes: {v}")
@@ -2674,8 +2697,16 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         label = _label(fid)
         if val and "\n" in val:
             _emit(f"**{label}:**  ")
-            for row in val.split("\n"):
-                _emit((row + "  ") if (clean and row.strip()) else row)
+            # Data-purity fix: hard-break markers used to be gated on
+            # `clean`, so a multi-paragraph note kept its line breaks in the
+            # clean report but collapsed into one run-on paragraph in the
+            # FULL report — same underlying CommonMark soft-break issue as
+            # _maybe_note above, just previously fixed in only one of the
+            # two modes. Applies regardless of clean/full now.
+            rows = val.split("\n")
+            last = len(rows) - 1
+            for i, row in enumerate(rows):
+                _emit(row if (i == last or not row.strip()) else row + "  ")
             _emit("")
         elif val:
             line = f"**{label}:** {val}"

@@ -61,7 +61,7 @@ class RangeCell(Static):
 # ---------------------------------------------------------------------------
 
 class ROMRow(Static):
-    """label | ax_l | ax_r | reax_l | reax_r — bilateral movements leave ax_r/reax_r as empty placeholders."""
+    """label | ax_l | ax_r — bilateral movements leave ax_r as an empty placeholder."""
 
     DEFAULT_CSS = """
     ROMRow { layout: horizontal; height: 3; width: 100%; margin-bottom: 0; }
@@ -84,11 +84,6 @@ class ROMRow(Static):
             yield Static("", classes="col_empty")
         else:
             yield RangeCell(f"{p}_ax_r",   classes="col_cell", id=f"rc_{p}_ax_r")
-        yield RangeCell(f"{p}_reax_l", classes="col_cell", id=f"rc_{p}_reax_l")
-        if self._bilateral:
-            yield Static("", classes="col_empty")
-        else:
-            yield RangeCell(f"{p}_reax_r", classes="col_cell", id=f"rc_{p}_reax_r")
 
     def collect(self) -> dict:
         return {k: v for cell in self.query(RangeCell) for k, v in cell.collect().items()}

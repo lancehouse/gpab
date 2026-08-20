@@ -150,6 +150,39 @@ class PhysioAssessment(App):
         else:
             self.show_session_list()
 
+    async def _flush_pending_saves(self) -> None:
+        """Flushes any debounced (not-yet-written) edits before teardown.
+
+        Must run BEFORE anything starts unmounting: on_unmount fires too late
+        — by then the widget's own children are already gone, so collect()
+        (which walks those children to read current field values) returns
+        empty and the flush silently writes nothing. Confirmed by direct
+        testing: calling _do_save() during on_unmount produced an empty
+        section; calling it here, before remove_children()/exit(), produces
+        the full data. This is what was silently dropping fields (e.g. a
+        manually-typed ROM value) typed within ~2s of quitting or switching
+        sessions — not a report-generation bug, a lost-write bug.
+        """
+        try:
+            av = self.query_one("#assessment_view", AssessmentView)
+        except Exception:
+            return
+        save_task = getattr(av, "_save_task", None)
+        if save_task is not None and not save_task.done():
+            save_task.cancel()
+            await av._do_save()
+        obj_view = getattr(av, "_obj_view", None)
+        if obj_view is not None:
+            obj_save_task = getattr(obj_view, "_save_task", None)
+            if obj_save_task is not None and not obj_save_task.done():
+                obj_save_task.cancel()
+                await obj_view._do_save()
+
+    async def action_quit(self) -> None:
+        """Ctrl+Q — flush before exiting (see _flush_pending_saves)."""
+        await self._flush_pending_saves()
+        self.exit()
+
     def show_session_list(self) -> None:
         main = self.query_one(Container)
         main.remove_children()
@@ -157,6 +190,7 @@ class PhysioAssessment(App):
         main.mount(session_list)
 
     async def on_session_selected(self, session_path: str) -> None:
+        await self._flush_pending_saves()
         self.current_session_path = session_path
         await self.show_assessment_form()
 

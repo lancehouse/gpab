@@ -68,13 +68,13 @@ def _build_gang(options: list[str]) -> list[tuple[str, str]]:
 # ── ROM group widget ──────────────────────────────────────────────────────────
 
 class ROMGroupWidget(Static):
-    """One named group of ROM rows (Ax/ReAx L/R) from YAML active_movement.groups."""
+    """One named group of ROM rows (Ax L/R) from YAML active_movement.groups."""
 
     DEFAULT_CSS = """
     ROMGroupWidget { width: 100%; height: auto; }
     ROMGroupWidget .hdr_major  { layout: horizontal; height: 1; width: 100%; color: $text-muted; }
     ROMGroupWidget .hdr_spacer { width: 12; }
-    ROMGroupWidget .hdr_group  { width: 2fr; text-align: center; text-style: bold; }
+    ROMGroupWidget .hdr_group  { width: 1fr; text-align: center; text-style: bold; }
     ROMGroupWidget .hdr_sub    { layout: horizontal; height: 1; width: 100%; color: $text-muted; }
     ROMGroupWidget .hdr_lr     { width: 1fr; text-align: center; }
     ROMGroupWidget TextArea    { height: auto; min-height: 2; padding: 0 1; }
@@ -91,13 +91,10 @@ class ROMGroupWidget(Static):
         label = self._group.get("label", "")
         yield Label(label, classes="subsection_header")
         with Horizontal(classes="hdr_major"):
-            yield Static("",     classes="hdr_spacer")
-            yield Static("Ax",   classes="hdr_group")
-            yield Static("ReAx", classes="hdr_group")
+            yield Static("",   classes="hdr_spacer")
+            yield Static("Ax", classes="hdr_group")
         with Horizontal(classes="hdr_sub"):
             yield Static("",      classes="hdr_spacer")
-            yield Static("Left",  classes="hdr_lr")
-            yield Static("Right", classes="hdr_lr")
             yield Static("Left",  classes="hdr_lr")
             yield Static("Right", classes="hdr_lr")
         for row in self._group.get("rows", []):
@@ -120,9 +117,6 @@ class ROMGroupWidget(Static):
             cols = [f"{prefix}_ax_l_range"]
             if not bilateral:
                 cols.append(f"{prefix}_ax_r_range")
-            cols.append(f"{prefix}_reax_l_range")
-            if not bilateral:
-                cols.append(f"{prefix}_reax_r_range")
             rows.append(cols)
         if self._notes_id:
             rows.append([self._notes_id])

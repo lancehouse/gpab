@@ -313,9 +313,20 @@ class AssessmentView(Container):
             self._pending_load = None
             self.load_session(self.session_file, data)
 
-    def on_unmount(self) -> None:
+    async def on_unmount(self) -> None:
+        # Best-effort only — see ObjectiveAssessmentView.on_unmount and
+        # main.py's PhysioAssessment._flush_pending_saves() for the real fix
+        # and why on_unmount itself is too late (widget children can already
+        # be gone, so collect() silently returns empty). Kept as a secondary
+        # attempt for any teardown path that bypasses _flush_pending_saves.
         if self._save_task and not self._save_task.done():
             self._save_task.cancel()
+            await self._do_save()
+        if self._obj_view is not None:
+            obj_save_task = getattr(self._obj_view, "_save_task", None)
+            if obj_save_task is not None and not obj_save_task.done():
+                obj_save_task.cancel()
+                await self._obj_view._do_save()
         if self._report_interval is not None:
             self._report_interval.stop()
             self._report_interval = None

@@ -459,9 +459,19 @@ class ObjectiveAssessmentView(Container):
         except Exception:
             pass
 
-    def on_unmount(self) -> None:
+    async def on_unmount(self) -> None:
+        # Best-effort only — the REAL fix for the "typed value never reaches
+        # disk" bug is PhysioAssessment._flush_pending_saves() in main.py,
+        # called before quit/session-switch even starts tearing anything
+        # down. Confirmed by direct testing that flushing here is usually too
+        # late: by on_unmount time this widget's own children can already be
+        # gone, so _do_save()'s collect() walk finds nothing and silently
+        # writes an empty section. Left in as a harmless secondary attempt
+        # for any teardown path that doesn't go through _flush_pending_saves,
+        # not something to rely on — see main.py for the actual fix.
         if self._save_task and not self._save_task.done():
             self._save_task.cancel()
+            await self._do_save()
 
     # ── Region management ─────────────────────────────────────────────────────
 
