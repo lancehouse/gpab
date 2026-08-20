@@ -40,6 +40,8 @@ _HYPER_ITEMS: list[tuple[str, str, bool]] = [
     ("Cold hyperalgesia (ice 5 s)",     "sn_cold",              True),
     ("Heat hyperalgesia",               "sn_heat",              True),
     ("Temporal summation",              "sn_temporal_sum",      True),
+    ("Conditioned pain modulation",     "sn_cpm",               True),
+    ("Nerve trunk palpation",           "sn_nerve_palpation",   True),
 ]
 
 

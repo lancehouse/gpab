@@ -30,9 +30,15 @@ _DB_BACKED_REGIONS = {"cervical", "shoulder"}
 # wrongly depend on cervical happening to be one of the clinician's active
 # regions. Not every _UMN_ITEMS field is here — only the ones with a DB test
 # mapped (see kb_db.load_test_for_field).
+#
+# Sensory section fields are here for the same reason: pain-sensitisation
+# screening (allodynia, hyperalgesia, PPT, CPM, nerve trunk palpation) applies
+# regardless of active body region, not to any single region tab.
 _GLOBAL_DB_FIELDS = {
     "nr_umn_hoffman", "nr_umn_tromner", "nr_umn_bab",
     "nr_umn_lhermitte", "nr_umn_inv_sup",
+    "sn_static_allodynia", "sn_pin_prick", "sn_ppt", "sn_cold",
+    "sn_cpm", "sn_nerve_palpation",
 }
 
 
@@ -67,23 +73,23 @@ class KBEntry:
         """Return display lines for the KB panel."""
         lines: list[str] = []
         if self.label:
-            lines += [f" {self.label}", "─" * 36]
+            lines += [f" {self.label}", "─" * 46]
         if self.purpose:
-            lines += ["Purpose:", _wrap(self.purpose.strip(), 34), ""]
+            lines += ["Purpose:", _wrap(self.purpose.strip(), 44), ""]
         if self.position:
-            lines += ["Position:", _wrap(self.position.strip(), 34), ""]
+            lines += ["Position:", _wrap(self.position.strip(), 44), ""]
         if self.procedure:
-            lines += ["Procedure:", _wrap(self.procedure.strip(), 34), ""]
+            lines += ["Procedure:", _wrap(self.procedure.strip(), 44), ""]
         if self.assess:
-            lines += ["Assess:", _wrap(self.assess.strip(), 34), ""]
+            lines += ["Assess:", _wrap(self.assess.strip(), 44), ""]
         if self.variants:
-            lines += ["Variants:", _wrap(self.variants.strip(), 34), ""]
+            lines += ["Variants:", _wrap(self.variants.strip(), 44), ""]
         if self.sn_sp:
             lines += ["Sn / Sp:", f"  {self.sn_sp}", ""]
         if self.cluster:
-            lines += ["Cluster:", _wrap(self.cluster.strip(), 34), ""]
+            lines += ["Cluster:", _wrap(self.cluster.strip(), 44), ""]
         if self.note:
-            lines += ["Note:", _wrap(self.note.strip(), 34), ""]
+            lines += ["Note:", _wrap(self.note.strip(), 44), ""]
         return lines
 
 

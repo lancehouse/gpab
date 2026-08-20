@@ -582,6 +582,10 @@ Boolean fields (CheckButton); detail fields (Input, suffix `_detail`).
 | `sn_heat_detail` | Heat hyperalgesia — detail |
 | `sn_temporal_sum` | Temporal summation present |
 | `sn_temporal_sum_detail` | Temporal summation — detail |
+| `sn_cpm` | Conditioned pain modulation — dysfunctional response present |
+| `sn_cpm_detail` | CPM — detail (baseline PPT / cold pressor pain / post-PPT) |
+| `sn_nerve_palpation` | Upper limb nerve trunk palpation — sensitivity present |
+| `sn_nerve_palpation_detail` | Nerve trunk palpation — detail (site(s)) |
 | `sn_notes` | Sensory free-text notes |
 
 ---

@@ -841,7 +841,9 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                        ("Pin prick hyper","sn_pin_prick",True),
                        ("Cold hyperalgesia","sn_cold",True),
                        ("Heat hyperalgesia","sn_heat",True),
-                       ("Temporal summation","sn_temporal_sum",True)]
+                       ("Temporal summation","sn_temporal_sum",True),
+                       ("Conditioned pain modulation","sn_cpm",True),
+                       ("Nerve trunk palpation","sn_nerve_palpation",True)]
         for sec_lbl, items in [("Hyposensitivity", hypo_items), ("Hypersensitivity", hyper_items)]:
             rows = []
             for lbl, sid, has_detail in items:
@@ -1760,7 +1762,9 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                        ("Pin prick hyper","sn_pin_prick",True),
                        ("Cold hyperalgesia","sn_cold",True),
                        ("Heat hyperalgesia","sn_heat",True),
-                       ("Temporal summation","sn_temporal_sum",True)]
+                       ("Temporal summation","sn_temporal_sum",True),
+                       ("Conditioned pain modulation","sn_cpm",True),
+                       ("Nerve trunk palpation","sn_nerve_palpation",True)]
         for items in (hypo_items, hyper_items):
             for lbl, sid, has_detail in items:
                 v = sen.get(sid)

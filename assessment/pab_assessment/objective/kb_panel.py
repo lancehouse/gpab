@@ -12,14 +12,14 @@ from .kb_loader import KBEntry, get_registry
 class KBPanel(ScrollableContainer):
     """Toggleable right-panel showing KB info for the currently focused field.
 
-    Width 38. Hidden by default; toggled via Ctrl+K in ObjectiveAssessmentView.
+    Width 48. Hidden by default; toggled via Ctrl+K in ObjectiveAssessmentView.
     Call update(region, field_id) whenever focused field changes.
     Last entry is preserved when a non-KB field is focused.
     """
 
     DEFAULT_CSS = """
     KBPanel {
-        width: 38;
+        width: 48;
         height: 100%;
         border-left: solid $border;
         background: $panel-darken-1;

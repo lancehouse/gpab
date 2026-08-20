@@ -86,8 +86,22 @@ These two streams are completely isolated. **Never mix them.**
    no clinical decisions. Sections collect/load data; storage persists it.
 4. **Never lose data** — auto-save on every field change; atomic writes always.
 
+## Clinical knowledge base — built and live
+
+The clinical knowledge base (`clinical_kb.db`, Ctrl+K field-focus lookup panel, Ctrl+D full
+browser, special test widgets with Sn/Sp) is built and in active use — not a planned phase.
+Content is authored in the separate `~/Projects/kb` project and consumed read-only via
+`~/.local/share/pab/clinical_kb.db`. Rollout is incremental, region by region (cervical and
+shoulder are DB-backed; other regions still resolve from `objective/kb/*.yaml`), plus a
+region-independent set (`_GLOBAL_DB_FIELDS` in `kb_loader.py`) for fields not tied to any one
+body-region tab — e.g. Neurological's UMN signs and the Sensory section's pain-sensitisation
+screen (allodynia, hyperalgesia, PPT, CPM, nerve trunk palpation). See
+`assessment/CLAUDE.md`'s "Clinical knowledge base" section for the full architecture.
+
 ## Planned phases (not yet built)
 
-- **Phase 3** — Right-panel clinical knowledge base: context engine, `clinical_kb.db`,
-  special test widgets with Sn/Sp, pattern matching from body chart data.
-  Do not build this until explicitly requested. Do not design current code to prevent it.
+- **Body-chart-driven pattern matching** — auto-suggesting tests/conditions from body chart
+  findings (`query_patterns()`/`query_tests()`/`score_pattern()` in `logic.py`). Blocked on a
+  schema addition (`condition_feature` needs a per-feature weight column) before it's
+  implementable. Do not build this until explicitly requested. Do not design current code to
+  prevent it.
