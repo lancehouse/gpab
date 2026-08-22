@@ -46,12 +46,15 @@ CRPS) are ported and round-trip-verified against real session JSON — including
 extras for all six regions (lumbar/cervical/shoulder/hip/knee/ankle). Arrow-key spatial grid
 navigation (`objective/grid_nav.py`) is standard throughout, not Tab/Shift+Tab only. A body-region
 toggle topbar (`objective/region_topbar.py`) mounts/unmounts regions live. Report generation
-(Ctrl+R, `report_modal.py`) and a Ctrl+K knowledge-base panel (`objective/kb_panel.py`) are both
-built and wired.
+(Ctrl+R, `report_modal.py`), a Ctrl+K knowledge-base panel (`objective/kb_panel.py`), Pain
+Classification's Regional Differential cluster-tally panel (`sections/regional_differential.py`,
+live-updated per active region, click-to-KB wired), and the Ctrl+D full Clinical KB browser
+(`objective/kb_db_screen.py`, region list + condition/cluster/test tree + detail panel + its own
+fuzzy search) are all built and wired. Phase 4 (KB integration) is complete.
 
 ## What's still out of scope
 
-No live body-chart file-watcher re-sync (region toggling is manual only), no Ctrl+F fuzzy search,
-no Ctrl+G heading-map overview, no Ctrl+D KB database browser, no Regional Differential panel
-(Pain Classification's cluster-tally view), no wiring into `bodychart/src/integration.c`. See
-`CONVERSION_PLAN.md`'s Phase 3/4/6 tables for the full remaining list.
+No live body-chart file-watcher re-sync (region toggling is manual only), no Ctrl+F fuzzy search
+across assessment/objective fields (the KB browser has its own, separate search — see above), no
+Ctrl+G heading-map overview, no wiring into `bodychart/src/integration.c`. See
+`CONVERSION_PLAN.md`'s Phase 3/6 tables for the full remaining list.

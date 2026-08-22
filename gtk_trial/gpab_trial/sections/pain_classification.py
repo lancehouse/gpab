@@ -1,22 +1,23 @@
 """Pain Type Classification — GTK4 port of pab_assessment/sections/pain_classification.py.
 
-Field ids and collect()/load() keys are 1:1 with the TUI section. Two pieces
-of the TUI section are deliberately NOT ported here, flagged rather than
+Field ids and collect()/load() keys are 1:1 with the TUI section. One piece
+of the TUI section is deliberately NOT ported here, flagged rather than
 faked:
 
-- The embedded RegionalDifferentialPanel (regional_differential.py) — a
-  clinical-KB-backed panel (reads clinical_kb.db via objective/kb_db.py,
-  objective/kb_loader.py) that mounts/unmounts based on which body regions
-  are active. That's Phase 4 (KB integration) territory per
-  CONVERSION_PLAN.md, and regional_differential.py itself is still a
-  separate, not-yet-ported Phase 1 file. The container this section would
-  mount panels into is present (self.diff_region_box) but stays empty, with
-  a visible note explaining why, rather than stubbing in fake KB content.
 - The individual xref_* cross-reference badges next to specific fields
   (e.g. "Subj: morning stiffness recorded" beside Inflammatory's morning-pain
   toggle) — update_cross_refs() still runs (see below) and computes the same
   data the TUI does, but isn't wired to a per-field badge widget yet; this
   is a rendering-only gap, not a missing capability.
+
+The embedded RegionalDifferentialPanel (sections/regional_differential.py)
+IS ported (Phase 4) — set_active_regions()/set_region_test_data() below
+mount/unmount one panel per active body region into self.diff_region_box
+and push live test results into it, mirroring the TUI's own
+set_active_regions/set_region_test_data exactly. app.py wires the mount
+timing (after region toggle, after load, after every objective autosave)
+and the click-to-KB callback (set_on_request_kb) the same way it wires
+set_on_changed elsewhere.
 
 update_cross_refs() mirrors the TUI's actual behaviour (assessment_view.py's
 _show_section): called with an in-memory dict of {"medical": ..., "subjective":
@@ -38,6 +39,7 @@ from ..widgets import (
     make_subgroup_header as _subheader,
     field_row as _field_row,
 )
+from .regional_differential import RegionalDifferentialPanel, RequestKBCallback
 
 _INFL_FIELDS = ["infl_constant", "infl_morning", "infl_sleep", "infl_activity"]
 
@@ -72,6 +74,8 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         self.set_margin_end(8)
         self._loading = False
         self._on_changed = None
+        self._on_request_kb: RequestKBCallback | None = None
+        self._diff_panels: dict[str, RegionalDifferentialPanel] = {}
 
         self._toggles: dict[str, FlagButton] = {}
         self._likelihoods: dict[str, LikelihoodField] = {}
@@ -82,16 +86,8 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         title.set_halign(Gtk.Align.START)
         self.append(title)
 
-        self.append(_header("Regional Differential (deferred)"))
-        deferred_note = Gtk.Label(
-            label="Not built yet — depends on regional_differential.py + clinical "
-                  "KB integration (Phase 4). See this file's module docstring.",
-        )
-        deferred_note.add_css_class("reference-note")
-        deferred_note.set_halign(Gtk.Align.START)
-        deferred_note.set_wrap(True)
-        self.append(deferred_note)
-        self.diff_region_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.append(_header("Regional Differential"))
+        self.diff_region_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.append(self.diff_region_box)
 
         self._build_inflammatory()
@@ -417,14 +413,30 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         self.append(_field_row("Clinical reasoning:", self._text("summary_reasoning")))
 
     # ------------------------------------------------------------------
-    # Regional differential panel management — stubbed, see module docstring
+    # Regional differential panel management
     # ------------------------------------------------------------------
 
+    def set_on_request_kb(self, callback: RequestKBCallback) -> None:
+        """Called by app.py to wire click-on-test-row -> Ctrl+K panel, the
+        same way set_on_changed wires field edits -> autosave."""
+        self._on_request_kb = callback
+
     def set_active_regions(self, regions: list[str]) -> None:
-        pass
+        """Mount/unmount regional differential panels to match active regions."""
+        current = set(self._diff_panels.keys())
+        for rid in current - set(regions):
+            panel = self._diff_panels.pop(rid)
+            self.diff_region_box.remove(panel)
+        for rid in set(regions) - current:
+            panel = RegionalDifferentialPanel(rid, self._on_request_kb)
+            self._diff_panels[rid] = panel
+            self.diff_region_box.append(panel)
 
     def set_region_test_data(self, region_id: str, tests: dict) -> None:
-        pass
+        """Push latest special test results to the matching regional panel."""
+        panel = self._diff_panels.get(region_id)
+        if panel:
+            panel.set_tests(tests)
 
     # ------------------------------------------------------------------
     # Cross-reference badges — computed, not yet rendered per-field

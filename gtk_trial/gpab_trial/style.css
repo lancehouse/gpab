@@ -347,3 +347,63 @@ entry {
 .grid-row {
     margin-bottom: 2px;
 }
+
+/* Regional Differential panel (sections/regional_differential.py) — Pain
+   Classification's per-region cluster-tally view. */
+.rdp-region-expander {
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+.rdp-cluster-expander {
+    opacity: 0.9;
+}
+.rdp-row {
+    padding: 2px 0;
+}
+.rdp-row.rdp-clickable:hover {
+    background: alpha(currentColor, 0.08);
+}
+.rdp-badge {
+    min-width: 40px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    text-align: center;
+}
+.rdp-badge-pos  { background: #c62828; color: white; }
+.rdp-badge-neg  { background: #2e7d32; color: white; }
+.rdp-badge-none { background: alpha(currentColor, 0.12); color: alpha(currentColor, 0.6); }
+.rdp-snsp {
+    opacity: 0.6;
+    font-size: 0.85rem;
+}
+.rdp-side-label {
+    opacity: 0.6;
+    font-size: 0.85rem;
+    margin: 0 2px;
+}
+.rdp-value {
+    font-weight: bold;
+}
+.rdp-hint {
+    opacity: 0.6;
+    font-size: 0.85rem;
+}
+.rdp-unwired {
+    opacity: 0.5;
+    font-style: italic;
+    font-size: 0.85rem;
+}
+.rdp-cluster-note {
+    opacity: 0.85;
+    font-style: italic;
+    padding: 2px 0 6px 0;
+}
+
+/* Clinical KB browser (objective/kb_db_screen.py, Ctrl+D) */
+.kb-db-heading {
+    font-weight: bold;
+    opacity: 0.85;
+    padding: 2px 0;
+}

@@ -36,6 +36,7 @@ from .objective.region_topbar import RegionTopbar
 from .objective.objective_nav import ObjectiveNav
 from .objective.kb_panel import KBPanel
 from .objective.kb_loader import get_registry
+from .objective.kb_db_screen import KBDBWindow
 from .widgets import add_focus_listener
 from .nav import SectionNav
 from .topbar import SubsectionNavBar
@@ -300,6 +301,7 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.sensory.set_on_changed(self._schedule_save_obj)
         self.crps.set_on_changed(self._schedule_save_obj)
         self.functional.set_on_goals_changed(self._on_functional_goal_changed)
+        self.pain_classification.set_on_request_kb(self._on_request_kb_entry)
         for tab in (self.active_movement, self.passive_movement,
                     self.muscle_testing, self.special_tests):
             tab.connect("field-changed", lambda *_a: self._schedule_save_obj())
@@ -422,6 +424,44 @@ class TrialWindow(Gtk.ApplicationWindow):
             self._mount_region(rid)
         self._active_regions = list(regions)
         self.region_topbar.set_active_regions(regions)
+        self.pain_classification.set_active_regions(regions)
+        self._push_region_tests_to_pain_classification()
+
+    def _collect_region_tests(self, region_id: str) -> dict:
+        """Flatten one region's in-memory field values (special/active/muscle/
+        passive containers) plus the generic Neurological section into a
+        single field-id -> value dict, for the Regional Differential panel.
+        Mirrors assessment_view.py's _flatten_region_fields exactly, except
+        built from live collect() calls rather than a disk re-read — see
+        CONVERSION_PLAN.md's Phase 4 note on why that's the right approach
+        here (this app already does the same for cross-ref badge refreshes)."""
+        flat: dict = {}
+        flat.update(self.neurological.collect())
+        flat.update(self.active_movement.get_container(region_id).collect())
+        flat.update(self.passive_movement.get_container(region_id).collect())
+        flat.update(self.muscle_testing.get_container(region_id).collect())
+        flat.update(self.special_tests.get_container(region_id).collect())
+        return flat
+
+    def _push_region_tests_to_pain_classification(self) -> None:
+        for region_id in self._active_regions:
+            self.pain_classification.set_region_test_data(
+                region_id, self._collect_region_tests(region_id)
+            )
+
+    def _on_request_kb_entry(self, region_id: str, field_id: str) -> None:
+        """Wired to PainClassificationSection.set_on_request_kb — clicking a
+        Regional Differential test/flag row shows its KB entry, forcing the
+        panel visible if it was hidden (matches the TUI's RequestKBEntry
+        handler, which always sets kb.display = True on click regardless of
+        the panel's current toggle state)."""
+        self.kb_panel.update(region_id, field_id)
+        if not self.kb_panel.get_visible():
+            self.kb_panel.set_visible(True)
+            paned_width = self.main_paned.get_width()
+            if paned_width > 0:
+                content_width = round(paned_width * (1 - self._KB_PANEL_FRACTION))
+                self.main_paned.set_position(content_width)
 
     def _on_region_toggled(self, _bar, region_id: str, active: bool) -> None:
         regions = list(self._active_regions)
@@ -467,6 +507,9 @@ class TrialWindow(Gtk.ApplicationWindow):
             self.passive_movement.get_container(region_id).load(region_data.get("passive", {}))
             self.muscle_testing.get_container(region_id).load(region_data.get("muscle", {}))
             self.special_tests.get_container(region_id).load(region_data.get("special", {}))
+        # _sync_active_regions above already pushed once (mount time, before
+        # these loads ran) — push again now that region data is populated.
+        self._push_region_tests_to_pain_classification()
 
     # ------------------------------------------------------------------
     # Global hotkeys — mirrors main.py's PhysioAssessment.BINDINGS for the
@@ -541,6 +584,9 @@ class TrialWindow(Gtk.ApplicationWindow):
         if ctrl_held and name.lower() == "k":
             self._toggle_kb_panel()
             return True
+        if ctrl_held and name.lower() == "d":
+            self._open_kb_browser()
+            return True
         if alt_held and name.lower() in self._ALT_KEY_MAP:
             self._show_section("02_subjective")
             self.subjective.jump_to(self._ALT_KEY_MAP[name.lower()])
@@ -586,6 +632,12 @@ class TrialWindow(Gtk.ApplicationWindow):
     # absorbed window-resize deltas, or shrank to an unreadable sliver in
     # fullscreen when it didn't — both tried and rejected).
     _KB_PANEL_FRACTION = 0.32
+
+    def _open_kb_browser(self) -> None:
+        """Ctrl+D — full Clinical KB browser, independent of the Ctrl+K
+        focus-triggered cheat sheet (KBDBWindow reads the DB directly, not
+        via self.kb_panel)."""
+        KBDBWindow(self).present()
 
     def _toggle_kb_panel(self) -> None:
         """Ctrl+K — matches the TUI's KBPanel toggle."""
@@ -785,6 +837,8 @@ class TrialWindow(Gtk.ApplicationWindow):
 
         ok = save_objective_sections(self.session_file, section_data, sections_complete)
         self.save_status.set_label("saved" if ok else "SAVE FAILED")
+        if ok:
+            self._push_region_tests_to_pain_classification()
         return GLib.SOURCE_REMOVE
 
 
