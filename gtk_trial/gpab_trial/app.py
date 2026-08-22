@@ -34,6 +34,9 @@ from .objective.sections.crps import CRPSSection
 from .objective.region_section import RegionTabContent
 from .objective.region_topbar import RegionTopbar
 from .objective.objective_nav import ObjectiveNav
+from .objective.kb_panel import KBPanel
+from .objective.kb_loader import get_registry
+from .widgets import add_focus_listener
 from .nav import SectionNav
 from .topbar import SubsectionNavBar
 from .footer import FooterBar
@@ -151,12 +154,59 @@ class TrialWindow(Gtk.ApplicationWindow):
 
         content_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content_column.set_hexpand(True)
-        main_row.append(content_column)
+
+        # -- Ctrl+K knowledge-base panel: right-hand side, hidden until
+        # toggled, shown across every tab (mirrors the TUI's KBPanel being
+        # mounted once at AssessmentView level, not per-section). Content
+        # only updates while in Objective mode (see _on_focus_changed) —
+        # matches the TUI, where the focus hook lives on
+        # ObjectiveAssessmentView, not the whole app.
+        #
+        # content_column/kb_panel share a Gtk.Paned rather than plain Box
+        # slots: a plain Box honours each child's minimum size literally, so
+        # giving the panel a ~50%-of-window width floor (KBPanel.KB_PANEL_WIDTH)
+        # forced the WHOLE WINDOW wider than the screen once the panel was
+        # toggled on (confirmed live — windowed mode grew past screen width,
+        # fullscreen cut off the sidebar). A Paned's divider is draggable and
+        # only enforces each side's own small natural minimum, so the window
+        # never has to grow to fit it — the panel gets its nominal share when
+        # there's room and shrinks (draggable, not just automatic) when there
+        # isn't, with no horizontal scrolling either way.
+        self.kb_panel = KBPanel()
+        self.main_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self.main_paned.set_hexpand(True)
+        self.main_paned.set_start_child(content_column)
+        self.main_paned.set_resize_start_child(True)
+        self.main_paned.set_shrink_start_child(True)
+        self.main_paned.set_end_child(self.kb_panel)
+        # resize=True: the KB panel's pixel width should track window size
+        # (a fixed-pixel-forever setting made it a barely-usable ~170px
+        # sliver in fullscreen on a large monitor, since content absorbed
+        # all of the extra fullscreen space and the panel got none of it).
+        # The panel's *proportion* of the window is what should stay
+        # roughly constant, not its absolute pixel count — see
+        # _toggle_kb_panel, which sets the actual position as a fraction of
+        # the paned's real current width every time the panel is shown,
+        # rather than a single pixel value guessed at construction time
+        # (before the window has real geometry) that never gets revisited.
+        self.main_paned.set_resize_end_child(True)
+        self.main_paned.set_shrink_end_child(True)
+        main_row.append(self.main_paned)
 
         # -- stack -----------------------------------------------------------
         self.stack = Gtk.Stack()
         self.stack.set_vexpand(True)
         self.stack.set_transition_type(Gtk.StackTransitionType.NONE)
+        # Gtk.Stack defaults hhomogeneous=True: it sizes itself to the
+        # WIDEST page among ALL mounted tabs (visible or not), not just the
+        # one currently shown — found via measurement that this, not the KB
+        # panel or the chip-button width, was the real source of a huge
+        # (1000px+) minimum width forcing the window wider than the screen.
+        # Each tab already has its own per-page ScrolledWindow (below) for
+        # independent scrolling, so there's no reason for one wide hidden
+        # tab (e.g. a wide region table) to inflate every other tab's
+        # minimum size.
+        self.stack.set_hhomogeneous(False)
 
         self.consent = ConsentSection()
         self.subjective = SubjectiveSection()
@@ -205,10 +255,21 @@ class TrialWindow(Gtk.ApplicationWindow):
 
         for name, section in self._sections_by_name.items():
             scroll = Gtk.ScrolledWindow()
-            # Never horizontal-scroll: every tab's content must fit the
-            # window's actual width and use all of it, not spill sideways.
-            # Vertical-only scrolling is the one axis these forms need.
-            scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            # Horizontal AUTOMATIC, not NEVER: every tab's content should
+            # fit the window's actual width and reflow into it, not spill
+            # sideways — but horizontal-NEVER turned out to mean something
+            # different in GTK4 than "never scroll, just shrink to fit": a
+            # ScrolledWindow with policy=NEVER on an axis treats the child's
+            # NATURAL size as a hard floor on that axis (verified — this was
+            # the actual mechanism behind both the KB-panel and footer
+            # overflow bugs), so a section that's wider than the space the
+            # KB panel leaves it got silently clipped with no way to reach
+            # the cut-off portion, rather than shrinking into the space it
+            # was actually given. AUTOMATIC lets a tab genuinely narrow to
+            # fit; the horizontal scrollbar it enables is a fallback for
+            # whatever a tab's own internal layout can't shrink into, not
+            # the normal case.
+            scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
             scroll.set_child(section)
             self.stack.add_named(scroll, name)
         content_column.append(self.stack)
@@ -218,7 +279,9 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.notes_overlay.connect_changed(self._on_notes_changed)
         content_column.append(self.notes_overlay)
 
-        # -- bottom bar: hotkey hints + save status -----------------------------
+        # -- bottom bar: save status only (hotkey hints removed — they
+        # duplicated the sidebar tabs, and their combined ~1660px natural
+        # width was the actual cause of an earlier window-overflow bug).
         self.footer = FooterBar()
         outer.append(self.footer)
         self.save_status = self.footer.save_status
@@ -247,6 +310,13 @@ class TrialWindow(Gtk.ApplicationWindow):
         key_ctrl.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         key_ctrl.connect("key-pressed", self._on_global_key)
         self.add_controller(key_ctrl)
+
+        # -- KB panel focus hook: every KB-relevant widget notifies this app
+        # via widgets.add_focus_listener when it gains focus (see widgets.py
+        # module docstring for why this is used instead of the window-level
+        # Gtk.Root "notify::focus-widget" signal — that proved unreliable
+        # once real Stack/ScrolledWindow nesting was involved).
+        add_focus_listener(self._on_widget_focused)
 
         self._load()
         self._show_section("01_consent")
@@ -468,6 +538,9 @@ class TrialWindow(Gtk.ApplicationWindow):
         if ctrl_held and name.lower() == "r":
             self._show_report()
             return True
+        if ctrl_held and name.lower() == "k":
+            self._toggle_kb_panel()
+            return True
         if alt_held and name.lower() in self._ALT_KEY_MAP:
             self._show_section("02_subjective")
             self.subjective.jump_to(self._ALT_KEY_MAP[name.lower()])
@@ -505,6 +578,48 @@ class TrialWindow(Gtk.ApplicationWindow):
         if self._loading_notes:
             return
         self._schedule_save()
+
+    # Fraction of the paned's own current width given to the KB panel when
+    # shown — a proportion, not a fixed pixel count, so it reads the same
+    # relative size in a small window and in fullscreen on a large monitor
+    # (a fixed pixel target either ballooned past the screen when it also
+    # absorbed window-resize deltas, or shrank to an unreadable sliver in
+    # fullscreen when it didn't — both tried and rejected).
+    _KB_PANEL_FRACTION = 0.32
+
+    def _toggle_kb_panel(self) -> None:
+        """Ctrl+K — matches the TUI's KBPanel toggle."""
+        showing = not self.kb_panel.get_visible()
+        self.kb_panel.set_visible(showing)
+        if showing:
+            paned_width = self.main_paned.get_width()
+            # get_width() can be 0 before the window's first real layout
+            # pass (e.g. toggled a frame after construction, before present()
+            # has fully settled) — skip the recompute rather than set a
+            # position derived from that, which is what forced the toplevel
+            # to grow past the screen in an earlier version of this method.
+            if paned_width > 0:
+                content_width = round(paned_width * (1 - self._KB_PANEL_FRACTION))
+                self.main_paned.set_position(content_width)
+
+    def _on_widget_focused(self, widget) -> None:
+        """Per-widget focus hook driving the KB panel — only resolves while
+        in Objective mode and only while the panel is actually visible,
+        matching the TUI's on_descendant_focus (scoped to
+        ObjectiveAssessmentView, and a no-op guard on panel.display)."""
+        if not self._in_objective_mode or not self.kb_panel.get_visible():
+            return
+        field_id = getattr(widget, "field_id", None)
+        if field_id is None:
+            return
+        if field_id.startswith("st_"):
+            field_id = field_id[3:]
+        registry = get_registry()
+        for region_id in self._active_regions:
+            entry = registry.resolve(region_id, field_id)
+            if entry is not None:
+                self.kb_panel.update(region_id, field_id)
+                return
 
     def _toggle_fullscreen(self) -> None:
         """F11 — matches bodychart's own F11 fullscreen toggle (see

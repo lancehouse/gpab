@@ -14,11 +14,47 @@ from gi.repository import Gtk, Gdk, GObject, Pango, GLib  # noqa: E402
 
 MIN_TOUCH = 48  # px, GNOME HIG minimum touch target
 
-# Chip buttons in a RadioGroup/MultiSelectGroup gang need more than the bare
-# touch minimum: 5-6 char labels like "↓Mrkd"/"Ovact" were wrapping into two
-# tiny hyphenated lines at MIN_TOUCH width (e.g. "↓Mr-\nkd"), unreadable at a
-# glance. Single source of truth so every gang chip gets the same width.
-CHIP_MIN_WIDTH = 72
+# RadioGroup/MultiSelectGroup chip minimum width. A RadioGroup chip's natural
+# width comes from its own label text (e.g. "↓Mrkd" naturally measures ~82px,
+# "Absent"/"↑Hyper" similarly ~85-90px) and normally displays at that full
+# comfortable width — but a bilateral row (two side-by-side RadioGroups, e.g.
+# Neurological's dermatome rows) can be squeezed below that natural width
+# once something else on the same page (the Ctrl+K KB panel, chiefly) takes
+# real room from the tab, and the row's *label chips* (5-7 chars: "Absent",
+# "↑Hyper") need a bit more floor than reflex/myotome's shorter ones (3-4
+# chars: "5/5", "2+ Norm") to avoid wrapping first. RADIO_CHIP_MIN_WIDTH is
+# that floor — 58px, not the MIN_TOUCH-only 48px a chip would otherwise
+# shrink to, but well short of an earlier 72px attempt that (combined with
+# two separate, since-fixed bugs — Gtk.Stack's default hhomogeneous sizing,
+# and the footer's ~1660px-wide unwrapped hotkey row) forced the whole
+# window wider than the screen. With both of those fixed, this modest floor
+# is safe: it can't on its own reproduce that overflow.
+RADIO_CHIP_MIN_WIDTH = 58
+
+# ---------------------------------------------------------------------------
+# Focus-listener registry — powers the Ctrl+K KB panel's focus-follow
+# behaviour (objective/kb_panel.py). A window-level Gtk.Root
+# "notify::focus-widget" hook was tried first and proved unreliable for
+# widgets nested inside a Gtk.Stack page in this app's structure (fired in
+# isolated tests, silently didn't fire once real Stack/ScrolledWindow
+# nesting was involved) — piggybacking on each widget's own
+# Gtk.EventControllerFocus "enter" signal instead, which already reliably
+# drives the focus-ring CSS below, is the trustworthy mechanism.
+# ---------------------------------------------------------------------------
+
+_focus_listeners: list = []
+
+
+def add_focus_listener(callback) -> None:
+    """Register callback(widget) to be invoked whenever any KB-relevant
+    widget (RadioGroup/MultiSelectGroup/CycleField/TouchEntry/AutoTextView)
+    gains focus."""
+    _focus_listeners.append(callback)
+
+
+def _notify_focus(widget: Gtk.Widget) -> None:
+    for cb in _focus_listeners:
+        cb(widget)
 
 # Single source of truth for the "left column" of every field row across the
 # whole app — whether that slot holds a Label or a toggle button standing in
@@ -103,6 +139,8 @@ def make_subsection_header(text: str) -> Gtk.Label:
     return lbl
 
 
+
+
 # ---------------------------------------------------------------------------
 # CheckButton / FlagButton — 3-state toggle
 # ---------------------------------------------------------------------------
@@ -166,6 +204,10 @@ class CheckButton(Gtk.Button):
         key_ctrl = Gtk.EventControllerKey()
         key_ctrl.connect("key-pressed", self._on_key_pressed)
         self.add_controller(key_ctrl)
+
+        focus_ctrl = Gtk.EventControllerFocus()
+        focus_ctrl.connect("enter", lambda _c: _notify_focus(self))
+        self.add_controller(focus_ctrl)
 
         self._apply()
 
@@ -308,6 +350,10 @@ class CycleField(Gtk.Box):
         key_ctrl.connect("key-pressed", self._on_key_pressed)
         self.button.add_controller(key_ctrl)
 
+        focus_ctrl = Gtk.EventControllerFocus()
+        focus_ctrl.connect("enter", lambda _c: _notify_focus(self))
+        self.button.add_controller(focus_ctrl)
+
         self._apply()
 
     def _on_key_pressed(self, _ctrl, keyval, _keycode, _state) -> bool:
@@ -429,7 +475,7 @@ class RadioGroup(Gtk.Box):
 
         for label, variant in options:
             btn = Gtk.ToggleButton(label=label)
-            btn.set_size_request(CHIP_MIN_WIDTH, MIN_TOUCH)
+            btn.set_size_request(RADIO_CHIP_MIN_WIDTH, MIN_TOUCH)
             btn.set_can_focus(False)  # the gang is one tab stop, not each chip
             btn.set_focus_on_click(False)
             btn.add_css_class(self._VARIANT_CLASS.get(variant, "rb-default"))
@@ -451,13 +497,17 @@ class RadioGroup(Gtk.Box):
         self.set_can_focus(True)
         self.set_focusable(True)
         focus_ctrl = Gtk.EventControllerFocus()
-        focus_ctrl.connect("enter", lambda _c: self.add_css_class("rg-focused"))
+        focus_ctrl.connect("enter", self._on_focus_enter)
         focus_ctrl.connect("leave", lambda _c: self.remove_css_class("rg-focused"))
         self.add_controller(focus_ctrl)
 
         key_ctrl = Gtk.EventControllerKey()
         key_ctrl.connect("key-pressed", self._on_key_pressed)
         self.add_controller(key_ctrl)
+
+    def _on_focus_enter(self, _c) -> None:
+        self.add_css_class("rg-focused")
+        _notify_focus(self)
 
     @property
     def value(self) -> str | None:
@@ -574,7 +624,7 @@ class MultiSelectGroup(Gtk.Box):
 
         for label, variant in options:
             btn = Gtk.ToggleButton(label=label)
-            btn.set_size_request(CHIP_MIN_WIDTH, MIN_TOUCH)
+            btn.set_size_request(RADIO_CHIP_MIN_WIDTH, MIN_TOUCH)
             btn.set_can_focus(False)
             btn.set_focus_on_click(False)
             btn.add_css_class(self._VARIANT_CLASS.get(variant, "rb-default"))
@@ -591,13 +641,17 @@ class MultiSelectGroup(Gtk.Box):
         self.set_can_focus(True)
         self.set_focusable(True)
         focus_ctrl = Gtk.EventControllerFocus()
-        focus_ctrl.connect("enter", lambda _c: self.add_css_class("rg-focused"))
+        focus_ctrl.connect("enter", self._on_focus_enter)
         focus_ctrl.connect("leave", lambda _c: self.remove_css_class("rg-focused"))
         self.add_controller(focus_ctrl)
 
         key_ctrl = Gtk.EventControllerKey()
         key_ctrl.connect("key-pressed", self._on_key_pressed)
         self.add_controller(key_ctrl)
+
+    def _on_focus_enter(self, _c) -> None:
+        self.add_css_class("rg-focused")
+        _notify_focus(self)
 
     @property
     def value(self) -> list[str]:
@@ -697,6 +751,10 @@ class AutoTextView(Gtk.ScrolledWindow):
         key_ctrl.connect("key-pressed", self._on_key_pressed)
         self.textview.add_controller(key_ctrl)
 
+        focus_ctrl = Gtk.EventControllerFocus()
+        focus_ctrl.connect("enter", lambda _c: _notify_focus(self))
+        self.textview.add_controller(focus_ctrl)
+
         if self._expand:
             # GtkTextView recomputes its internal text layout lazily, not
             # synchronously inside the buffer's own "changed" signal — measuring
@@ -785,6 +843,10 @@ class TouchEntry(Gtk.Entry):
         key_ctrl = Gtk.EventControllerKey()
         key_ctrl.connect("key-pressed", self._on_key_pressed)
         self.add_controller(key_ctrl)
+
+        focus_ctrl = Gtk.EventControllerFocus()
+        focus_ctrl.connect("enter", lambda _c: _notify_focus(self))
+        self.add_controller(focus_ctrl)
 
     def _on_key_pressed(self, _ctrl, keyval, _keycode, _state) -> bool:
         name = Gdk.keyval_name(keyval) or ""

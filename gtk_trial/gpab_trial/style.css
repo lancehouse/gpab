@@ -313,6 +313,16 @@ entry {
     font-size: 0.85rem;
 }
 
+/* Ctrl+K knowledge-base side panel (objective/kb_panel.py) */
+.kb-panel {
+    border-left: 1px solid alpha(currentColor, 0.2);
+    background: alpha(currentColor, 0.03);
+}
+.kb-panel label {
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
 /* Region blocks (objective/region_section.py) — collapsible per-region
    card within an Active Movement / Passive / Muscle / Special tab. */
 .region-container {
