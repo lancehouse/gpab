@@ -39,6 +39,10 @@ from .objective.kb_loader import get_registry
 from .objective.kb_db_screen import KBDBWindow
 from .search import build_index, find_by_field_id
 from .search_widget import SearchModal
+from .grid_overview import (
+    GridOverviewWindow, SUBJ_GRID_DATA, OBJ_GRID_DATA,
+    section_to_cursor, _section_has_data,
+)
 from .widgets import add_focus_listener
 from .nav import SectionNav
 from .topbar import SubsectionNavBar
@@ -592,6 +596,9 @@ class TrialWindow(Gtk.ApplicationWindow):
         if ctrl_held and name.lower() == "f":
             self._open_search()
             return True
+        if ctrl_held and name.lower() == "t":
+            self._open_grid_overview()
+            return True
         if alt_held and name.lower() in self._ALT_KEY_MAP:
             self._show_section("02_subjective")
             self.subjective.jump_to(self._ALT_KEY_MAP[name.lower()])
@@ -686,6 +693,40 @@ class TrialWindow(Gtk.ApplicationWindow):
             widget = find_by_field_id(page, entry.widget_id) if page is not None else None
             if widget is not None:
                 widget.grab_focus()
+
+    def _collect_grid_has_data(self, grid_data) -> dict[str, bool]:
+        has_data: dict[str, bool] = {}
+        for sid, _, _ in grid_data:
+            name = _SECTION_ID_TO_NAME.get(sid)
+            section = self._sections_by_name.get(name) if name else None
+            if section is None:
+                has_data[sid] = False
+                continue
+            try:
+                has_data[sid] = _section_has_data(section.collect())
+            except Exception:
+                has_data[sid] = False
+        return has_data
+
+    def _open_grid_overview(self) -> None:
+        """Ctrl+T — heading map for rapid section jump (TUI's Ctrl+G,
+        rebound — see grid_overview.py's module docstring for why)."""
+        grid_data = OBJ_GRID_DATA if self._in_objective_mode else SUBJ_GRID_DATA
+        has_data = self._collect_grid_has_data(grid_data)
+        cursor = section_to_cursor(self._current_section_id(), grid_data)
+
+        def on_selected(section_id: str, anchor_id: str) -> None:
+            # The SUBJ_GRID_DATA "04_objective" row is the one place
+            # anchor_id is itself a section id (e.g. "02_active") rather
+            # than an anchor within section_id — _show_section already
+            # handles any objective section id directly regardless of
+            # current mode, so no special-casing needed here.
+            if section_id == "04_objective":
+                self._show_section(anchor_id)
+            else:
+                self._show_section(section_id)
+
+        GridOverviewWindow(self, grid_data, has_data, cursor, on_selected).present()
 
     def _open_kb_browser(self) -> None:
         """Ctrl+D — full Clinical KB browser, independent of the Ctrl+K

@@ -50,11 +50,15 @@ toggle topbar (`objective/region_topbar.py`) mounts/unmounts regions live. Repor
 Classification's Regional Differential cluster-tally panel (`sections/regional_differential.py`,
 live-updated per active region, click-to-KB wired), the Ctrl+D full Clinical KB browser
 (`objective/kb_db_screen.py`, region list + condition/cluster/test tree + detail panel + its own
-fuzzy search), and Ctrl+F fuzzy jump-search across every assessment/objective field
-(`search.py` + `search_widget.py`) are all built and wired. Phase 4 (KB integration) is complete.
+fuzzy search), Ctrl+F fuzzy jump-search across every assessment/objective field
+(`search.py` + `search_widget.py`), and a heading-map overview (`grid_overview.py`, **Ctrl+T** —
+rebound from the TUI's original Ctrl+G, which the reference source has itself already reassigned
+to a not-yet-ported goniometer-import wizard) are all built and wired. Phase 4 (KB integration)
+is complete.
 
 ## What's still out of scope
 
-No live body-chart file-watcher re-sync (region toggling is manual only), no Ctrl+G heading-map
-overview, no wiring into `bodychart/src/integration.c`. See `CONVERSION_PLAN.md`'s Phase 3/6
+No live body-chart file-watcher re-sync (region toggling is manual only), no goniometer-import
+wizard (Ctrl+G in the reference source — separate, not-yet-started work), no wiring into
+`bodychart/src/integration.c`. See `CONVERSION_PLAN.md`'s Phase 3/6
 tables for the full remaining list.
