@@ -277,6 +277,13 @@ class DiagnosisSection(Gtk.Box, SectionBase):
         self.notebook.set_current_page(idx)
         self._notify_changed()
 
+    def select_workup(self, wid: str) -> None:
+        """Switch the notebook to a given workup's tab — used by Ctrl+F
+        search jump (search.py's dynamic CAL-CP entries)."""
+        page = self._pages.get(wid)
+        if page is not None:
+            self.notebook.set_current_page(self.notebook.page_num(page))
+
     def _sync_notebook(self) -> None:
         """Add/remove notebook pages to match self._workups exactly, then
         rebuild every remaining page's body. Called after load() (which may

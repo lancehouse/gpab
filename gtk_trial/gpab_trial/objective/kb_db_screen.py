@@ -553,7 +553,15 @@ class _RegionRow(Gtk.ListBoxRow):
 
 class _KBSearchWindow(Gtk.Window):
     """Ctrl+F / F fuzzy jump-search — GTK4 port of the TUI's _KBSearchModal.
-    Up/Down move selection, Enter confirms, Escape cancels."""
+    Up/Down move selection, Enter confirms, Escape cancels.
+
+    Keyboard nav is wired via Gtk.SearchEntry's own signals
+    (next-match/previous-match/stop-search/activate), NOT a window-level
+    Gtk.EventControllerKey — GtkSearchEntry has built-in class key bindings
+    for exactly Down/Up/Escape/Enter, which consume those keys at the entry
+    itself before they'd ever bubble to an ancestor controller. A first
+    version of this window used a window-level key controller and none of
+    the four ever fired, for this reason."""
 
     def __init__(self, parent: Gtk.Window, index: list[KBSearchEntry], on_selected) -> None:
         super().__init__(transient_for=parent, modal=True, decorated=False)
@@ -573,6 +581,10 @@ class _KBSearchWindow(Gtk.Window):
         self.entry = Gtk.SearchEntry()
         self.entry.set_placeholder_text("⌕ type to search…")
         self.entry.connect("search-changed", self._on_changed)
+        self.entry.connect("next-match", self._on_next_match)
+        self.entry.connect("previous-match", self._on_previous_match)
+        self.entry.connect("stop-search", self._on_stop_search)
+        self.entry.connect("activate", self._on_activate)
         box.append(self.entry)
 
         self.results_box = Gtk.ListBox()
@@ -585,10 +597,6 @@ class _KBSearchWindow(Gtk.Window):
         box.append(scroll)
 
         self.set_child(box)
-
-        key_ctrl = Gtk.EventControllerKey()
-        key_ctrl.connect("key-pressed", self._on_key)
-        self.add_controller(key_ctrl)
 
         self.connect("show", lambda *_a: self.entry.grab_focus())
 
@@ -612,26 +620,22 @@ class _KBSearchWindow(Gtk.Window):
         if results:
             self.results_box.select_row(self.results_box.get_row_at_index(0))
 
-    def _on_key(self, _ctrl, keyval, _keycode, _state) -> bool:
-        name = Gdk.keyval_name(keyval) or ""
-        if name == "Down":
-            if self._selected_idx < len(self._entries) - 1:
-                self._selected_idx += 1
-                self.results_box.select_row(self.results_box.get_row_at_index(self._selected_idx))
-            return True
-        if name == "Up":
-            if self._selected_idx > 0:
-                self._selected_idx -= 1
-                self.results_box.select_row(self.results_box.get_row_at_index(self._selected_idx))
-            return True
-        if name in ("Return", "KP_Enter"):
-            if 0 <= self._selected_idx < len(self._entries):
-                self._finish(self._entries[self._selected_idx])
-            return True
-        if name == "Escape":
-            self._finish(None)
-            return True
-        return False
+    def _on_next_match(self, _entry: Gtk.SearchEntry) -> None:
+        if self._selected_idx < len(self._entries) - 1:
+            self._selected_idx += 1
+            self.results_box.select_row(self.results_box.get_row_at_index(self._selected_idx))
+
+    def _on_previous_match(self, _entry: Gtk.SearchEntry) -> None:
+        if self._selected_idx > 0:
+            self._selected_idx -= 1
+            self.results_box.select_row(self.results_box.get_row_at_index(self._selected_idx))
+
+    def _on_activate(self, _entry: Gtk.SearchEntry) -> None:
+        if 0 <= self._selected_idx < len(self._entries):
+            self._finish(self._entries[self._selected_idx])
+
+    def _on_stop_search(self, _entry: Gtk.SearchEntry) -> None:
+        self._finish(None)
 
     def _on_row_activated(self, _box, row: Gtk.ListBoxRow) -> None:
         idx = row.get_index()

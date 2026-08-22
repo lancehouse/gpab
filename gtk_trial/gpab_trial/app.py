@@ -37,6 +37,8 @@ from .objective.objective_nav import ObjectiveNav
 from .objective.kb_panel import KBPanel
 from .objective.kb_loader import get_registry
 from .objective.kb_db_screen import KBDBWindow
+from .search import build_index, find_by_field_id
+from .search_widget import SearchModal
 from .widgets import add_focus_listener
 from .nav import SectionNav
 from .topbar import SubsectionNavBar
@@ -587,6 +589,9 @@ class TrialWindow(Gtk.ApplicationWindow):
         if ctrl_held and name.lower() == "d":
             self._open_kb_browser()
             return True
+        if ctrl_held and name.lower() == "f":
+            self._open_search()
+            return True
         if alt_held and name.lower() in self._ALT_KEY_MAP:
             self._show_section("02_subjective")
             self.subjective.jump_to(self._ALT_KEY_MAP[name.lower()])
@@ -620,6 +625,13 @@ class TrialWindow(Gtk.ApplicationWindow):
         else:
             self.notes_overlay.grab_focus()
 
+    def _show_notes(self) -> None:
+        """Unconditionally show + focus the notes overlay — used by search
+        jump (a scratchpad_text hit), unlike _toggle_notes (F10) which flips
+        whatever the current state is."""
+        self.notes_overlay.set_visible(True)
+        self.notes_overlay.grab_focus()
+
     def _on_notes_changed(self, _buffer) -> None:
         if self._loading_notes:
             return
@@ -632,6 +644,48 @@ class TrialWindow(Gtk.ApplicationWindow):
     # absorbed window-resize deltas, or shrank to an unreadable sliver in
     # fullscreen when it didn't — both tried and rejected).
     _KB_PANEL_FRACTION = 0.32
+
+    def _open_search(self) -> None:
+        """Ctrl+F — jump-search across sections, subsections, and fields.
+        Mirrors the TUI's action_search/SearchModal."""
+        index = build_index(self)
+
+        def on_selected(entry) -> None:
+            if entry is not None:
+                self._execute_jump(entry)
+
+        SearchModal(self, index, on_selected).present()
+
+    def _execute_jump(self, entry) -> None:
+        """Navigate to a chosen search result — GTK counterpart to
+        tui.py's _execute_jump. One deliberate scope cut from the TUI: a
+        "subsection" entry (no widget_id) only switches to the right
+        section/tab (which already focuses that section's first field via
+        _show_section) rather than scrolling to the exact subsection
+        anchor — TUI parity there would mean retrofitting a named anchor
+        onto every subsection header across 8+ section files (~80 anchors),
+        which the TUI itself only bothered with for the sections listed in
+        _jump_to; every "field"/"content" entry (the common case — a named
+        field or typed text) still jumps to the exact widget and focuses it,
+        via find_by_field_id against whichever page is now on screen."""
+        if entry.widget_id and entry.widget_id.startswith("__workup_"):
+            wid = entry.widget_id.split("__", 2)[-1]
+            self._show_section("06_diagnosis")
+            self.diagnosis.select_workup(wid)
+            return
+
+        if entry.section_id == "scratchpad":
+            self._show_notes()
+            return
+
+        section_id = entry.section_id[4:] if entry.section_id.startswith("obj:") else entry.section_id
+        self._show_section(section_id)
+
+        if entry.widget_id:
+            page = self.stack.get_visible_child()
+            widget = find_by_field_id(page, entry.widget_id) if page is not None else None
+            if widget is not None:
+                widget.grab_focus()
 
     def _open_kb_browser(self) -> None:
         """Ctrl+D — full Clinical KB browser, independent of the Ctrl+K
