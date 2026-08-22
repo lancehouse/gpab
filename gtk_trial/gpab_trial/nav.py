@@ -33,7 +33,11 @@ SECTION_LABELS = [
 # has its own 8-section sidebar (General/Active/Passive/.../Special); this
 # trial builds just the one tab, so the label above says so rather than
 # implying the rest of Objective mode is reachable.
-BUILT_SECTIONS = {"01_consent", "02_subjective", "04_objective"}
+BUILT_SECTIONS = {
+    "01_consent", "02_subjective", "03_medical", "04_objective",
+    "04_pain_classification", "05_outcome_measures", "06_diagnosis", "07_barriers",
+    "08_rx_plan",
+}
 
 
 class SectionNav(Gtk.Box):

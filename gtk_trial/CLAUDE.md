@@ -11,12 +11,10 @@ what's specific to running/building the code in this directory.
 - **`~/Projects/gpab` is a `git clone` of `~/Projects/pab`, with its own independent
   `.git` and no `origin` remote.** It cannot push to or otherwise affect the real `pab`
   or `kb` repos.
-- **This trial only ever reads/writes inside `~/Projects/gpab` and `~/PAB-gtktrial/`.**
-  It never opens `~/PAB/<name>/` (the real, live session directory) for writing.
-  `gpab_trial/main.py` actively refuses to launch against any path under `~/PAB/`.
-- To test with real data, copy a session out first:
-  `scripts/copy_trial_session.sh <session-name>` (reads `~/PAB/<name>/`, writes only to
-  `~/PAB-gtktrial/<name>/`).
+- **Session data isolation was relaxed 2026-08-22**: reading/writing real sessions under
+  `~/PAB/<name>/` directly is fine now — `gpab_trial/main.py` no longer refuses it.
+  `~/PAB-gtktrial/` (via `scripts/copy_trial_session.sh`) still works if you want a disposable
+  copy, but isn't required.
 - The `assessment/` and `bodychart/` folders in this clone are untouched reference
   copies — all trial code lives in `gtk_trial/`, imported via `pab_path_bootstrap.py`
   pointing at *this clone's* `assessment/`, never `~/Projects/pab/assessment/`.

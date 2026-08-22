@@ -11,26 +11,15 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
+from ..section_base import SectionBase
 from ..widgets import (
     CheckButton, FlagButton, AutoTextView, TouchEntry,
-    field_left_slot, make_subsection_header as _header,
+    make_subsection_header as _header,
+    field_row as _field_row,
 )
 
 
-def _field_row(label_text: str, widget: Gtk.Widget) -> Gtk.Box:
-    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-    lbl = Gtk.Label(label=label_text)
-    lbl.add_css_class("field-label")
-    lbl.set_halign(Gtk.Align.START)
-    lbl.set_valign(Gtk.Align.START)
-    lbl.set_wrap(True)
-    field_left_slot(lbl)
-    row.append(lbl)
-    row.append(widget)
-    return row
-
-
-class ConsentSection(Gtk.Box):
+class ConsentSection(Gtk.Box, SectionBase):
     def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.set_margin_top(8)

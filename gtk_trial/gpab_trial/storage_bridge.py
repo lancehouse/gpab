@@ -16,12 +16,19 @@ from pab_assessment.storage import (  # noqa: E402
     objective_path,
     load_objective,
     save_objective,
+    export_session_report,
 )
 
 # Section id -> JSON key, matching assessment_view.py's _SEC_KEYS convention.
 SECTION_KEYS = {
     "01_consent": "consent",
     "02_subjective": "subjective",
+    "03_medical": "medical",
+    "04_pain_classification": "pain_classification",
+    "05_outcome_measures": "outcome_measures",
+    "06_diagnosis": "diagnosis",
+    "07_barriers": "barriers",
+    "08_rx_plan": "rx_plan",
 }
 
 # Same convention for the separate _objective.json file (objective_view.py's
@@ -85,6 +92,22 @@ def save_objective_sections(
     return save_objective(session_file, section_data, sections_complete)
 
 
+def generate_report(session_file: str) -> str:
+    """Regenerate *_report.md via storage.export_session_report and return its text.
+
+    Writes the file (so it's current on disk, same as a real save would leave
+    it) and returns the freshly-written content for direct display, rather
+    than reading the file back a second time.
+    """
+    out_path = export_session_report(session_file)
+    if not out_path:
+        return ""
+    try:
+        return Path(out_path).read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
 __all__ = [
     "assessment_path",
     "objective_path",
@@ -93,6 +116,7 @@ __all__ = [
     "save_sections",
     "load_objective_block",
     "save_objective_sections",
+    "generate_report",
     "SECTION_KEYS",
     "OBJECTIVE_SECTION_KEYS",
 ]

@@ -17,9 +17,17 @@ from gi.repository import Gtk  # noqa: E402
 HINTS = [
     ("F1", "Consent"),
     ("F2", "Subjective"),
+    ("F3", "Medical"),
+    ("F5", "Pain Class"),
+    ("F6", "Outcomes"),
+    ("F7", "Diagnosis"),
+    ("F8", "Barriers"),
+    ("F9", "Rx & Plan"),
+    ("F10", "Notes"),
     ("F4", "Neurological"),
     ("Alt+letter", "Jump subsection"),
     ("Ctrl+A", "Select All"),
+    ("Ctrl+R", "Report"),
     ("Ctrl+Q", "Quit"),
 ]
 

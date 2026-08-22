@@ -27,6 +27,7 @@ from gi.repository import Gtk  # noqa: E402
 from ...widgets import RadioGroup, FlagButton, AutoTextView, TouchEntry, make_subsection_header
 from ..grid_widgets import bilateral_header_row, bilateral_radio_row, bilateral_field_row
 from ..grid_nav import GridNav
+from ...section_base import SectionBase
 
 # ---------------------------------------------------------------------------
 # Gang option sets — identical to the TUI's (labels, variants, cycle order)
@@ -117,7 +118,7 @@ _NOTES_IDS = [
 ]
 
 
-class NeurologicalSection(Gtk.Box, GridNav):
+class NeurologicalSection(Gtk.Box, GridNav, SectionBase):
     def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.set_margin_top(8)

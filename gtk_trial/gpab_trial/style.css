@@ -46,9 +46,28 @@
 .cb-yes        { background: #2e7d32; color: white; }
 .cb-no         { background: #c62828; color: white; }
 
-button:focus-visible.clinical-toggle,
-entry:focus-visible,
-textview:focus-visible {
+/* Focus ring — permanently visible for as long as the field has focus,
+   regardless of whether focus arrived via click or Tab. Was previously
+   :focus-visible, which (per its actual CSS semantics) only ever applies
+   after keyboard navigation — a mouse click never triggers it at all, which
+   read as "the highlight fades after a couple seconds" when what was
+   really happening was a separate, unrelated default click-ripple
+   animation firing (and fading) while the real focus ring just never
+   appeared. Plain :focus fires for both input methods and has no
+   transition here, so nothing fades.
+   Colour is theme-aware: yellow reads clearly against a dark background
+   but washes out on light backgrounds, so app.py detects light/dark at
+   startup (and on live theme changes) and toggles a .theme-dark class on
+   the top-level window; the two blocks below key off that. */
+button:focus.clinical-toggle,
+entry:focus,
+textview:focus {
+    outline: 3px solid #1565c0;
+    outline-offset: 2px;
+}
+window.theme-dark button:focus.clinical-toggle,
+window.theme-dark entry:focus,
+window.theme-dark textview:focus {
     outline: 3px solid #ffeb3b;
     outline-offset: 2px;
 }
@@ -87,6 +106,12 @@ textview:focus-visible {
    outline above, so "where's my cursor" and "what's selected" never look
    like the same signal even when they're both on screen at once. */
 .radio-group.rg-focused {
+    outline: 4px solid #1565c0;
+    outline-offset: 3px;
+    border-radius: 4px;
+    box-shadow: 0 0 8px 2px rgba(21, 101, 192, 0.55);
+}
+window.theme-dark .radio-group.rg-focused {
     outline: 4px solid #ffeb3b;
     outline-offset: 3px;
     border-radius: 4px;
@@ -119,6 +144,27 @@ entry {
     color: white;
 }
 
+/* Smaller sub-heading nested inside a subsection (e.g. "Malignancy:" within
+   Red Flags) — mirrors the TUI's .subgroup_header (muted, italic), distinct
+   from .subsection-header's full-width bar. Built by
+   widgets.make_subgroup_header(). */
+.subgroup-header {
+    font-style: italic;
+    opacity: 0.75;
+    margin-top: 6px;
+}
+
+/* LikelihoodField's "Moderate" state — the TUI's warning variant, not
+   reused from cb-unanswered/cb-yes/cb-no since Moderate needs its own
+   distinct colour between Low (safe/green) and High (danger/red). */
+.lf-moderate { background: #f9a825; color: black; }
+
+/* Red-flag alert banner (medical.py) — urgent (cauda equina / cord
+   compression) vs. general red-flag-positive, mirroring the TUI's
+   #med_rf_alert.rf_warning / .rf_urgent. */
+.rf-alert-warning { background: alpha(#f9a825, 0.25); color: #7a4a00; font-weight: bold; padding: 6px 10px; }
+.rf-alert-urgent  { background: alpha(#c62828, 0.25); color: #b71c1c; font-weight: bold; padding: 6px 10px; }
+
 .section-title {
     font-weight: bold;
     font-size: 1.3rem;
@@ -132,6 +178,56 @@ entry {
 .reference-note {
     font-style: italic;
     opacity: 0.7;
+}
+
+/* Diagnosis (CAL-CP walker) — current-node box, lookahead-tree preview,
+   result banner. See sections/diagnosis.py. */
+.dx-node-box {
+    background: alpha(#f9a825, 0.25);
+    border: 2px solid #f9a825;
+    border-radius: 4px;
+    padding: 8px;
+}
+.dx-node-box:focus-within { border-color: #1565c0; }
+.dx-result-banner {
+    background: alpha(#2e7d32, 0.2);
+    border: 1px solid #2e7d32;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-weight: bold;
+}
+.dx-daughter-box {
+    border: 1px solid alpha(currentColor, 0.3);
+    border-radius: 4px;
+    padding: 6px;
+}
+.dx-daughter-box.clickable:hover { background: alpha(#1565c0, 0.15); }
+.dx-grandchild-box {
+    border: 1px solid alpha(currentColor, 0.2);
+    border-radius: 4px;
+    padding: 6px;
+    opacity: 0.85;
+    font-size: 0.9rem;
+}
+.dx-grandchild-box.clickable:hover { background: alpha(#1565c0, 0.15); }
+.dx-pathway-end {
+    font-style: italic;
+    opacity: 0.6;
+    padding: 6px;
+}
+.dx-temporal-btn {
+    border: 1px solid alpha(currentColor, 0.3);
+    border-radius: 6px;
+    padding: 4px;
+}
+.notes-overlay {
+    border-top: 2px solid alpha(currentColor, 0.3);
+    padding-top: 4px;
+}
+
+.dx-temporal-btn:checked {
+    background: alpha(#1565c0, 0.2);
+    border: 2px solid #1565c0;
 }
 
 /* Left sidebar nav — GTK4 equivalent of the TUI's SectionNav */

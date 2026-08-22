@@ -1,0 +1,31 @@
+#!/bin/bash
+# Stable, always-fresh launcher for the gpab GTK conversion app.
+#
+# GtkApplication is single-instance per application_id (com.gpab.trial): a
+# second launch while one is already running just hands activation to the
+# existing process instead of loading new code. That silently showed stale
+# code once already (Pain Classification looked missing because the running
+# instance predated it, not because the tab wasn't built) — this script kills
+# any running instance first so `gpab <name>` always reflects the latest code.
+#
+# Usage: gpab [session-name]   (same names scripts/run.sh accepts — checks
+#                                ~/PAB/<name>/ first, then ~/PAB-gtktrial/<name>/)
+#
+# With no argument, falls back to a fixed test session (DEFAULT_SESSION
+# below) rather than printing a usage message — this is a temporary
+# convenience until the real launcher integration (CONVERSION_PLAN.md Phase
+# 6) replaces this script entirely; remove this fallback once that lands.
+DEFAULT_SESSION="XX_17_08_2026_2141"
+
+set -euo pipefail
+cd "$(dirname "$(readlink -f "$0")")/gtk_trial"
+
+pkill -f "gpab_trial\.main" 2>/dev/null || true
+sleep 0.3
+
+if [ $# -eq 0 ]; then
+    echo "No session given — defaulting to test session '$DEFAULT_SESSION'." >&2
+    exec bash scripts/run.sh "$DEFAULT_SESSION"
+fi
+
+exec bash scripts/run.sh "$@"

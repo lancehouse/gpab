@@ -21,9 +21,12 @@ from gi.repository import Gtk  # noqa: E402
 from ..storage_bridge import pab_path_bootstrap, load_session_json  # noqa: F401
 from pab_assessment.mapping import build_prefill  # noqa: E402
 
+from ..section_base import SectionBase
 from ..widgets import (
     CheckButton, FlagButton, AutoTextView, TouchEntry,
     field_left_slot, make_subsection_header as _header,
+    field_row_pair as _field_row_pair,
+    field_row as _field_row,
 )
 from .yaml_subsection import YamlSubsectionGtk
 
@@ -33,19 +36,6 @@ _SLEEP_YAML = (
 
 _FULL_SLOTS = 3
 _OVERFLOW_SLOTS = 2
-
-
-def _field_row(label_text: str, widget: Gtk.Widget) -> Gtk.Box:
-    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-    lbl = Gtk.Label(label=label_text)
-    lbl.add_css_class("field-label")
-    lbl.set_halign(Gtk.Align.START)
-    lbl.set_valign(Gtk.Align.START)
-    lbl.set_wrap(True)
-    field_left_slot(lbl)
-    row.append(lbl)
-    row.append(widget)
-    return row
 
 
 class _NoteSlot(Gtk.Box):
@@ -91,7 +81,7 @@ class _NoteSlot(Gtk.Box):
             yield "ease", self.ease
 
 
-class SubjectiveSection(Gtk.Box):
+class SubjectiveSection(Gtk.Box, SectionBase):
     def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.set_margin_top(8)
@@ -487,16 +477,3 @@ class SubjectiveSection(Gtk.Box):
             target.grab_focus()
 
 
-def _field_row_pair(flag_widget: Gtk.Widget, text_widget: Gtk.Widget) -> Gtk.Box:
-    """A toggle button standing in for the row's label, paired with a field.
-
-    field_left_slot() forces the toggle to the exact same width as every
-    plain label (FIELD_LEFT_COLUMN_PX) so its row's text field starts at the
-    same x position as every other field row — this is the single place that
-    rule is enforced, so it can never drift out of sync section by section.
-    """
-    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-    field_left_slot(flag_widget)
-    row.append(flag_widget)
-    row.append(text_widget)
-    return row

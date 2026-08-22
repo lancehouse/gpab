@@ -24,10 +24,13 @@ been proven so far and why, and `CONVERSION_PLAN.md` for the section-by-section 
 - All new conversion code lives in `gtk_trial/` (name is a holdover from the touch-trial phase;
   not yet renamed since renaming mid-conversion would churn every import path for no benefit —
   revisit once the conversion is far enough along that a rename is worth the diff).
-- Session data used for testing lives in `~/PAB-gtktrial/` (sibling to the real `~/PAB/`),
-  populated only by *copying* a real session via `gtk_trial/scripts/copy_trial_session.sh` — never
-  by writing back to `~/PAB/`. `gtk_trial/gpab_trial/main.py` actively refuses to launch against
-  any path under the real `~/PAB/`.
+- **Session data isolation was relaxed 2026-08-22**: this app may now read and write real sessions
+  under `~/PAB/` directly — the user is not worried about data corruption there and wants saves to
+  actually land in `~/PAB` (needed for report generation and the eventual body-chart integration
+  work). `~/PAB-gtktrial/` (populated via `gtk_trial/scripts/copy_trial_session.sh`) still exists
+  and still works, but is no longer required. **What still never happens**: writing to
+  `~/Projects/pab` or `~/Projects/kb` — the code-repo isolation below is unconditional and
+  unaffected by this relaxation.
 - Before and after any substantial work session, confirm nothing has leaked:
   `git -C ~/Projects/pab status --short | wc -l` and `git -C ~/Projects/kb status --short | wc -l`
   should be unchanged from whatever they were at the start of this project (11 and 5 as of this

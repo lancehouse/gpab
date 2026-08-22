@@ -20,16 +20,30 @@ from .storage_bridge import (
 )
 from .sections.consent import ConsentSection
 from .sections.subjective import SubjectiveSection
+from .sections.medical import MedicalSection
+from .sections.pain_classification import PainClassificationSection
+from .sections.outcome_measures import OutcomeMeasuresSection
+from .sections.diagnosis import DiagnosisSection
+from .sections.barriers import BarriersSection
+from .sections.rx_plan import RxPlanSection
 from .objective.sections.neurological import NeurologicalSection
 from .nav import SectionNav
 from .topbar import SubsectionNavBar
 from .footer import FooterBar
+from .report_modal import ReportModal
+from .notes_overlay import NotesOverlay
 
 AUTOSAVE_DEBOUNCE_MS = 2000
 
 _NAME_TO_SECTION_ID = {
     "consent": "01_consent",
     "subjective": "02_subjective",
+    "medical": "03_medical",
+    "pain_classification": "04_pain_classification",
+    "outcome_measures": "05_outcome_measures",
+    "diagnosis": "06_diagnosis",
+    "barriers": "07_barriers",
+    "rx_plan": "08_rx_plan",
     "neurological": "04_objective",
 }
 _SECTION_ID_TO_NAME = {v: k for k, v in _NAME_TO_SECTION_ID.items()}
@@ -43,6 +57,7 @@ class TrialWindow(Gtk.ApplicationWindow):
         self._save_source_id: int | None = None       # debounce for _assessment.json
         self._save_source_id_obj: int | None = None    # debounce for _objective.json (separate file, separate timer — matches TUI's AssessmentView/ObjectiveAssessmentView split)
         self._is_fullscreen = False
+        self._loading_notes = False
 
         # Narrow OS-drawn titlebar: a HeaderBar with no title widget (just
         # the window controls) is far shorter than the default titlebar,
@@ -90,11 +105,23 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.consent = ConsentSection()
         self.subjective = SubjectiveSection()
         self.subjective.session_file = session_file
+        self.medical = MedicalSection()
+        self.pain_classification = PainClassificationSection()
+        self.outcome_measures = OutcomeMeasuresSection()
+        self.diagnosis = DiagnosisSection()
+        self.barriers = BarriersSection()
+        self.rx_plan = RxPlanSection()
         self.neurological = NeurologicalSection()
 
         self._sections_by_name = {
             "consent": self.consent,
             "subjective": self.subjective,
+            "medical": self.medical,
+            "pain_classification": self.pain_classification,
+            "outcome_measures": self.outcome_measures,
+            "diagnosis": self.diagnosis,
+            "barriers": self.barriers,
+            "rx_plan": self.rx_plan,
             "neurological": self.neurological,
         }
 
@@ -108,6 +135,11 @@ class TrialWindow(Gtk.ApplicationWindow):
             self.stack.add_named(scroll, name)
         content_column.append(self.stack)
 
+        # -- F10 notes overlay: freeform notes, hidden until toggled --------
+        self.notes_overlay = NotesOverlay()
+        self.notes_overlay.connect_changed(self._on_notes_changed)
+        content_column.append(self.notes_overlay)
+
         # -- bottom bar: hotkey hints + save status -----------------------------
         self.footer = FooterBar()
         outer.append(self.footer)
@@ -115,6 +147,12 @@ class TrialWindow(Gtk.ApplicationWindow):
 
         self.consent.set_on_changed(self._on_consent_changed)
         self.subjective.set_on_changed(self._on_subjective_changed)
+        self.medical.set_on_changed(self._schedule_save)
+        self.pain_classification.set_on_changed(self._schedule_save)
+        self.outcome_measures.set_on_changed(self._schedule_save)
+        self.diagnosis.set_on_changed(self._schedule_save)
+        self.barriers.set_on_changed(self._schedule_save)
+        self.rx_plan.set_on_changed(self._schedule_save)
         self.neurological.set_on_changed(self._schedule_save_obj)
 
         # -- global hotkeys (capture phase — fire before the focused widget
@@ -145,6 +183,22 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.nav.set_active(section_id)
         self.stack.set_visible_child_name(name)
         self._sections_by_name[name].focus_first_field()
+        if name in ("pain_classification", "outcome_measures"):
+            # Mirrors assessment_view.py's _show_section: cross-reference
+            # badges are computed from in-memory sibling-section data (no
+            # disk I/O), refreshed on every switch into this tab.
+            self._sections_by_name[name].update_cross_refs({
+                "medical": self.medical.collect(),
+                "subjective": self.subjective.collect(),
+            })
+        elif name == "barriers":
+            self.barriers.update_cross_refs({
+                "medical": self.medical.collect(),
+                "subjective": self.subjective.collect(),
+                "pain_classification": self.pain_classification.collect(),
+                "outcome_measures": self.outcome_measures.collect(),
+                "diagnosis": self.diagnosis.collect(),
+            })
 
     def _load(self) -> None:
         assessment = load_assessment_block(self.session_file)
@@ -152,6 +206,18 @@ class TrialWindow(Gtk.ApplicationWindow):
         subjective_data = assessment.get("subjective", {})
         self.subjective.load(subjective_data)
         self.consent.load_goals(subjective_data)
+        self.medical.load(assessment.get("medical", {}))
+        self.pain_classification.load(assessment.get("pain_classification", {}))
+        self.outcome_measures.load(assessment.get("outcome_measures", {}))
+        self.diagnosis.load(assessment.get("diagnosis", {}))
+        self.barriers.load(assessment.get("barriers", {}))
+        self.rx_plan.load(assessment.get("rx_plan", {}))
+
+        self._loading_notes = True
+        try:
+            self.notes_overlay.load_text(assessment.get("scratchpad", {}).get("notes", ""))
+        finally:
+            self._loading_notes = False
 
         objective = load_objective_block(self.session_file)
         self.neurological.load(objective.get("neurological", {}))
@@ -189,6 +255,27 @@ class TrialWindow(Gtk.ApplicationWindow):
         if name == "F2":
             self._show_section("02_subjective")
             return True
+        if name == "F3":
+            self._show_section("03_medical")
+            return True
+        if name == "F5" and not ctrl_held:
+            self._show_section("04_pain_classification")
+            return True
+        if name == "F6" and not ctrl_held:
+            self._show_section("05_outcome_measures")
+            return True
+        if name == "F7" and not ctrl_held:
+            self._show_section("06_diagnosis")
+            return True
+        if name == "F8" and not ctrl_held:
+            self._show_section("07_barriers")
+            return True
+        if name == "F9" and not ctrl_held:
+            self._show_section("08_rx_plan")
+            return True
+        if name == "F10":
+            self._toggle_notes()
+            return True
         if name == "F4":
             self._show_section("04_objective")
             return True
@@ -203,11 +290,46 @@ class TrialWindow(Gtk.ApplicationWindow):
             return True
         if ctrl_held and name.lower() == "a":
             return self._select_all_focused()
+        if ctrl_held and name.lower() == "r":
+            self._show_report()
+            return True
         if alt_held and name.lower() in self._ALT_KEY_MAP:
             self._show_section("02_subjective")
             self.subjective.jump_to(self._ALT_KEY_MAP[name.lower()])
             return True
         return False
+
+    def _show_report(self) -> None:
+        """Ctrl+R — flush any pending debounced save first, same reasoning as
+        _flush_and_quit: the report must reflect the latest edit, not whatever
+        was last on disk before the 2s autosave debounce fired."""
+        if self._save_source_id is not None:
+            GLib.source_remove(self._save_source_id)
+            self._save_source_id = None
+            self._do_save()
+        if self._save_source_id_obj is not None:
+            GLib.source_remove(self._save_source_id_obj)
+            self._save_source_id_obj = None
+            self._do_save_obj()
+        ReportModal(self, self.session_file).present()
+
+    def _toggle_notes(self) -> None:
+        """F10 — matches main.py's action_toggle_notes: hiding refocuses the
+        active section's first field so hotkeys work immediately, exactly as
+        the TUI does after dismissing the overlay."""
+        visible = self.notes_overlay.get_visible()
+        self.notes_overlay.set_visible(not visible)
+        if visible:
+            name = _SECTION_ID_TO_NAME.get(self.nav.active_section)
+            if name:
+                self._sections_by_name[name].focus_first_field()
+        else:
+            self.notes_overlay.grab_focus()
+
+    def _on_notes_changed(self, _buffer) -> None:
+        if self._loading_notes:
+            return
+        self._schedule_save()
 
     def _toggle_fullscreen(self) -> None:
         """F11 — matches bodychart's own F11 fullscreen toggle (see
@@ -299,10 +421,26 @@ class TrialWindow(Gtk.ApplicationWindow):
         section_data = {
             SECTION_KEYS["01_consent"]: self.consent.collect(),
             SECTION_KEYS["02_subjective"]: self.subjective.collect(),
+            SECTION_KEYS["03_medical"]: self.medical.collect(),
+            SECTION_KEYS["04_pain_classification"]: self.pain_classification.collect(),
+            SECTION_KEYS["05_outcome_measures"]: self.outcome_measures.collect(),
+            SECTION_KEYS["06_diagnosis"]: self.diagnosis.collect(),
+            SECTION_KEYS["07_barriers"]: self.barriers.collect(),
+            SECTION_KEYS["08_rx_plan"]: self.rx_plan.collect(),
+            # Legacy key (not one of SECTION_KEYS — the TUI's own F10 notes
+            # overlay is window-level chrome, not a numbered section), saved
+            # under "scratchpad" for backward compat with existing sessions.
+            "scratchpad": {"notes": self.notes_overlay.text},
         }
         sections_complete = {
             "01_consent": self.consent.is_complete(),
             "02_subjective": self.subjective.is_complete(),
+            "03_medical": self.medical.is_complete(),
+            "04_pain_classification": self.pain_classification.is_complete(),
+            "05_outcome_measures": self.outcome_measures.is_complete(),
+            "06_diagnosis": self.diagnosis.is_complete(),
+            "07_barriers": self.barriers.is_complete(),
+            "08_rx_plan": self.rx_plan.is_complete(),
         }
 
         ok = save_sections(self.session_file, section_data, sections_complete)
@@ -345,6 +483,25 @@ def build_app(session_file: str) -> Gtk.Application:
             display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
         win = TrialWindow(app, session_file)
+
+        # GTK CSS has no light/dark media query, so app.py detects the
+        # system preference itself (via Gtk.Settings, which GNOME's
+        # appearance portal keeps in sync) and toggles a .theme-dark class
+        # the stylesheet keys off of — see style.css's focus-ring rules.
+        # Re-applied live on toggle (e.g. GNOME's dark-mode switch) as well
+        # as at startup, not just once.
+        settings = Gtk.Settings.get_default()
+
+        def _apply_theme_class(*_args) -> None:
+            is_dark = settings.get_property("gtk-application-prefer-dark-theme")
+            if is_dark:
+                win.add_css_class("theme-dark")
+            else:
+                win.remove_css_class("theme-dark")
+
+        settings.connect("notify::gtk-application-prefer-dark-theme", _apply_theme_class)
+        _apply_theme_class()
+
         win.present()
 
     app.connect("activate", on_activate)

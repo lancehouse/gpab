@@ -10,7 +10,7 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Gdk, GObject, Pango  # noqa: E402
+from gi.repository import Gtk, Gdk, GObject, Pango, GLib  # noqa: E402
 
 MIN_TOUCH = 48  # px, GNOME HIG minimum touch target
 
@@ -32,6 +32,51 @@ def field_left_slot(widget: Gtk.Widget) -> Gtk.Widget:
     widget.set_size_request(FIELD_LEFT_COLUMN_PX, -1)
     widget.set_hexpand(False)
     return widget
+
+
+def field_row(label_text: str, widget: Gtk.Widget) -> Gtk.Box:
+    """Label + field row, using the shared left-column width. Previously
+    duplicated identically in consent.py and subjective.py; promoted here
+    when medical.py needed a third copy of the same pattern."""
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    lbl = Gtk.Label(label=label_text)
+    lbl.add_css_class("field-label")
+    lbl.set_halign(Gtk.Align.START)
+    lbl.set_valign(Gtk.Align.START)
+    lbl.set_wrap(True)
+    field_left_slot(lbl)
+    row.append(lbl)
+    row.append(widget)
+    return row
+
+
+def field_row_pair(flag_widget: Gtk.Widget, text_widget: Gtk.Widget) -> Gtk.Box:
+    """A toggle button standing in for the row's label, paired with a field.
+
+    field_left_slot() forces the toggle to the exact same width as every
+    plain label (FIELD_LEFT_COLUMN_PX) so its row's text field starts at the
+    same x position as every other field row — this is the single place that
+    rule is enforced, so it can never drift out of sync section by section.
+    Originally a subjective.py-local helper; promoted here once medical.py
+    needed the identical pattern for its imaging rows.
+    """
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    field_left_slot(flag_widget)
+    row.append(flag_widget)
+    row.append(text_widget)
+    return row
+
+
+def make_subgroup_header(text: str) -> Gtk.Label:
+    """A smaller, muted/italic sub-heading nested inside a subsection — e.g.
+    "Malignancy:" within Red Flags, or "Ankylosing Spondylitis:" within
+    Differential Screening. Mirrors the TUI's .subgroup_header CSS (muted,
+    italic) as distinct from make_subsection_header()'s full-width bar.
+    """
+    lbl = Gtk.Label(label=text)
+    lbl.add_css_class("subgroup-header")
+    lbl.set_halign(Gtk.Align.START)
+    return lbl
 
 
 def make_subsection_header(text: str) -> Gtk.Label:
@@ -183,6 +228,120 @@ class FlagButton(CheckButton):
         ("Yes", "cb-no"),   # reversed: Yes = danger colour
         ("No", "cb-yes"),   # reversed: No = safe colour
     ]
+
+
+# ---------------------------------------------------------------------------
+# CycleField — label + single button cycling through a fixed state list
+# ---------------------------------------------------------------------------
+
+class CycleField(Gtk.Box):
+    """Generic base for a label + one button that cycles through a fixed list
+    of states on click, each state carrying its own CSS class. Generalizes
+    pab_assessment's LikelihoodField and PainTypeSelector (medical.py /
+    pain_classification.py) — identical mechanism in the TUI, just a
+    different state list and colour map, so a subclass here only needs to
+    set CYCLE/CSS_CLASS rather than reimplementing the widget.
+    """
+
+    __gsignals__ = {
+        "changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+    }
+
+    CYCLE: list[str | None] = [None]
+    CSS_CLASS: dict[str | None, str] = {None: "cb-unanswered"}
+
+    # variant string (as used throughout pab_assessment.widgets, e.g.
+    # "success"/"warning"/"error"/"primary"/"default") -> existing chip CSS
+    # class from RadioGroup's palette (style.css), reused here so an ad-hoc
+    # options list (outcome_measures.py's many interpretation scales) needs
+    # no new CSS of its own.
+    _VARIANT_CLASS = {
+        "success": "rb-success", "warning": "rb-warning", "error": "rb-error",
+        "primary": "rb-primary", "default": "rb-default",
+    }
+
+    def __init__(self, label: str, field_id: str, options: list[tuple[str, str]] | None = None) -> None:
+        """label may be "" to omit the internal label — used where the
+        caller places its own Label beside this widget instead (e.g.
+        outcome_measures.py's inline "Dep: [score] [interp]" rows).
+
+        options, when given, overrides CYCLE/CSS_CLASS for this instance:
+        a list of (state_label, variant) pairs, mirroring
+        pab_assessment.sections.outcome_measures.CycleField exactly (None is
+        prepended automatically as the unanswered state) — lets a section
+        with many one-off interpretation scales (DASS/PCS/PCL-5/ISI/PSEQ/...)
+        use this widget directly instead of writing a subclass per scale.
+        """
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.field_id = field_id
+        self._value: str | None = None
+
+        if options is not None:
+            self.CYCLE = [None] + [opt_label for opt_label, _ in options]
+            self.CSS_CLASS = {None: "cb-unanswered"}
+            for opt_label, variant in options:
+                self.CSS_CLASS[opt_label] = self._VARIANT_CLASS.get(variant, "rb-default")
+
+        if label:
+            lbl = Gtk.Label(label=label)
+            lbl.set_halign(Gtk.Align.START)
+            self.append(lbl)
+
+        self.button = Gtk.Button(label="?")
+        self.button.set_size_request(MIN_TOUCH, MIN_TOUCH)
+        self.button.add_css_class("clinical-toggle")
+        self.button.connect("clicked", self._on_clicked)
+        self.append(self.button)
+
+        self._apply()
+
+    @property
+    def value(self) -> str | None:
+        return self._value
+
+    def set_value(self, value: str | None) -> None:
+        self._value = value if value in self.CYCLE else None
+        self._apply()
+
+    def _apply(self) -> None:
+        self.button.set_label(self._value or "?")
+        for cls in self.CSS_CLASS.values():
+            self.button.remove_css_class(cls)
+        self.button.add_css_class(self.CSS_CLASS[self._value])
+
+    def _on_clicked(self, _btn) -> None:
+        idx = self.CYCLE.index(self._value)
+        self._value = self.CYCLE[(idx + 1) % len(self.CYCLE)]
+        self._apply()
+        self.emit("changed")
+
+    def grab_focus(self) -> bool:
+        return self.button.grab_focus()
+
+
+class LikelihoodField(CycleField):
+    """None -> Low -> Moderate -> High -> None. Mirrors
+    pab_assessment.sections.medical.LikelihoodField."""
+
+    CYCLE = [None, "Low", "Moderate", "High"]
+    CSS_CLASS = {
+        None: "cb-unanswered", "Low": "cb-yes",
+        "Moderate": "lf-moderate", "High": "cb-no",
+    }
+
+
+class PainTypeSelector(CycleField):
+    """None -> Nociceptive -> Neuropathic -> Nociplastic -> Mixed -> None.
+    Mirrors pab_assessment.sections.pain_classification.PainTypeSelector."""
+
+    CYCLE = [None, "Nociceptive", "Neuropathic", "Nociplastic", "Mixed — unable to determine"]
+    CSS_CLASS = {
+        None: "cb-unanswered",
+        "Nociceptive": "cb-yes",
+        "Neuropathic": "lf-moderate",
+        "Nociplastic": "cb-no",
+        "Mixed — unable to determine": "rb-default",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -378,17 +537,42 @@ class AutoTextView(Gtk.ScrolledWindow):
     at the very end — so normal cursor movement inside multi-line notes
     is untouched, and only crossing the actual boundary hands off to grid
     navigation.
+
+    expand=True (the default, matching every section's field): the field
+    grows with typed content instead of scrolling internally. Note this is
+    NOT Gtk.ScrolledWindow.set_propagate_natural_height — that was tried
+    first and does not reliably track a GtkTextView's content height in
+    practice (TextView is designed to assume it's always host to a scrolled
+    viewport, not to report a growing natural size the way Gtk.Label does).
+    What actually works: measure the buffer's real laid-out height via
+    get_iter_location() on every buffer change, and drive
+    set_min_content_height() from that directly, clamped to
+    [min_lines, max_lines] * an estimated line height. Growth caps at
+    max_lines (default 20) so one very long note can't consume the whole
+    window — same min/max discipline as the mandatory TextArea height
+    pattern in pab's own CLAUDE.md (there: min-height 3, max-height 12,
+    internal scroll beyond that), just driven by measurement instead of a
+    static CSS rule since GTK has no height:auto equivalent for TextView.
+    expand=False: the old fixed-height-and-scroll behaviour — used only by
+    the F10 notes overlay, which is deliberately a small fixed-size panel
+    docked at the bottom of the window, not a field that should push the
+    rest of the form around as it's typed into.
     """
 
     __gsignals__ = {
         "navigate": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
 
-    def __init__(self, field_id: str, min_lines: int = 2) -> None:
+    _LINE_PX = 22  # matches the estimate min_lines*22/max_lines*22 always used here
+
+    def __init__(self, field_id: str, min_lines: int = 2, max_lines: int = 20, expand: bool = True) -> None:
         super().__init__()
         self.field_id = field_id
+        self._expand = expand
+        self._min_h = min_lines * self._LINE_PX
+        self._max_h = max_lines * self._LINE_PX
         self.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        self.set_min_content_height(min_lines * 22)
+        self.set_min_content_height(self._min_h)
         self.set_hexpand(True)
         self.add_css_class("auto-textview-frame")
 
@@ -405,6 +589,23 @@ class AutoTextView(Gtk.ScrolledWindow):
         key_ctrl = Gtk.EventControllerKey()
         key_ctrl.connect("key-pressed", self._on_key_pressed)
         self.textview.add_controller(key_ctrl)
+
+        if self._expand:
+            # GtkTextView recomputes its internal text layout lazily, not
+            # synchronously inside the buffer's own "changed" signal — measuring
+            # get_iter_location() immediately in that handler reads stale
+            # (pre-edit) geometry. Deferring via GLib.idle_add runs the
+            # measurement after GTK has had a chance to relayout, which is
+            # what actually makes the height track what's on screen.
+            self.textview.get_buffer().connect("changed", lambda _b: GLib.idle_add(self._recompute_height))
+            self.textview.connect("map", lambda _w: GLib.idle_add(self._recompute_height))
+
+    def _recompute_height(self) -> bool:
+        buf = self.textview.get_buffer()
+        rect = self.textview.get_iter_location(buf.get_end_iter())
+        content_h = rect.y + rect.height + self.textview.get_top_margin() + self.textview.get_bottom_margin() + 4
+        self.set_min_content_height(max(self._min_h, min(content_h, self._max_h)))
+        return GLib.SOURCE_REMOVE
 
     def grab_focus(self) -> bool:
         # Grid navigation targets this wrapper by field_id; focus must land
