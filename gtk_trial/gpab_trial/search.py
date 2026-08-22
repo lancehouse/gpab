@@ -45,9 +45,12 @@ class SearchEntry:
     display: str         # shown in the dropdown row
     match_text: str      # text fuzzy-matched against the query
     section_id: str      # section to navigate to
-    anchor_id: str | None   # subsection anchor ID (or None) — not used for
-                            # navigation in this port, see app.py's
-                            # _execute_jump docstring for why
+    anchor_id: str | None   # subsection anchor ID (or None) — used by
+                            # app.py's _execute_jump to scroll a "subsection"
+                            # result's header to the top of the viewport
+                            # (find_by_anchor_id below), when that anchor_id
+                            # is actually tagged on a widget somewhere; if
+                            # not, the jump degrades to plain _show_section
     widget_id: str | None   # specific widget to focus (or None)
     kind: Literal["section", "subsection", "field", "content"]
 

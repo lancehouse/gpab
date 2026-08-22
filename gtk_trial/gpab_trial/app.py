@@ -686,16 +686,15 @@ class TrialWindow(Gtk.ApplicationWindow):
 
     def _execute_jump(self, entry) -> None:
         """Navigate to a chosen search result — GTK counterpart to
-        tui.py's _execute_jump. One deliberate scope cut from the TUI: a
-        "subsection" entry (no widget_id) only switches to the right
-        section/tab (which already focuses that section's first field via
-        _show_section) rather than scrolling to the exact subsection
-        anchor — TUI parity there would mean retrofitting a named anchor
-        onto every subsection header across 8+ section files (~80 anchors),
-        which the TUI itself only bothered with for the sections listed in
-        _jump_to; every "field"/"content" entry (the common case — a named
-        field or typed text) still jumps to the exact widget and focuses it,
-        via find_by_field_id against whichever page is now on screen."""
+        tui.py's _execute_jump. A "subsection" entry (no widget_id) scrolls
+        the subsection's own header to the top of the section's viewport,
+        via the same anchor_id tagging/machinery Ctrl+T's grid overview
+        uses (widgets.make_subsection_header's anchor_id, found by
+        search.find_by_anchor_id, aligned by _scroll_section_to_anchor) —
+        no longer just switching to the section's first field. Every
+        "field"/"content" entry (the common case — a named field or typed
+        text) still jumps to the exact widget and focuses it, via
+        find_by_field_id against whichever page is now on screen."""
         if entry.widget_id and entry.widget_id.startswith("__workup_"):
             wid = entry.widget_id.split("__", 2)[-1]
             self._show_section("06_diagnosis")
@@ -714,6 +713,16 @@ class TrialWindow(Gtk.ApplicationWindow):
             widget = find_by_field_id(page, entry.widget_id) if page is not None else None
             if widget is not None:
                 widget.grab_focus()
+        elif entry.anchor_id:
+            if section_id == "08_special" and entry.anchor_id.startswith("st_"):
+                # Same as the grid overview's Special Tests row: these
+                # anchor_ids name a body region, not a subsection header,
+                # and the region may not be mounted yet.
+                self._jump_to_special_region(entry.anchor_id)
+            else:
+                name = _SECTION_ID_TO_NAME.get(section_id)
+                if name is not None:
+                    self._scroll_section_to_anchor(name, entry.anchor_id)
 
     def _collect_grid_has_data(self, grid_data) -> dict[str, bool]:
         has_data: dict[str, bool] = {}
