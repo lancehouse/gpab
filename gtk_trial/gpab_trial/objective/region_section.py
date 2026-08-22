@@ -40,7 +40,12 @@ from gi.repository import Gtk, GObject  # noqa: E402
 from ..widgets import RadioGroup, CycleField, AutoTextView, TouchEntry, make_subsection_header
 from .grid_widgets import bilateral_header_row
 from .rom_widgets import ROMRow
+from .sections.ankle_tables import AnkleMuscleTables, AnklePassiveTables
+from .sections.cervical_tables import CervicalMuscleTables, CervicalPassiveTables
+from .sections.hip_tables import HipMuscleTables, HipPassiveTables
+from .sections.knee_tables import KneeMuscleTables, KneePassiveTables
 from .sections.lumbar_tables import LumbarMuscleTables, LumbarPassiveTables
+from .sections.shoulder_tables import ShoulderMuscleTables, ShoulderPassiveTables
 
 # Reads the same YAML the TUI uses, from the read-only reference clone —
 # never write to this path.
@@ -447,11 +452,20 @@ class BilateralGridSpecialTestsWidget(Gtk.Box):
 # RegionContainer
 # ---------------------------------------------------------------------------
 
-# Extras registry — populate as each region's Python table file is ported.
-# Only lumbar is built so far (Phase 2's first region).
+# Extras registry — all six regions now have Passive + Muscle extras ported.
 REGION_EXTRAS: dict[tuple[str, str], Type] = {
+    ("ankle", "passive"): AnklePassiveTables,
+    ("ankle", "muscle"): AnkleMuscleTables,
+    ("cervical", "passive"): CervicalPassiveTables,
+    ("cervical", "muscle"): CervicalMuscleTables,
+    ("hip", "passive"): HipPassiveTables,
+    ("hip", "muscle"): HipMuscleTables,
+    ("knee", "passive"): KneePassiveTables,
+    ("knee", "muscle"): KneeMuscleTables,
     ("lumbar", "passive"): LumbarPassiveTables,
     ("lumbar", "muscle"): LumbarMuscleTables,
+    ("shoulder", "passive"): ShoulderPassiveTables,
+    ("shoulder", "muscle"): ShoulderMuscleTables,
 }
 
 
