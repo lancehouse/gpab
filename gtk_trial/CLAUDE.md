@@ -1,12 +1,10 @@
-# GTK Touch Trial — Consent + Subjective
+# gtk_trial — the conversion codebase
 
-## Purpose
-
-Native GTK4 (PyGObject) trial of the PAB clinical assessment's first two subjective-side
-tabs — **Consent** and **Subjective** — to evaluate touch/mouse interaction versus the
-Textual TUI, which is slow on the Lenovo Yoga's touchscreen. See
-`~/.claude/plans/delegated-gathering-newell.md` for the full plan, decisions, and
-pass/fail criteria.
+Started as a touch-vs-terminal trial of just Consent + Subjective; that trial succeeded and
+the project is now a full conversion of the assessment TUI to GTK4 (all code still lives here —
+see `../PROJECT_BRIEF.md` for what's been proven, `../CONVERSION_PLAN.md` for the section-by-section
+plan going forward, and `../CLAUDE.md` for the repo-wide isolation rules). This file covers only
+what's specific to running/building the code in this directory.
 
 ## Isolation guarantee — read before touching anything here
 

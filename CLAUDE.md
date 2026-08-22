@@ -1,107 +1,75 @@
-# PhysioChart — Project Overview
+# gpab — GTK4 conversion of PhysioChart's Textual TUI
 
-Specialist physiotherapy clinical tool for a Lenovo Yoga running Fedora 43 in tablet mode.
-Primary input in body-chart mode is pressure-sensitive stylus/touchscreen. Keyboard primary in TUI.
+This repo is a **standalone, isolated R&D fork**, not the production PhysioChart codebase.
+Production lives at `~/Projects/pab` (bodychart GTK4/C + assessment Textual TUI, with its own
+`dev`/`main` branch rules, `pabd`/`pab` launchers — see that repo's own `CLAUDE.md`). Those rules
+do **not** apply here; this repo has no remote, its `dev` branch is just an artifact of being
+cloned from `pab`, and nothing done here can reach production.
 
-## Two-app architecture
+**Why this repo exists:** the TUI works well with keyboard/mouse but is slow on the touchscreen
+of the Lenovo Yoga this runs on, especially in the Objective examination tabs. What started as a
+small touch-vs-terminal trial (Consent + Subjective only) proved out well enough that the plan is
+now a **full conversion of the assessment TUI to native GTK4**. See `PROJECT_BRIEF.md` for what's
+been proven so far and why, and `CONVERSION_PLAN.md` for the section-by-section plan going forward.
 
+## Isolation guarantee — read before touching anything here
+
+- **This is a `git clone` of `~/Projects/pab`, with its own independent `.git` and no remote.**
+  (`git remote -v` returns nothing — confirm this hasn't changed before doing anything risky.)
+  It cannot push to, pull from, or otherwise affect the real `pab` or `kb` repos.
+- `assessment/` and `bodychart/` in this clone are **read-only reference copies** — the actual
+  TUI/GTK-C source, kept so the conversion has something authoritative to port from and compare
+  against. Never edit them; if a fix is needed, it needs to happen in the real `~/Projects/pab`
+  separately, by hand, later — not here.
+- All new conversion code lives in `gtk_trial/` (name is a holdover from the touch-trial phase;
+  not yet renamed since renaming mid-conversion would churn every import path for no benefit —
+  revisit once the conversion is far enough along that a rename is worth the diff).
+- Session data used for testing lives in `~/PAB-gtktrial/` (sibling to the real `~/PAB/`),
+  populated only by *copying* a real session via `gtk_trial/scripts/copy_trial_session.sh` — never
+  by writing back to `~/PAB/`. `gtk_trial/gpab_trial/main.py` actively refuses to launch against
+  any path under the real `~/PAB/`.
+- Before and after any substantial work session, confirm nothing has leaked:
+  `git -C ~/Projects/pab status --short | wc -l` and `git -C ~/Projects/kb status --short | wc -l`
+  should be unchanged from whatever they were at the start of this project (11 and 5 as of this
+  writing) — if either has grown, something wrote where it shouldn't have.
+
+## What "full conversion" means, concretely
+
+Reuse every piece of `pab_assessment` that has no Textual import unchanged: `storage.py` (JSON
+I/O + report generation, ~5.8k lines), `mapping.py` (body-chart → note prefill), `logic.py`
+(sleep-efficiency etc.), `models.py`, `cal_cp_model.py`, `form_schema.py` + the YAML subsection
+files. Rebuild everything that touches Textual widgets natively in GTK4: every assessment section,
+every objective section, the KB lookup panels, jump-search, the section nav chrome. `collect()`/
+`load()` dict shapes must stay byte-for-byte schema-compatible with what `storage.py` expects, so
+a session file this app writes is indistinguishable from one the TUI wrote (this has been verified
+correct for Consent/Subjective/Neurological so far — round-trip diffs, not just a visual match).
+
+## Rules carried over from the real PhysioChart project (still apply here)
+
+1. **Flag, don't guess clinical content** — if a field label, test name, or clinical term is
+   ambiguous in the TUI source, stop and ask before interpreting or inventing content in the port.
+2. **No UI logic in storage** — this rule is enforced by construction here: `storage_bridge.py` is
+   a thin wrapper around the real `storage.py`, nothing else touches it.
+3. **Never lose data** — auto-save on every field change, atomic writes (inherited free from
+   `storage.py`), separate debounced save timers per JSON file (`_assessment.json` vs
+   `_objective.json`), matching the TUI's own `AssessmentView`/`ObjectiveAssessmentView` split.
+4. **Button width ≤ ¼ screen** — still a sane touch-UI rule; see `field_left_slot()` and the
+   `GRID_LABEL_COL_PX`/compact-toggle conventions in `gtk_trial/gpab_trial/` for how this is
+   enforced structurally rather than per-widget.
+
+## Rules established during this project (see `CONVERSION_PLAN.md` for the full list)
+
+Centralize, don't repeat: every shared visual/behavioural rule (left-column width, subsection
+header styling, grid-row shape, grid keyboard navigation, pale/bright/focus colour states) lives
+in exactly one place (`widgets.py`, `objective/grid_widgets.py`, `objective/grid_nav.py`,
+`style.css`) and every section imports it — a new tab should inherit correct look and keyboard
+behaviour automatically, not by a human remembering to copy a pattern.
+
+## Running it
+
+```bash
+cd gtk_trial
+bash scripts/setup_venv.sh                      # one-time: venv + deps
+bash scripts/copy_trial_session.sh <name>        # copy a real session into ~/PAB-gtktrial/
+bash scripts/run.sh <name>                       # launch against the copy
 ```
-bodychart/                 GTK4 / C
-  Stylus body chart app
-  Writes → ~/PAB/<session>/_session.json
-  Writes → ~/.local/share/pab/session_current.json  (active session pointer)
-
-assessment/                Python 3.12 / Textual TUI
-  Structured clinical assessment + report generation
-  Reads  ← session_current.json  (to know which session is active)
-  Reads/writes → ~/PAB/<session>/_assessment.json
-  Reads/writes → ~/PAB/<session>/_objective.json
-```
-
-The two apps are **independent**. Changes to one do not require changes to the other unless the
-shared session JSON schema changes. Schema changes require a version bump in both apps.
-
-## Session file layout
-
-Every session lives in its own directory under `~/PAB/`:
-
-```
-~/PAB/<session-name>/
-  <name>_session.json       GTK-owned: body chart strokes, overlays, regions, patient identity
-  <name>_assessment.json    TUI-owned: assessment sections 01–07 (consent → barriers)
-  <name>_objective.json     TUI-owned: objective examination sections 01–07
-  <name>_report.md          Generated on every save — compact Markdown clinical report
-  <name>_raw.txt            Generated on every save — full plain-text raw export of all fields
-```
-
-All files are human-readable JSON or plain text. This is intentional and permanent — do not
-introduce binary formats or database files. Files are used individually for various clinical tasks.
-
-## Data persistence model
-
-- **No SQLite.** JSON files are the permanent storage format.
-- Auto-save on every field change. No save button anywhere.
-- Atomic writes (temp file + rename) to prevent corruption.
-- The GTK app owns `_session.json`. The TUI owns `_assessment.json` and `_objective.json`.
-  Never write to the other app's file.
-
-## Environment
-
-- Fedora 43, GNOME, Ptyxis terminal (touch-compatible GTK terminal)
-- GTK app: build with `ninja -C build` inside `bodychart/`
-- TUI: Python 3.12 venv inside `assessment/`; activate before running
-
-## Branch and deployment rules — ABSOLUTE
-
-These rules are non-negotiable and override any other instruction in this session:
-
-| Launcher | Bodychart binary | TUI binary | Git branch |
-|----------|-----------------|------------|------------|
-| `pabd`   | `bodychart/build/bodychart` | `assessment` → `assessment/.venv` | `dev` |
-| `pab`    | `pab-stable/bodychart/build-stable/bodychart` | `assessments` → `pab-stable/assessment/.venv` | `main` |
-
-These two streams are completely isolated. **Never mix them.**
-- `bodychart/src/integration.c` must always call `assessment` (dev TUI).
-- `pab-stable/bodychart/src/integration.c` must always call `assessments` (stable TUI).
-- `~/.local/bin/assessment` → symlink to dev venv.
-- `~/.local/bin/assessments` → script pointing to stable venv.
-
-1. **All development work goes to `dev` first.** Every code change, bug fix, or feature
-   lands on the `dev` branch. No exceptions.
-2. **`pabd` runs `dev`.** Test everything in `pabd` before considering a merge.
-3. **`main` is never touched during development.** Do not commit, merge, or push to `main`
-   unless the user says explicitly — in that same message — "merge to main", "push to main",
-   or equivalent. Finishing a feature, fixing a bug, or completing a task is NOT permission
-   to merge.
-4. **No mid-session merges.** Even if a fix is confirmed working in `pabd`, it stays on
-   `dev` until the user explicitly requests the merge in a separate, deliberate instruction.
-
-## Overarching rules
-
-1. **Button width ≤ ¼ screen** — all interactive button widgets max 25% of available width.
-   If a label doesn't fit, place it in an adjacent `Static` widget.
-2. **Flag, don't guess clinical content** — if a field label, test name, or clinical term is
-   ambiguous, stop and ask before interpreting or inventing content.
-3. **No UI logic in storage** — `storage.py` reads/writes JSON only; no Textual imports,
-   no clinical decisions. Sections collect/load data; storage persists it.
-4. **Never lose data** — auto-save on every field change; atomic writes always.
-
-## Clinical knowledge base — built and live
-
-The clinical knowledge base (`clinical_kb.db`, Ctrl+K field-focus lookup panel, Ctrl+D full
-browser, special test widgets with Sn/Sp) is built and in active use — not a planned phase.
-Content is authored in the separate `~/Projects/kb` project and consumed read-only via
-`~/.local/share/pab/clinical_kb.db`. Rollout is incremental, region by region (cervical and
-shoulder are DB-backed; other regions still resolve from `objective/kb/*.yaml`), plus a
-region-independent set (`_GLOBAL_DB_FIELDS` in `kb_loader.py`) for fields not tied to any one
-body-region tab — e.g. Neurological's UMN signs and the Sensory section's pain-sensitisation
-screen (allodynia, hyperalgesia, PPT, CPM, nerve trunk palpation). See
-`assessment/CLAUDE.md`'s "Clinical knowledge base" section for the full architecture.
-
-## Planned phases (not yet built)
-
-- **Body-chart-driven pattern matching** — auto-suggesting tests/conditions from body chart
-  findings (`query_patterns()`/`query_tests()`/`score_pattern()` in `logic.py`). Blocked on a
-  schema addition (`condition_feature` needs a per-feature weight column) before it's
-  implementable. Do not build this until explicitly requested. Do not design current code to
-  prevent it.
