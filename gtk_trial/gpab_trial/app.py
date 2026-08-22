@@ -14,16 +14,24 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gtk, Gdk, GLib  # noqa: E402
 
-from .storage_bridge import load_assessment_block, save_sections, SECTION_KEYS
+from .storage_bridge import (
+    load_assessment_block, save_sections, SECTION_KEYS,
+    load_objective_block, save_objective_sections, OBJECTIVE_SECTION_KEYS,
+)
 from .sections.consent import ConsentSection
 from .sections.subjective import SubjectiveSection
+from .objective.sections.neurological import NeurologicalSection
 from .nav import SectionNav
 from .topbar import SubsectionNavBar
 from .footer import FooterBar
 
 AUTOSAVE_DEBOUNCE_MS = 2000
 
-_NAME_TO_SECTION_ID = {"consent": "01_consent", "subjective": "02_subjective"}
+_NAME_TO_SECTION_ID = {
+    "consent": "01_consent",
+    "subjective": "02_subjective",
+    "neurological": "04_objective",
+}
 _SECTION_ID_TO_NAME = {v: k for k, v in _NAME_TO_SECTION_ID.items()}
 
 
@@ -32,7 +40,8 @@ class TrialWindow(Gtk.ApplicationWindow):
         super().__init__(application=app, title="PAB GTK Trial — Consent + Subjective")
         self.set_default_size(1100, 900)
         self.session_file = session_file
-        self._save_source_id: int | None = None
+        self._save_source_id: int | None = None       # debounce for _assessment.json
+        self._save_source_id_obj: int | None = None    # debounce for _objective.json (separate file, separate timer — matches TUI's AssessmentView/ObjectiveAssessmentView split)
         self._is_fullscreen = False
 
         # Narrow OS-drawn titlebar: a HeaderBar with no title widget (just
@@ -81,14 +90,22 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.consent = ConsentSection()
         self.subjective = SubjectiveSection()
         self.subjective.session_file = session_file
+        self.neurological = NeurologicalSection()
 
-        consent_scroll = Gtk.ScrolledWindow()
-        consent_scroll.set_child(self.consent)
-        subjective_scroll = Gtk.ScrolledWindow()
-        subjective_scroll.set_child(self.subjective)
+        self._sections_by_name = {
+            "consent": self.consent,
+            "subjective": self.subjective,
+            "neurological": self.neurological,
+        }
 
-        self.stack.add_named(consent_scroll, "consent")
-        self.stack.add_named(subjective_scroll, "subjective")
+        for name, section in self._sections_by_name.items():
+            scroll = Gtk.ScrolledWindow()
+            # Never horizontal-scroll: every tab's content must fit the
+            # window's actual width and use all of it, not spill sideways.
+            # Vertical-only scrolling is the one axis these forms need.
+            scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            scroll.set_child(section)
+            self.stack.add_named(scroll, name)
         content_column.append(self.stack)
 
         # -- bottom bar: hotkey hints + save status -----------------------------
@@ -98,6 +115,7 @@ class TrialWindow(Gtk.ApplicationWindow):
 
         self.consent.set_on_changed(self._on_consent_changed)
         self.subjective.set_on_changed(self._on_subjective_changed)
+        self.neurological.set_on_changed(self._schedule_save_obj)
 
         # -- global hotkeys (capture phase — fire before the focused widget
         # sees the key, matching Textual's Binding(priority=True)) ------------
@@ -126,8 +144,7 @@ class TrialWindow(Gtk.ApplicationWindow):
             return
         self.nav.set_active(section_id)
         self.stack.set_visible_child_name(name)
-        section = self.consent if name == "consent" else self.subjective
-        section.focus_first_field()
+        self._sections_by_name[name].focus_first_field()
 
     def _load(self) -> None:
         assessment = load_assessment_block(self.session_file)
@@ -136,10 +153,20 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.subjective.load(subjective_data)
         self.consent.load_goals(subjective_data)
 
+        objective = load_objective_block(self.session_file)
+        self.neurological.load(objective.get("neurological", {}))
+
     # ------------------------------------------------------------------
     # Global hotkeys — mirrors main.py's PhysioAssessment.BINDINGS for the
-    # two sections this trial implements:
+    # sections this trial implements:
     #   F1/F2            section switch      (BINDINGS f1/f2)
+    #   F4               → Neurological      (BINDINGS f4 "section_objective" —
+    #                      the TUI's F4 opens Objective mode's first section;
+    #                      Neurological is the only Objective tab built here,
+    #                      so F4 goes straight to it)
+    #   Ctrl+F5          → Neurological      (BINDINGS ctrl+f5 "obj_neurological"
+    #                      — the TUI's precise jump straight to this section;
+    #                      kept as well since it's the more exact match)
     #   Alt+<letter>     subjective jump     (BINDINGS alt+s/h/b/m/a/w/e/4/p/g/r)
     #   Ctrl+Q           quit, flushing any pending debounced save first
     #   Ctrl+A           select-all in the focused text field
@@ -162,8 +189,14 @@ class TrialWindow(Gtk.ApplicationWindow):
         if name == "F2":
             self._show_section("02_subjective")
             return True
+        if name == "F4":
+            self._show_section("04_objective")
+            return True
         if name == "F11":
             self._toggle_fullscreen()
+            return True
+        if ctrl_held and name == "F5":
+            self._show_section("04_objective")
             return True
         if ctrl_held and name.lower() == "q":
             self._flush_and_quit()
@@ -204,6 +237,10 @@ class TrialWindow(Gtk.ApplicationWindow):
             GLib.source_remove(self._save_source_id)
             self._save_source_id = None
             self._do_save()
+        if self._save_source_id_obj is not None:
+            GLib.source_remove(self._save_source_id_obj)
+            self._save_source_id_obj = None
+            self._do_save_obj()
         self.close()
 
     # ------------------------------------------------------------------
@@ -269,6 +306,30 @@ class TrialWindow(Gtk.ApplicationWindow):
         }
 
         ok = save_sections(self.session_file, section_data, sections_complete)
+        self.save_status.set_label("saved" if ok else "SAVE FAILED")
+        return GLib.SOURCE_REMOVE
+
+    # ------------------------------------------------------------------
+    # Objective autosave — separate file (_objective.json), separate debounce
+    # timer, mirroring the TUI's AssessmentView/ObjectiveAssessmentView split
+    # (each has its own _schedule_save/_do_save in assessment_view.py resp.
+    # objective/objective_view.py — they never share one debounce timer).
+    # ------------------------------------------------------------------
+
+    def _schedule_save_obj(self) -> None:
+        if self._save_source_id_obj is not None:
+            GLib.source_remove(self._save_source_id_obj)
+        self.save_status.set_label("pending…")
+        self._save_source_id_obj = GLib.timeout_add(AUTOSAVE_DEBOUNCE_MS, self._do_save_obj)
+
+    def _do_save_obj(self) -> bool:
+        self._save_source_id_obj = None
+        self.save_status.set_label("saving…")
+
+        section_data = {OBJECTIVE_SECTION_KEYS["04_neurological"]: self.neurological.collect()}
+        sections_complete = {"04_neurological": self.neurological.is_complete()}
+
+        ok = save_objective_sections(self.session_file, section_data, sections_complete)
         self.save_status.set_label("saved" if ok else "SAVE FAILED")
         return GLib.SOURCE_REMOVE
 

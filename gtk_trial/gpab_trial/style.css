@@ -11,7 +11,19 @@
     padding: 0;
 }
 
-/* Touch-target sizing + state colors matching pab_assessment CheckButton/FlagButton palette */
+/* Touch-target sizing + state colors matching pab_assessment CheckButton/FlagButton palette
+ *
+ * Standing rule for every stateful/selectable widget in this app (chips,
+ * toggles, future variants alike): the UNSELECTED/base look is a PALE tint
+ * (readable, but clearly "not chosen yet"); the SELECTED/active look keeps
+ * a fully saturated colour AND gets a strong, high-contrast border so it
+ * reads instantly even at a glance. FOCUS (cursor position, independent of
+ * selection) is a separate, always-bright glow — never reuse the selection
+ * border for focus, or you can't tell "here's my cursor" from "here's what
+ * I picked" when they're on different widgets. Any new toggle/chip variant
+ * added later should follow this same pale-base / bright-selected /
+ * glowing-focus three-way split rather than inventing its own look.
+ */
 
 .clinical-toggle {
     font-weight: bold;
@@ -20,23 +32,65 @@
     padding: 8px 10px;
 }
 
+/* Compact variant for dense single-row button gangs (e.g. the Neurological
+   UMN row's 9 buttons) where the full 120px floor forces horizontal
+   overflow — same widget, smaller footprint, opt in via CheckButton(...,
+   compact=True) rather than a one-off size_request in the section. */
+.clinical-toggle.toggle-compact {
+    min-width: 58px;
+    font-size: 0.78rem;
+    padding: 4px 5px;
+}
+
 .cb-unanswered { background: #FFBF00; color: black; }
 .cb-yes        { background: #2e7d32; color: white; }
 .cb-no         { background: #c62828; color: white; }
 
-.radio-group > button {
-    font-weight: bold;
-    border-radius: 4px;
+button:focus-visible.clinical-toggle,
+entry:focus-visible,
+textview:focus-visible {
+    outline: 3px solid #ffeb3b;
+    outline-offset: 2px;
 }
 
-.rb-default  { background: #616161; color: white; }
-.rb-primary  { background: #1565c0; color: white; }
-.rb-success  { background: #2e7d32; color: white; }
-.rb-warning  { background: #f9a825; color: black; }
-.rb-error    { background: #c62828; color: white; }
+.radio-group > button {
+    font-weight: bold;
+    font-size: 0.8rem;
+    border-radius: 4px;
+    padding: 4px 6px;
+}
+
+/* Pale unselected tints (readable text, clearly "not chosen") */
+.rb-default  { background: #e0e0e0; color: #424242; }
+.rb-primary  { background: #bbdefb; color: #0d47a1; }
+.rb-success  { background: #c8e6c9; color: #1b5e20; }
+.rb-warning  { background: #ffe082; color: #7a4a00; }
+.rb-error    { background: #ffcdd2; color: #b71c1c; }
+
+/* Selected: full saturated colour (the "current base colour" this app used
+   everywhere before) plus a bright, high-contrast border so it's obvious
+   which chip is chosen even before you look for colour. */
+.radio-group > button:checked.rb-default  { background: #616161; color: white; }
+.radio-group > button:checked.rb-primary  { background: #1565c0; color: white; }
+.radio-group > button:checked.rb-success  { background: #2e7d32; color: white; }
+.radio-group > button:checked.rb-warning  { background: #f9a825; color: black; }
+.radio-group > button:checked.rb-error    { background: #c62828; color: white; }
 
 .radio-group > button:checked {
-    outline: 3px solid #90caf9;
+    outline: 3px solid #00e5ff;
+    outline-offset: -2px;
+}
+
+/* Chips are non-focusable (the gang is one tab stop), so the gang itself
+   needs its own focus ring — mirrors the TUI RadioGroup's -rg-focused class.
+   Bright glowing yellow, deliberately distinct from the cyan selection
+   outline above, so "where's my cursor" and "what's selected" never look
+   like the same signal even when they're both on screen at once. */
+.radio-group.rg-focused {
+    outline: 4px solid #ffeb3b;
+    outline-offset: 3px;
+    border-radius: 4px;
+    box-shadow: 0 0 8px 2px rgba(255, 235, 59, 0.55);
 }
 
 .auto-textview-frame {
@@ -144,4 +198,15 @@ entry {
 .footer-desc {
     color: alpha(white, 0.7);
     font-size: 0.85rem;
+}
+
+/* Bilateral L/R grid rows (Neurological, and future Sensory/Muscle/ROM tabs) */
+.grid-col-header {
+    font-weight: bold;
+    opacity: 0.6;
+    font-size: 0.85rem;
+}
+
+.grid-row {
+    margin-bottom: 2px;
 }

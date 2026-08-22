@@ -62,10 +62,19 @@ class CheckButton(Gtk.Button):
     Click, Enter, or Space cycles state. Y/N keys set state directly and
     advance focus to the next focusable widget. Mirrors
     pab_assessment.widgets.CheckButton exactly (states, cycle order, id).
+
+    Emits "navigate" (direction: "up"/"down"/"left"/"right"/"next") for a
+    containing grid section to interpret — e.g. NeurologicalSection's UMN
+    row, where CheckButton has no internal arrow-driven state of its own
+    (unlike RadioGroup, which reserves left/right for cycling), so all four
+    arrows plus Y/N's post-set advance route through it. A section with no
+    grid (Consent/Subjective) simply doesn't connect to it — arrows on those
+    CheckButtons remain a no-op, same as before this was added.
     """
 
     __gsignals__ = {
         "changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "navigate": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
 
     STATES = [
@@ -74,7 +83,7 @@ class CheckButton(Gtk.Button):
         ("No", "cb-no"),         # red
     ]
 
-    def __init__(self, base_label: str, field_id: str) -> None:
+    def __init__(self, base_label: str, field_id: str, compact: bool = False) -> None:
         super().__init__()
         self.base_label = base_label
         self.field_id = field_id
@@ -96,6 +105,11 @@ class CheckButton(Gtk.Button):
         label_widget.set_justify(Gtk.Justification.CENTER)
 
         self.add_css_class("clinical-toggle")
+        if compact:
+            # For dense single-row gangs (e.g. Neurological's 9-button UMN
+            # row) where the default 120px floor forces horizontal overflow.
+            # See .toggle-compact in style.css.
+            self.add_css_class("toggle-compact")
         self.connect("clicked", self._on_clicked)
 
         key_ctrl = Gtk.EventControllerKey()
@@ -131,10 +145,21 @@ class CheckButton(Gtk.Button):
         self._state = 1 if value else 2
         self._apply()
         self.emit("changed")
-        self.child_focus(Gtk.DirectionType.TAB_FORWARD)
+        # NOTE: was previously `self.child_focus(...)` called on the button
+        # itself — a Gtk.Button has no focusable children, so that was a
+        # silent no-op and Y/N never actually advanced focus. child_focus
+        # must be called on an ancestor that contains the whole chain.
+        root = self.get_root()
+        if root is not None:
+            root.child_focus(Gtk.DirectionType.TAB_FORWARD)
+        self.emit("navigate", "next")
 
     def _on_clicked(self, _btn) -> None:
         self._cycle()
+
+    _ARROW_DIRS = {
+        "Up": "up", "Down": "down", "Left": "left", "Right": "right",
+    }
 
     def _on_key_pressed(self, _ctrl, keyval, _keycode, _state) -> bool:
         name = Gdk.keyval_name(keyval) or ""
@@ -143,6 +168,9 @@ class CheckButton(Gtk.Button):
             return True
         if name in ("n", "N"):
             self._set_and_advance(False)
+            return True
+        if name in self._ARROW_DIRS:
+            self.emit("navigate", self._ARROW_DIRS[name])
             return True
         return False
 
@@ -162,16 +190,40 @@ class FlagButton(CheckButton):
 # ---------------------------------------------------------------------------
 
 class RadioGroup(Gtk.Box):
-    """Exclusive single-select gang of chip buttons.
+    """Exclusive single-select gang of chip buttons — ONE tab stop.
 
-    Tap selects a chip; tapping the already-selected chip deselects it
+    Tap a chip selects it; tapping the already-selected chip deselects it
     (clears to no selection) — matching pab_assessment.widgets.RadioGroup.
     options: list of (label, css_variant) pairs. value/set_value use the
     label string as the stored value, same as the TUI widget.
+
+    Keyboard, mirroring the TUI RadioGroup's key_left/key_right/key_enter
+    exactly: the gang itself is the focusable unit (chips are not
+    individually focusable), so Tab moves to/past the whole gang in one
+    step, same as the TUI's textual widget.
+      Left/Right — cycle the selection within this gang (clamped at the
+        ends, no wrap; if nothing selected, Right selects the first
+        option and Left selects the last — TUI key_left/key_right).
+        This is intentionally NOT routed to the container: it's the one
+        thing this widget owns internally, so keyboard entry of an
+        abnormal (non-first) option is still possible with the gang
+        focused only.
+      Up/Down — not handled here; emitted as "navigate" for a containing
+        grid section to move focus to the row above/below.
+      Enter/Space — if nothing is selected yet, select the first
+        (normal/success-variant) option; then emit "navigate" with
+        "next" so a containing grid section can advance to the next
+        cell. This is what makes a full row of normal findings just
+        Enter-Enter-Enter-Enter (TUI key_enter/key_space/key_y all call
+        screen.focus_next(); the "select normal first" step is additive,
+        since GTK's chips have no visible focus ring of their own once
+        made non-focusable and there was previously no keyboard entry
+        path for this gang at all).
     """
 
     __gsignals__ = {
         "changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "navigate": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
 
     _VARIANT_CLASS = {
@@ -193,10 +245,34 @@ class RadioGroup(Gtk.Box):
         for label, variant in options:
             btn = Gtk.ToggleButton(label=label)
             btn.set_size_request(MIN_TOUCH, MIN_TOUCH)
+            btn.set_can_focus(False)  # the gang is one tab stop, not each chip
+            btn.set_focus_on_click(False)
             btn.add_css_class(self._VARIANT_CLASS.get(variant, "rb-default"))
             btn.connect("toggled", self._on_toggled)
+            chip_label = btn.get_child()
+            if isinstance(chip_label, Gtk.Label):
+                # Without wrap, a chip's minimum width is its full unbroken
+                # label text (e.g. "4+Clons"), which is what forced whole
+                # rows — and the Neurological tab as a whole — wider than
+                # the window. Wrapping lets a chip actually shrink toward
+                # MIN_TOUCH instead of demanding one-line width.
+                chip_label.set_wrap(True)
+                chip_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+                chip_label.set_justify(Gtk.Justification.CENTER)
+                chip_label.set_lines(2)
             self._buttons.append(btn)
             self.append(btn)
+
+        self.set_can_focus(True)
+        self.set_focusable(True)
+        focus_ctrl = Gtk.EventControllerFocus()
+        focus_ctrl.connect("enter", lambda _c: self.add_css_class("rg-focused"))
+        focus_ctrl.connect("leave", lambda _c: self.remove_css_class("rg-focused"))
+        self.add_controller(focus_ctrl)
+
+        key_ctrl = Gtk.EventControllerKey()
+        key_ctrl.connect("key-pressed", self._on_key_pressed)
+        self.add_controller(key_ctrl)
 
     @property
     def value(self) -> str | None:
@@ -237,6 +313,54 @@ class RadioGroup(Gtk.Box):
             self._selected = None
         self.emit("changed")
 
+    # -- keyboard: mirrors pab_assessment.widgets.RadioGroup exactly --------
+
+    def _key_left(self) -> None:
+        if not self._buttons:
+            return
+        if self._selected is None:
+            self._select(len(self._buttons) - 1)
+        else:
+            self._select(max(0, self._selected - 1))
+
+    def _key_right(self) -> None:
+        if not self._buttons:
+            return
+        if self._selected is None:
+            self._select(0)
+        else:
+            self._select(min(len(self._buttons) - 1, self._selected + 1))
+
+    def _key_commit(self) -> None:
+        if self._selected is None and self._buttons:
+            # Pick the "normal" option first — whichever chip is tagged
+            # success, else just the first chip — so an untouched row can
+            # be completed with Enter alone (arrow-enter-arrow-enter for
+            # abnormal rows, plain enter-enter-enter for normal rows).
+            normal_idx = 0
+            for i, (_label, variant) in enumerate(self._options):
+                if variant == "success":
+                    normal_idx = i
+                    break
+            self._select(normal_idx)
+        self.emit("navigate", "next")
+
+    def _on_key_pressed(self, _ctrl, keyval, _keycode, _state) -> bool:
+        name = Gdk.keyval_name(keyval) or ""
+        if name == "Left":
+            self._key_left()
+            return True
+        if name == "Right":
+            self._key_right()
+            return True
+        if name in ("Up", "Down"):
+            self.emit("navigate", "up" if name == "Up" else "down")
+            return True
+        if name in ("Return", "KP_Enter", "space"):
+            self._key_commit()
+            return True
+        return False
+
 
 # ---------------------------------------------------------------------------
 # AutoTextView — multi-line text entry that never swallows Tab
@@ -246,7 +370,19 @@ class AutoTextView(Gtk.ScrolledWindow):
     """Gtk.TextView wrapper with accepts-tab=False so Tab always moves focus.
 
     Mirrors pab_assessment.widgets TextArea usage (multi-line free text).
+
+    Emits "navigate" (direction) for a containing grid section, mirroring
+    the TUI's GridTextArea boundary-crossing rule: Up/Down always cross
+    (a text area has no meaningful "row above/below" within a grid cell
+    once it does), Left only at the very start of the buffer, Right only
+    at the very end — so normal cursor movement inside multi-line notes
+    is untouched, and only crossing the actual boundary hands off to grid
+    navigation.
     """
+
+    __gsignals__ = {
+        "navigate": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+    }
 
     def __init__(self, field_id: str, min_lines: int = 2) -> None:
         super().__init__()
@@ -266,6 +402,43 @@ class AutoTextView(Gtk.ScrolledWindow):
         self.textview.add_css_class("auto-textview")
         self.set_child(self.textview)
 
+        key_ctrl = Gtk.EventControllerKey()
+        key_ctrl.connect("key-pressed", self._on_key_pressed)
+        self.textview.add_controller(key_ctrl)
+
+    def grab_focus(self) -> bool:
+        # Grid navigation targets this wrapper by field_id; focus must land
+        # on the inner TextView, not the ScrolledWindow shell.
+        return self.textview.grab_focus()
+
+    def _on_key_pressed(self, _ctrl, keyval, _keycode, _state) -> bool:
+        name = Gdk.keyval_name(keyval) or ""
+        if name not in ("Up", "Down", "Left", "Right"):
+            return False
+        buf = self.textview.get_buffer()
+        cursor = buf.get_iter_at_mark(buf.get_insert())
+        if name == "Up":
+            if cursor.get_line() == 0:
+                self.emit("navigate", "up")
+                return True
+            return False
+        if name == "Down":
+            if cursor.get_line() == buf.get_line_count() - 1:
+                self.emit("navigate", "down")
+                return True
+            return False
+        if name == "Left":
+            if cursor.is_start():
+                self.emit("navigate", "left")
+                return True
+            return False
+        if name == "Right":
+            if cursor.is_end():
+                self.emit("navigate", "right")
+                return True
+            return False
+        return False
+
     @property
     def text(self) -> str:
         buf = self.textview.get_buffer()
@@ -282,6 +455,17 @@ class AutoTextView(Gtk.ScrolledWindow):
 # ---------------------------------------------------------------------------
 
 class TouchEntry(Gtk.Entry):
+    """Single-line entry. Emits "navigate" for grid boundary-crossing,
+    mirroring the TUI's GridInput: Up/Down always cross (a single-line
+    entry has no internal row concept); Left only at cursor position 0,
+    Right only at the end of the text — normal in-field cursor movement
+    is otherwise untouched.
+    """
+
+    __gsignals__ = {
+        "navigate": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+    }
+
     def __init__(self, field_id: str, placeholder: str = "") -> None:
         super().__init__()
         self.field_id = field_id
@@ -289,6 +473,23 @@ class TouchEntry(Gtk.Entry):
         self.set_hexpand(True)
         if placeholder:
             self.set_placeholder_text(placeholder)
+
+        key_ctrl = Gtk.EventControllerKey()
+        key_ctrl.connect("key-pressed", self._on_key_pressed)
+        self.add_controller(key_ctrl)
+
+    def _on_key_pressed(self, _ctrl, keyval, _keycode, _state) -> bool:
+        name = Gdk.keyval_name(keyval) or ""
+        if name in ("Up", "Down"):
+            self.emit("navigate", "up" if name == "Up" else "down")
+            return True
+        if name == "Left" and self.get_position() == 0:
+            self.emit("navigate", "left")
+            return True
+        if name == "Right" and self.get_position() >= len(self.get_text()):
+            self.emit("navigate", "right")
+            return True
+        return False
 
     @property
     def text(self) -> str:

@@ -20,7 +20,7 @@ SECTION_LABELS = [
     ("01_consent", "01 Consent"),
     ("02_subjective", "02 Subjective"),
     ("03_medical", "03 Medical"),
-    ("04_objective", "04 Objective →"),
+    ("04_objective", "04 Objective — Neuro"),
     ("04_pain_classification", "05 Pain Class"),
     ("05_outcome_measures", "06 Outcomes"),
     ("06_diagnosis", "07 Diagnosis"),
@@ -29,7 +29,11 @@ SECTION_LABELS = [
 ]
 
 # Sections this trial actually implements — everything else renders disabled.
-BUILT_SECTIONS = {"01_consent", "02_subjective"}
+# "04_objective" only ever opens Neurological here — the TUI's Objective mode
+# has its own 8-section sidebar (General/Active/Passive/.../Special); this
+# trial builds just the one tab, so the label above says so rather than
+# implying the rest of Objective mode is reachable.
+BUILT_SECTIONS = {"01_consent", "02_subjective", "04_objective"}
 
 
 class SectionNav(Gtk.Box):

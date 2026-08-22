@@ -17,6 +17,7 @@ from gi.repository import Gtk  # noqa: E402
 HINTS = [
     ("F1", "Consent"),
     ("F2", "Subjective"),
+    ("F4", "Neurological"),
     ("Alt+letter", "Jump subsection"),
     ("Ctrl+A", "Select All"),
     ("Ctrl+Q", "Quit"),
