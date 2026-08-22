@@ -40,7 +40,7 @@ from .objective.kb_db_screen import KBDBWindow
 from .search import build_index, find_by_field_id
 from .search_widget import SearchModal
 from .grid_overview import (
-    GridOverviewWindow, SUBJ_GRID_DATA, OBJ_GRID_DATA,
+    GridOverviewPage, SUBJ_GRID_DATA, OBJ_GRID_DATA,
     section_to_cursor, _section_has_data,
 )
 from .widgets import add_focus_listener
@@ -279,6 +279,16 @@ class TrialWindow(Gtk.ApplicationWindow):
             scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
             scroll.set_child(section)
             self.stack.add_named(scroll, name)
+
+        # -- Ctrl+T heading map: a page in this SAME stack (not a popup
+        # window) — see grid_overview.py's module docstring for why an
+        # in-place page, not an overlay, is the deliberate choice here.
+        self.grid_overview = GridOverviewPage()
+        self._grid_cursor: tuple[int, int] = (0, 0)
+        self._grid_cursor_set = False
+        self._pre_grid_stack_name: str | None = None
+        self.stack.add_named(self.grid_overview, "grid_overview")
+
         content_column.append(self.stack)
 
         # -- F10 notes overlay: freeform notes, hidden until toggled --------
@@ -542,6 +552,17 @@ class TrialWindow(Gtk.ApplicationWindow):
         alt_held = bool(state & Gdk.ModifierType.ALT_MASK)
         name = Gdk.keyval_name(keyval) or ""
 
+        # Grid overview page owns Escape/arrows while it's the visible
+        # stack child — checked first, ahead of every other binding below,
+        # since Up/Down/Left/Right would otherwise fall through unhandled.
+        if self.stack.get_visible_child_name() == "grid_overview":
+            if name == "Escape":
+                self._close_grid_overview()
+                return True
+            if name in ("Up", "Down", "Left", "Right"):
+                self.grid_overview.move_cursor(name)
+                return True
+
         if name == "F1":
             self._show_section("01_consent")
             return True
@@ -597,7 +618,7 @@ class TrialWindow(Gtk.ApplicationWindow):
             self._open_search()
             return True
         if ctrl_held and name.lower() == "t":
-            self._open_grid_overview()
+            self._toggle_grid_overview()
             return True
         if alt_held and name.lower() in self._ALT_KEY_MAP:
             self._show_section("02_subjective")
@@ -708,14 +729,28 @@ class TrialWindow(Gtk.ApplicationWindow):
                 has_data[sid] = False
         return has_data
 
-    def _open_grid_overview(self) -> None:
+    def _toggle_grid_overview(self) -> None:
         """Ctrl+T — heading map for rapid section jump (TUI's Ctrl+G,
-        rebound — see grid_overview.py's module docstring for why)."""
+        rebound — see grid_overview.py's module docstring for why). Toggles:
+        a second press while the grid is showing closes it back to whatever
+        section was active before, exactly like the TUI's own toggle_grid."""
+        if self.stack.get_visible_child_name() == "grid_overview":
+            self._close_grid_overview()
+        else:
+            self._open_grid_overview()
+
+    def _open_grid_overview(self) -> None:
+        self._pre_grid_stack_name = self.stack.get_visible_child_name()
         grid_data = OBJ_GRID_DATA if self._in_objective_mode else SUBJ_GRID_DATA
         has_data = self._collect_grid_has_data(grid_data)
-        cursor = section_to_cursor(self._current_section_id(), grid_data)
+        cursor = (
+            self._grid_cursor if self._grid_cursor_set
+            else section_to_cursor(self._current_section_id(), grid_data)
+        )
 
         def on_selected(section_id: str, anchor_id: str) -> None:
+            self._grid_cursor = self.grid_overview.current_cursor()
+            self._grid_cursor_set = True
             # The SUBJ_GRID_DATA "04_objective" row is the one place
             # anchor_id is itself a section id (e.g. "02_active") rather
             # than an anchor within section_id — _show_section already
@@ -726,7 +761,16 @@ class TrialWindow(Gtk.ApplicationWindow):
             else:
                 self._show_section(section_id)
 
-        GridOverviewWindow(self, grid_data, has_data, cursor, on_selected).present()
+        self.grid_overview.open(grid_data, has_data, cursor, on_selected)
+        self.stack.set_visible_child_name("grid_overview")
+
+    def _close_grid_overview(self) -> None:
+        """Escape, or a second Ctrl+T — dismiss without navigating,
+        remembering the cursor position exactly like the TUI does."""
+        self._grid_cursor = self.grid_overview.current_cursor()
+        self._grid_cursor_set = True
+        if self._pre_grid_stack_name:
+            self.stack.set_visible_child_name(self._pre_grid_stack_name)
 
     def _open_kb_browser(self) -> None:
         """Ctrl+D — full Clinical KB browser, independent of the Ctrl+K

@@ -33,7 +33,7 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Gdk  # noqa: E402
+from gi.repository import Gtk  # noqa: E402
 
 # ── Heading data — lifted verbatim ──────────────────────────────────────────
 # Each entry: (section_id, display_label, [(heading_label, anchor_id), ...])
@@ -163,6 +163,25 @@ OBJ_GRID_DATA: list[tuple[str, str, list[tuple[str, str]]]] = [
         ("Hip Str",      "ml_strength_hip"),
         ("SIJ",          "ml_sij"),
     ]),
+    # The TUI's own grid_overview.py has no "08 Special Tests" row at all
+    # (OBJ_GRID_DATA jumps straight from Muscle to CRPS there too) — a
+    # real, pre-existing TUI gap, not something lost in this port. Left
+    # as-is there, it also misaligns the TUI's own grid against its own
+    # ObjectiveSidebar by one row from Special Tests down through CRPS
+    # (confirmed: same bug, same cause, in both apps). Fixed here per
+    # direct feedback rather than reproducing it: a region-list row, since
+    # Special Tests has no fixed heading set of its own (unlike every other
+    # objective tab) — it shows whichever regions are currently toggled
+    # active via RegionTopbar, so "headings" here are the region choices
+    # themselves rather than subsection anchors within one fixed layout.
+    ("08_special", "08 Special Tests", [
+        ("Lumbar",   "st_lumbar"),
+        ("Cervical", "st_cervical"),
+        ("Shoulder", "st_shoulder"),
+        ("Hip",      "st_hip"),
+        ("Knee",     "st_knee"),
+        ("Ankle",    "st_ankle"),
+    ]),
     ("09_crps", "09 CRPS", [
         ("Disp Pain",  "crps_disp"),
         ("Symptoms",   "crps_sx"),
@@ -199,52 +218,82 @@ def _section_has_data(data: dict) -> bool:
     return False
 
 
-# ── Grid overview window ─────────────────────────────────────────────────────
+# ── Grid overview page ───────────────────────────────────────────────────────
 
-class GridOverviewWindow(Gtk.Window):
-    """Heading map popup. Click, or arrow keys + Enter, or Escape to close.
+class GridOverviewPage(Gtk.Box):
+    """Heading map — an in-place page swapped into app.py's main Gtk.Stack
+    (named "grid_overview"), not a separate popup window.
 
-    A separate transient window (like the Ctrl+F/Ctrl+D search popups)
-    rather than an in-place content swap — this app's per-tab content
-    already lives in a Gtk.Stack, and a window keeps the overlay/dismiss
-    mechanics identical to every other popup in this app rather than
-    teaching app.py's stack-swap logic a second, grid-specific mode.
+    A first version of this used a transient Gtk.Window (matching the
+    Ctrl+F/Ctrl+D popups). Per direct feedback, that was wrong for this
+    specific feature: unlike a search box, the TUI's own Ctrl+G/Ctrl+T grid
+    replaces #section_content IN PLACE — same content area, same sidebar
+    still visible and still responsive, no new window size to mentally
+    recalibrate around. This rebuild matches that: app.py adds this page to
+    the same Gtk.Stack every other section lives in and just switches to
+    it, exactly like switching to any other tab.
     """
 
-    def __init__(
+    def __init__(self) -> None:
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self._grid_data: list[tuple[str, str, list[tuple[str, str]]]] = []
+        self._on_selected = None
+        self._buttons: list[list[Gtk.Button]] = []
+        self._cursor: tuple[int, int] = (0, 0)
+
+        # margin_top=4 + spacing=2 between rows deliberately match
+        # nav.py's SectionNav / objective_nav.py's ObjectiveNav exactly
+        # (same values there) — each grid row lines up with its own
+        # section's sidebar tab at the same y position (see _build_row's
+        # matching .nav-button/.grid-overview-btn min-height too). No
+        # in-content row label either: the sidebar tab directly alongside
+        # IS the row label now, not repeated here — this only works because
+        # SUBJ_GRID_DATA/OBJ_GRID_DATA already list rows in the exact same
+        # order as SectionNav.SECTION_LABELS/ObjectiveNav.SECTION_LABELS.
+        self._rows_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self._rows_box.set_margin_top(4)
+        self._rows_box.set_margin_bottom(4)
+        self._rows_box.set_margin_start(10)
+        self._rows_box.set_margin_end(10)
+
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_child(self._rows_box)
+        scroll.set_vexpand(True)
+        scroll.set_hexpand(True)
+        self.append(scroll)
+
+    # ------------------------------------------------------------------
+    # Public API — driven by app.py's _open_grid_overview/_toggle_grid_overview
+    # ------------------------------------------------------------------
+
+    def open(
         self,
-        parent: Gtk.Window,
         grid_data: list[tuple[str, str, list[tuple[str, str]]]],
         has_data: dict[str, bool],
         cursor: tuple[int, int],
         on_selected,
     ) -> None:
-        super().__init__(transient_for=parent, modal=True, title="Overview")
-        self.set_default_size(900, 650)
+        """(Re)build the grid for grid_data (SUBJ_GRID_DATA or OBJ_GRID_DATA
+        depending on assessment/objective mode) and focus the given cursor
+        cell. Rebuilt every open() rather than kept as two permanently-live
+        widgets (unlike the TUI's own subj/obj GridOverview, both always
+        mounted) — simpler, and this page is never open during normal typing
+        so rebuild cost is irrelevant."""
         self._grid_data = grid_data
         self._on_selected = on_selected
-        self._buttons: list[list[Gtk.Button]] = []
         self._cursor = cursor
 
-        header = Gtk.HeaderBar()
-        close_btn = Gtk.Button(label="Close (Esc)")
-        close_btn.connect("clicked", lambda _b: self.close())
-        header.pack_end(close_btn)
-        self.set_titlebar(header)
-
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        outer.set_margin_top(10)
-        outer.set_margin_bottom(10)
-        outer.set_margin_start(10)
-        outer.set_margin_end(10)
+        child = self._rows_box.get_first_child()
+        while child is not None:
+            nxt = child.get_next_sibling()
+            self._rows_box.remove(child)
+            child = nxt
+        self._buttons = []
 
         for row_idx, (section_id, row_label, headings) in enumerate(grid_data):
             row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-            row_title = Gtk.Label(label=row_label)
-            row_title.set_size_request(140, -1)
-            row_title.set_xalign(0.0)
-            row_title.add_css_class("grid-overview-row-label")
-            row_box.append(row_title)
+            row_box.set_valign(Gtk.Align.CENTER)
 
             btn_row: list[Gtk.Button] = []
             for col_idx, (h_label, _anchor_id) in enumerate(headings):
@@ -253,27 +302,32 @@ class GridOverviewWindow(Gtk.Window):
                 btn.row = row_idx
                 btn.col = col_idx
                 btn.base_label = h_label
-                btn.set_label(h_label)
                 btn.connect("clicked", self._on_button_clicked, row_idx, col_idx)
                 row_box.append(btn)
                 btn_row.append(btn)
             self._buttons.append(btn_row)
-            outer.append(row_box)
-
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_child(outer)
-        scroll.set_vexpand(True)
-        self.set_child(scroll)
+            self._rows_box.append(row_box)
 
         self._refresh_ticks(has_data)
+        self._focus_cursor()
 
-        key_ctrl = Gtk.EventControllerKey()
-        key_ctrl.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        key_ctrl.connect("key-pressed", self._on_key)
-        self.add_controller(key_ctrl)
+    def current_cursor(self) -> tuple[int, int]:
+        return self._cursor
 
-        self.connect("show", lambda *_a: self._focus_cursor())
+    def move_cursor(self, direction: str) -> None:
+        """Called by app.py's global key handler (Up/Down/Left/Right) while
+        this page is the visible stack child."""
+        row, col = self._cursor
+        if direction == "Up":
+            new_row = self._next_non_empty(row, -1)
+            self._move_cursor(new_row, min(col, len(self._buttons[new_row]) - 1))
+        elif direction == "Down":
+            new_row = self._next_non_empty(row, +1)
+            self._move_cursor(new_row, min(col, len(self._buttons[new_row]) - 1))
+        elif direction == "Left":
+            self._move_cursor(row, max(0, col - 1))
+        elif direction == "Right":
+            self._move_cursor(row, min(len(self._buttons[row]) - 1, col + 1))
 
     # ------------------------------------------------------------------
 
@@ -310,36 +364,9 @@ class GridOverviewWindow(Gtk.Window):
             r += direction
         return start
 
-    # ------------------------------------------------------------------
-
-    def _on_key(self, _ctrl, keyval, _keycode, _state) -> bool:
-        name = Gdk.keyval_name(keyval) or ""
-        if name == "Escape":
-            self.close()
-            return True
-        if name == "Up":
-            row, col = self._cursor
-            new_row = self._next_non_empty(row, -1)
-            self._move_cursor(new_row, min(col, len(self._buttons[new_row]) - 1))
-            return True
-        if name == "Down":
-            row, col = self._cursor
-            new_row = self._next_non_empty(row, +1)
-            self._move_cursor(new_row, min(col, len(self._buttons[new_row]) - 1))
-            return True
-        if name == "Left":
-            row, col = self._cursor
-            self._move_cursor(row, max(0, col - 1))
-            return True
-        if name == "Right":
-            row, col = self._cursor
-            self._move_cursor(row, min(len(self._buttons[row]) - 1, col + 1))
-            return True
-        return False
-
     def _on_button_clicked(self, _btn, row: int, col: int) -> None:
         self._cursor = (row, col)
         section_id, _, headings = self._grid_data[row]
         _, anchor_id = headings[col]
-        self._on_selected(section_id, anchor_id)
-        self.close()
+        if self._on_selected is not None:
+            self._on_selected(section_id, anchor_id)
