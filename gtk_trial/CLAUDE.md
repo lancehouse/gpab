@@ -33,10 +33,25 @@ bash scripts/run.sh <name>                       # launch against the copy
 `storage.py` (JSON I/O + merge-write save), `mapping.py` (body-chart → note prefill),
 `logic.py` (sleep-efficiency calc), `form_schema.py` + `sections/yaml/subj_sleep_pilot.yaml`
 (the Sleep subsection's declarative field spec — rendered here by a brand-new GTK renderer,
-`gpab_trial/sections/yaml_subsection.py`, consuming the *same* YAML file the TUI uses).
+`gpab_trial/sections/yaml_subsection.py`, consuming the *same* YAML file the TUI uses); the six
+regional objective YAML files (`objective/sections/yaml/*.yaml`); `objective/kb_db.py` and
+`objective/kb_loader.py` (clinical KB resolution — DB-backed for cervical/shoulder, YAML
+fallback elsewhere, unchanged from the TUI).
 
-## What's out of scope for this trial
+## What's built (see `CONVERSION_PLAN.md` for the authoritative, up-to-date phase list)
 
-See the plan file — briefly: no live file-watcher re-sync, no Ctrl+F search, no report
-generation, no wiring into `bodychart/src/integration.c`, no arrow-key spatial nav
-(Tab/Shift+Tab only), and no other assessment/objective sections.
+All 8 assessment sections (Consent through Rx & Plan) and all 9 objective tabs (General,
+Functional, Active Movement, Passive/OP, Neurological, Sensory, Muscle Testing, Special Tests,
+CRPS) are ported and round-trip-verified against real session JSON — including Passive/Muscle
+extras for all six regions (lumbar/cervical/shoulder/hip/knee/ankle). Arrow-key spatial grid
+navigation (`objective/grid_nav.py`) is standard throughout, not Tab/Shift+Tab only. A body-region
+toggle topbar (`objective/region_topbar.py`) mounts/unmounts regions live. Report generation
+(Ctrl+R, `report_modal.py`) and a Ctrl+K knowledge-base panel (`objective/kb_panel.py`) are both
+built and wired.
+
+## What's still out of scope
+
+No live body-chart file-watcher re-sync (region toggling is manual only), no Ctrl+F fuzzy search,
+no Ctrl+G heading-map overview, no Ctrl+D KB database browser, no Regional Differential panel
+(Pain Classification's cluster-tally view), no wiring into `bodychart/src/integration.c`. See
+`CONVERSION_PLAN.md`'s Phase 3/4/6 tables for the full remaining list.

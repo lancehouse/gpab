@@ -45,7 +45,12 @@ files. Rebuild everything that touches Textual widgets natively in GTK4: every a
 every objective section, the KB lookup panels, jump-search, the section nav chrome. `collect()`/
 `load()` dict shapes must stay byte-for-byte schema-compatible with what `storage.py` expects, so
 a session file this app writes is indistinguishable from one the TUI wrote (this has been verified
-correct for Consent/Subjective/Neurological so far — round-trip diffs, not just a visual match).
+correct via round-trip diffs, not just a visual match, for every assessment section — Consent,
+Subjective, Medical, Pain Classification, Outcome Measures, Diagnosis, Barriers, Rx & Plan — and
+every objective section: Neurological, General Observation, Functional, Sensory, CRPS, and all six
+regional tables — Active Movement/Passive-OP/Muscle Testing/Special Tests for lumbar, cervical,
+shoulder, hip, knee, ankle). See `CONVERSION_PLAN.md` for exactly what's left (Ctrl+D KB browser,
+Regional Differential panel, live body-chart region sync, and the app-level Phase 3 items).
 
 ## Rules carried over from the real PhysioChart project (still apply here)
 

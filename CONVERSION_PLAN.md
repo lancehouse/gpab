@@ -22,50 +22,40 @@ Textual widget/screen code below.
 - Grid navigation: `objective/grid_nav.py` (`GridNav` mixin) — row/column spatial nav plus
   Enter-commits-and-advances, reusable by any dense objective tab.
 - App chrome: compact titlebar, F11 fullscreen, one persistent top mnemonic bar, left section nav,
-  footer hotkey bar, per-file debounced autosave (`_assessment.json` / `_objective.json` on
-  separate timers, matching the TUI's `AssessmentView`/`ObjectiveAssessmentView` split).
+  per-file debounced autosave (`_assessment.json` / `_objective.json` on separate timers, matching
+  the TUI's `AssessmentView`/`ObjectiveAssessmentView` split). The footer hotkey bar built here was
+  later removed (2026-08-22) per user feedback — it duplicated the sidebar/mode-switch navigation,
+  and its ~15 unwrapped hint labels turned out to be the actual cause of a window-overflow bug (see
+  the `kb_integration_and_layout` memory note); only the save-status indicator remains in it.
 - Sections built: **01 Consent**, **02 Subjective** (incl. the YAML-driven Sleep subsection),
   **04 Neurological** (objective).
 
-## Phase 1 — remaining assessment-side sections
+## Phase 1 — remaining assessment-side sections — ✅ DONE
 
-| TUI file | Lines | Notes |
-|---|---|---|
-| `sections/medical.py` | 583 | |
-| `sections/pain_classification.py` | 846 | Per-item tables — likely wants its own `PainRow` builder analogous to `grid_widgets.py`, not a copy of the Neurological grid shape. |
-| `sections/outcome_measures.py` | 993 | Largest single section; check for scored/calculated fields akin to Sleep Efficiency (route through the same `_FORMULA_REGISTRY` pattern used by `yaml_subsection.py` if so). |
-| `sections/diagnosis.py` | 764 | |
-| `sections/regional_differential.py` | 471 | |
-| `sections/barriers.py` | 542 | |
-| `sections/rx_plan.py` | 344 | |
-| `sections/scratchpad.py` / `placeholder.py` / `objective.py` | 117 / 39 / 27 | Small utility sections — confirm each still has a purpose before porting; `placeholder.py` in particular may be a stub for a section not yet built in the TUI itself. |
+All eight assessment sections are built and round-trip-verified: `medical.py`,
+`pain_classification.py`, `outcome_measures.py`, `diagnosis.py` (the CAL-CP walker, with GTK-native
+flowchart connectors and temporal-pattern sparkline diagrams — a genuine enhancement over the
+TUI's own rendering, not just a port), `barriers.py`, `rx_plan.py`, plus the F10 Notes overlay
+(replacing the dead `scratchpad.py`/`placeholder.py`/`objective.py` stubs — confirmed via grep to
+be unreferenced anywhere in the real TUI, so nothing there needed porting).
+`sections/regional_differential.py` (471 lines) turned out to belong with Phase 4 (KB
+integration) — it's Pain Classification's cluster-tally panel, driven by KB data — and is tracked
+there instead, still not built.
 
-Each section: port field-for-field against the live TUI source (never guess a field's meaning —
-ask, per the standing "flag don't guess clinical content" rule), verify with a `collect()`/`load()`
-round-trip diff against real session data before moving on, same as Phase 0.
+## Phase 2 — remaining objective-side sections — ✅ DONE
 
-## Phase 2 — remaining objective-side sections
-
-| TUI file | Lines | Notes |
-|---|---|---|
-| `objective/sections/region_section.py` | 844 | Appears to be the shared framework the six regional table files below build on — read this first; if it's a genuine base class, the GTK port should mirror that with a shared base rather than porting each region independently. |
-| `objective/sections/cervical_tables.py` | 356 | |
-| `objective/sections/shoulder_tables.py` | 397 | |
-| `objective/sections/lumbar_tables.py` | 379 | |
-| `objective/sections/hip_tables.py` | 320 | |
-| `objective/sections/knee_tables.py` | 313 | |
-| `objective/sections/ankle_tables.py` | 314 | |
-| `objective/sections/sensory.py` | 210 | Already partly KB-integrated in the TUI (pain-sensitisation screen) — check what that wiring needs before porting (see Phase 4). |
-| `objective/sections/muscle.py` | 338 | Likely reuses the same bilateral-gang shape as Neurological — should mostly be `GridNav` + `grid_widgets.py` reuse, not new mechanism. |
-| `objective/sections/active_movement.py` | 317 | |
-| `objective/sections/functional.py` | 329 | |
-| `objective/sections/crps.py` | 417 | |
-| `objective/sections/general.py` | 164 | |
-
-Expect this phase to mostly be *reuse*, not new invention — Neurological (Phase 0) was deliberately
-chosen first because it's the densest, most representative tab. If a new section needs a grid shape
-`grid_widgets.py`/`grid_nav.py` doesn't already support, extend those shared files rather than
-one-off code in the section — same rule as before.
+`region_section.py` was indeed the shared framework it looked like — ported as
+`objective/region_section.py` (`ROMGroupWidget`, `GradeGroupWidget`, `TrunkStrengthWidget`,
+`SpecialTestsWidget`, `BilateralGridSpecialTestsWidget`, `RegionContainer`, `RegionTabContent`),
+driven by the same per-region YAML files the TUI uses. All six regions' Python "extras" (OP/PAIVM
+passive tables, muscle strength grids) are ported too — factored into two shared shapes
+(`objective/passive_widgets.py`'s `OPPAIVMTable`/`BilateralNormTable`/`StrengthGridTable`) once it
+became clear every region duplicated one of two patterns almost verbatim, rather than porting each
+region's `*_tables.py` as a one-off. `general.py`, `functional.py` (with a 3-way SMART Goals mirror
+to Consent/Subjective), `sensory.py`, and `crps.py` (reactive Budapest-criteria domain indicators)
+are also done. A body-region toggle topbar (`objective/region_topbar.py`) replaces the Subjective
+mnemonic bar in Objective mode and mounts/unmounts regions live across the four region tabs —
+manual toggle only, no body-chart sync yet (see Phase 3).
 
 ## Phase 3 — app-level, cross-cutting features
 
@@ -74,18 +64,19 @@ one-off code in the section — same rule as before.
 | `search.py` + `search_widget.py` | 824 + 151 | Ctrl+F/Ctrl+. fuzzy jump-search across all fields | A `Gtk.SearchEntry` + filtered `Gtk.ListView`/popover over the same search-index data structure; index-building logic likely reusable unchanged. |
 | `grid_overview.py` | 381 | Ctrl+G heading map for rapid section/subsection nav | GTK popover/dialog listing `SUBJ_GRID_DATA`-equivalent; mostly a rendering exercise once the data structure is ported. |
 | `watcher.py` | 118 | Polls `session_current.json` + the active session file for GTK body-chart-side updates, and a `.focus_tui` signal file | This is the live body-chart re-sync explicitly deferred in Phase 0 (`refresh_from_chart`). Needs a GLib-native equivalent (`GLib.timeout_add` poll or a `Gio.FileMonitor` on the session file) — the latter is probably the right call now that we're in GTK anyway, since GTK doesn't need to poll the way a Textual async loop did. |
-| `report_modal.py` | 70 | Report preview/regenerate trigger | Small — a `Gtk.Dialog` wrapping the same `storage.py` report-generation call. |
+| `report_modal.py` | 70 | Report preview/regenerate trigger | ✅ DONE — Ctrl+R, `report_modal.py`. |
 | `assessment_view.py` / `objective_view.py` (remaining features beyond what Phase 0 ported) | 945 / 716 | Section-complete indicators, migration helpers, the rest of the save/load orchestration | Audit what's left once Phases 1–2 land — some of this (e.g. `_migrate_objective`) may not need a GTK equivalent at all if it's schema-migration logic that runs at load time regardless of UI. |
 | `main.py` | 356 | Full `BINDINGS` table: F1–F9 section switches, F10 notes toggle, Ctrl+F1–F8 objective jumps, Alt+letter subsection jumps, Ctrl+Q/Ctrl+A/Ctrl+D | Phase 0's `app.py` already replicates the F1/F2/F4/F11/Ctrl+Q/Ctrl+A subset; extend the same global `Gtk.EventControllerKey` table as each new section lands, rather than adding ad hoc key handling per section. |
 
-## Phase 4 — clinical knowledge base integration
+## Phase 4 — clinical knowledge base integration — IN PROGRESS
 
 | TUI file | Lines | Notes |
 |---|---|---|
-| `objective/kb_panel.py` | — | Ctrl+K field-focus lookup popover |
-| `objective/kb_db_screen.py` | 916 | Ctrl+D full KB browser — the single largest remaining screen in the app |
-| `objective/kb_db.py` | 189 | DB access layer (SQLite, read-only against `clinical_kb.db`) — very likely reusable unchanged, same as `storage.py` |
-| `objective/kb_loader.py` | 249 | Resolves DB-backed vs. YAML-fallback content per region; region-independent `_GLOBAL_DB_FIELDS` |
+| `objective/kb_db.py` | 189 | ✅ DONE — copied unchanged, zero Textual imports as expected. |
+| `objective/kb_loader.py` | 249 | ✅ DONE — copied with only `_KB_DIR` repointed at the read-only reference clone (same `parents[N]` pattern as `region_section.py`'s `_YAML_DIR`). |
+| `objective/kb_panel.py` | 73 | ✅ DONE (`gpab_trial/objective/kb_panel.py`) — Ctrl+K field-focus lookup panel. Rendering deliberately does NOT reuse `KBEntry.render_lines()` (that hard-wraps every field to 44 chars for the TUI's fixed terminal width); a separate free-text renderer lets the GTK `Gtk.Label` reflow naturally to whatever width the panel has. Focus-tracking uses a per-widget listener registry (`widgets.add_focus_listener`) rather than a window-level `Gtk.Root` "notify::focus-widget" hook — that hook fired in isolated tests but not once real `Gtk.Stack`/`Gtk.ScrolledWindow` nesting was involved; unresolved why, so don't reach for it again without re-verifying. |
+| `sections/regional_differential.py` | 471 | **Not built.** Pain Classification's cluster-tally panel (pos/total per special-tests group, live-updated from in-memory region data). The pure data functions (`_build_members`, `_load_db_cluster`, `_short_sn_sp`, `_load_region_structure`, `_load_extra_clusters`) have zero Textual imports and can likely be lifted verbatim; only the `_TestRow`/`_ValueRow`/`_FlagRow`/`_ClusterBlock`/panel widgets need rebuilding (a `Gtk.Expander` per cluster, in place of `Collapsible`). Needs `tests` dict assembled the same way `assessment_view.py::_flatten_region_fields` does (neurological dict merged with the active region's flattened active/passive/muscle/special dicts) — build that from in-memory `collect()` calls, not a disk re-read, matching how this app already does cross-ref refreshes elsewhere. |
+| `objective/kb_db_screen.py` | 916 | **Not built.** Ctrl+D full KB browser — the single largest remaining screen in the app, but the least coupled to anything else (a standalone browser window; nothing else depends on it). Do this last. |
 
 Per the real project's own CLAUDE.md, this is "built and live, not a planned phase" in the TUI —
 treat it the same way here: not optional polish, a required part of full parity. `kb_db.py` should
