@@ -5,9 +5,10 @@ slots reuse pab_assessment.mapping.build_prefill() unchanged. The Sleep
 subsection is rendered by YamlSubsectionGtk from the *same* YAML file the TUI
 uses (sections/yaml/subj_sleep_pilot.yaml) — no re-declaration.
 
-Scope note (see plan): refresh_from_chart's live file-watcher re-sync is out
-of scope for this trial — note slots are built once at load() time from
-whatever _session.json currently contains.
+Live re-sync: refresh_from_chart() below is called by app.py's chart-file
+poller (chart_watcher.py) whenever the real GTK bodychart app writes new
+strokes to this session's *_session.json — see that module's docstring for
+the full design/verification notes.
 """
 
 from __future__ import annotations
@@ -349,6 +350,52 @@ class SubjectiveSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
     # Dynamic note slots — reuses pab_assessment.mapping.build_prefill unchanged
     # ------------------------------------------------------------------
+
+    def refresh_from_chart(self, session_json: dict) -> None:
+        """Re-build note slots when the body chart changes on disk, preserving
+        whatever the clinician has already typed. GTK counterpart to the TUI's
+        SubjectiveSection.refresh_from_chart (tui.py's on_chart_update calls
+        it identically) — same snapshot-then-rebuild shape: read the CURRENT
+        widget text as the "saved" base (not whatever was last written to
+        _assessment.json) before rebuilding, so nothing typed since the last
+        save is lost. Called by app.py's chart-file poller; never called
+        during this section's own load() (which already snapshots from the
+        loaded _assessment.json data instead — see load() below)."""
+        from pab_assessment.mapping import build_prefill
+
+        live_note_fields: dict[str, dict] = {}
+        for i, sid in self._slot_to_stable_id.items():
+            slot = self._note_slots[i]
+            if not slot.get_visible():
+                continue
+            live_note_fields[str(sid)] = {
+                "loc": slot.loc.text,
+                "nat": slot.nat.text,
+                "agg": slot.agg.text if slot.full else "",
+                "ease": slot.ease.text if slot.full else "",
+            }
+        if self.misc_slot.get_visible():
+            live_note_fields["misc_loc"] = self.misc_loc.text
+            live_note_fields["misc_nat"] = self.misc_nat.text
+
+        prefill = build_prefill(session_json)
+        self._loading = True
+        try:
+            self._rebuild_note_slots(live_note_fields, prefill)
+        finally:
+            self._loading = False
+        # Deliberately does NOT trigger autosave (_loading guards every
+        # per-widget Changed signal during the rebuild, same as the TUI's
+        # own version) — this mirrors tui.py's on_chart_update exactly,
+        # which never calls _schedule_save either. Rationale carried over,
+        # not invented here: a chart stroke can arrive far more often than
+        # a deliberate field edit, and most of what changes is auto-derived
+        # placeholder text, not new clinician content — the refreshed note
+        # slots simply ride along with whatever save the user's own next
+        # edit (or app.py's flush-on-quit / Ctrl+R report-flush) already
+        # triggers — _do_save() always collects every section, not just
+        # whichever one changed, so the refreshed content isn't lost, just
+        # not immediately forced to disk on its own.
 
     def _rebuild_note_slots(self, saved_note_fields: dict, prefill: dict) -> None:
         for slot in self._note_slots:

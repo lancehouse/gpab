@@ -87,6 +87,17 @@ class ConsentSection(Gtk.Box, SectionBase):
             ta = AutoTextView(f"consent_goal_{i}", min_lines=1)
             self.append(_field_row(f"{i}.", ta))
             self.consent_goals.append(ta)
+        # app.py's _sync_goals(source_goals, *dest_sections) reads dest.goals
+        # uniformly on every destination section (subjective.py and
+        # functional.py both name their own list .goals) — this section is
+        # the one place that list is called .consent_goals instead (its own
+        # field ids are consent_goal_N, unrelated to the shared dict key),
+        # so it needs the same name available under both, or
+        # _on_subjective_changed's _sync_goals(..., self.consent, ...) call
+        # raises AttributeError on every Subjective edit. Found via chart-
+        # watcher verification testing (2026-08-23), pre-existing bug, not
+        # something the chart watcher itself touches.
+        self.goals = self.consent_goals
 
         # -- Beliefs --------------------------------------------------------
         self.append(_header("Beliefs", "cs_beliefs"))

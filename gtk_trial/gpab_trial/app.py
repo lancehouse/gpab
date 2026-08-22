@@ -1,14 +1,17 @@
-"""GTK4 trial app — Consent + Subjective, touch-first, debounced autosave.
+"""GTK4 trial app — full assessment conversion, touch-first, debounced autosave.
 
-Operates ONLY against the session path passed on the command line. Per the
-trial's isolation rule, this should always be a ~/PAB-gtktrial/<name>/ copy,
-never a real ~/PAB/<name>/ session — main.py enforces this.
+Operates against the exact session path passed on the command line —
+main.py accepts either a ~/PAB-gtktrial/<name>/ copy or (since the isolation
+relaxation of 2026-08-22) a real ~/PAB/<name>/ session directly.
 """
 
 from __future__ import annotations
+import logging
 from pathlib import Path
 
 import gi
+
+logger = logging.getLogger(__name__)
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
@@ -49,6 +52,7 @@ from .topbar import SubsectionNavBar
 from .footer import FooterBar
 from .report_modal import ReportModal
 from .notes_overlay import NotesOverlay
+from .chart_watcher import ChartFileWatcher
 
 AUTOSAVE_DEBOUNCE_MS = 2000
 
@@ -339,6 +343,14 @@ class TrialWindow(Gtk.ApplicationWindow):
         self._load()
         self._show_section("01_consent")
 
+        # -- Live body-chart re-sync — see chart_watcher.py's module
+        # docstring for full scope/verification notes. Started only after
+        # _load() so the baseline mtime it records reflects what was just
+        # read, not a stale/absent value.
+        self._chart_watcher = ChartFileWatcher(self.session_file, self._on_chart_update)
+        self._chart_watcher.start()
+        self.connect("destroy", lambda *_a: self._chart_watcher.stop())
+
     # ------------------------------------------------------------------
     # Navigation
     # ------------------------------------------------------------------
@@ -526,6 +538,16 @@ class TrialWindow(Gtk.ApplicationWindow):
         # _sync_active_regions above already pushed once (mount time, before
         # these loads ran) — push again now that region data is populated.
         self._push_region_tests_to_pain_classification()
+
+    def _on_chart_update(self, data: dict) -> None:
+        """ChartFileWatcher callback — GTK counterpart to tui.py's
+        on_chart_update. See chart_watcher.py's module docstring for exactly
+        what this does and does not do (only Subjective's note slots;
+        no active-region sync, no session-switch, no focus-signal)."""
+        try:
+            self.subjective.refresh_from_chart(data)
+        except Exception as e:
+            logger.error("chart update handler failed: %s", e)
 
     # ------------------------------------------------------------------
     # Global hotkeys — mirrors main.py's PhysioAssessment.BINDINGS for the
