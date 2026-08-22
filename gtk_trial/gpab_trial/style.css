@@ -1,0 +1,147 @@
+/* Narrow OS-drawn titlebar — GTK doesn't shrink a HeaderBar's default
+   min-height (~46px) just because it has no title widget; this does that. */
+.compact-headerbar {
+    min-height: 22px;
+    padding: 0 4px;
+}
+
+.compact-headerbar button {
+    min-height: 18px;
+    min-width: 18px;
+    padding: 0;
+}
+
+/* Touch-target sizing + state colors matching pab_assessment CheckButton/FlagButton palette */
+
+.clinical-toggle {
+    font-weight: bold;
+    border-radius: 6px;
+    min-width: 120px;
+    padding: 8px 10px;
+}
+
+.cb-unanswered { background: #FFBF00; color: black; }
+.cb-yes        { background: #2e7d32; color: white; }
+.cb-no         { background: #c62828; color: white; }
+
+.radio-group > button {
+    font-weight: bold;
+    border-radius: 4px;
+}
+
+.rb-default  { background: #616161; color: white; }
+.rb-primary  { background: #1565c0; color: white; }
+.rb-success  { background: #2e7d32; color: white; }
+.rb-warning  { background: #f9a825; color: black; }
+.rb-error    { background: #c62828; color: white; }
+
+.radio-group > button:checked {
+    outline: 3px solid #90caf9;
+}
+
+.auto-textview-frame {
+    border: 1px solid alpha(currentColor, 0.3);
+    border-radius: 4px;
+}
+
+.auto-textview {
+    font-size: 1rem;
+}
+
+entry {
+    min-height: 48px;
+}
+
+/* Full-width colored bar, mirrors the TUI's high-contrast subsection_header
+   CSS (background: $primary; color: $background). Defined once here and
+   built by widgets.make_subsection_header() — every section (present and
+   future) that uses that helper gets this automatically. */
+.subsection-header {
+    font-weight: bold;
+    font-size: 1.05rem;
+    padding: 6px 10px;
+    margin-top: 10px;
+    background: #1565c0;
+    color: white;
+}
+
+.section-title {
+    font-weight: bold;
+    font-size: 1.3rem;
+    padding: 8px 4px;
+}
+
+.field-label {
+    padding: 4px 8px 4px 0;
+}
+
+.reference-note {
+    font-style: italic;
+    opacity: 0.7;
+}
+
+/* Left sidebar nav — GTK4 equivalent of the TUI's SectionNav */
+.section-nav {
+    background: alpha(currentColor, 0.04);
+    border-right: 1px solid alpha(currentColor, 0.15);
+}
+
+.nav-button {
+    min-height: 48px;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.nav-button:hover {
+    background: alpha(currentColor, 0.08);
+}
+
+.nav-button.nav-active {
+    background: #1565c0;
+    color: white;
+    font-weight: bold;
+}
+
+.save-status {
+    padding: 4px 8px;
+    font-style: italic;
+    opacity: 0.75;
+}
+
+/* Top bar — Subjective subsection mnemonic row, mirrors #subsection_nav_bar.
+   This is the app's one persistent top bar (no separate title bar). */
+.subsection-nav-bar {
+    background: #1c2333;
+    padding: 4px;
+}
+
+.subsection-nav-btn {
+    min-height: 40px;
+    font-size: 0.85rem;
+    background: transparent;
+    color: white;
+    border-radius: 4px;
+    box-shadow: none;
+}
+
+.subsection-nav-btn:hover {
+    background: alpha(white, 0.12);
+}
+
+/* Bottom bar — hotkey hints, mirrors the TUI's Footer widget */
+.app-footer {
+    background: #14181f;
+    padding: 6px 4px;
+}
+
+.footer-key {
+    color: #90caf9;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.footer-desc {
+    color: alpha(white, 0.7);
+    font-size: 0.85rem;
+}
