@@ -407,5 +407,19 @@ class MedicalSection(Gtk.Box, SectionBase):
         urgent = _RF_URGENT_CAUDA + _RF_URGENT_CORD
         return all(self._toggles[fid].value is not None for fid in urgent)
 
+    def urgent_red_flag_status(self) -> str:
+        """'pending' / 'positive' / 'clear' — drives the Medical nav tab
+        colour. GTK port of medical.py's method of the same name; same
+        field set as is_complete()/_update_rf_alert (cauda equina + cord
+        compression groups only — the general red-flag group doesn't gate
+        this, matching the TUI exactly)."""
+        urgent = _RF_URGENT_CAUDA + _RF_URGENT_CORD
+        values = [self._toggles[fid].value for fid in urgent]
+        if any(v is None for v in values):
+            return "pending"
+        if any(v is True for v in values):
+            return "positive"
+        return "clear"
+
     def focus_first_field(self) -> None:
         self._toggles["no_previous_injuries"].grab_focus()

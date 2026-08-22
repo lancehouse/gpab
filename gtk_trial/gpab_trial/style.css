@@ -253,6 +253,16 @@ entry {
     font-weight: bold;
 }
 
+/* Medical tab urgent-red-flag status accent — GTK port of assessment_view.py's
+   SectionNav.set_tab_status (Textual Button.variant recolor). A left-border
+   accent rather than a full background recolor: stays visible whether or
+   not the button is also currently .nav-active (which already claims the
+   background), unlike Textual's variant which simply overrides the whole
+   button colour outright. */
+.nav-button.nav-status-pending  { border-left: 4px solid #f9a825; }
+.nav-button.nav-status-positive { border-left: 4px solid #c62828; }
+.nav-button.nav-status-clear    { border-left: 4px solid #2e7d32; }
+
 /* Objective sidebar's "← Subjective" back button — muted, visually distinct
    from the section rows above it, mirrors the TUI's ObjectiveSidebar .back. */
 .nav-back {

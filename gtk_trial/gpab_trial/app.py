@@ -309,7 +309,7 @@ class TrialWindow(Gtk.ApplicationWindow):
 
         self.consent.set_on_changed(self._on_consent_changed)
         self.subjective.set_on_changed(self._on_subjective_changed)
-        self.medical.set_on_changed(self._schedule_save)
+        self.medical.set_on_changed(self._on_medical_changed)
         self.pain_classification.set_on_changed(self._schedule_save)
         self.outcome_measures.set_on_changed(self._schedule_save)
         self.diagnosis.set_on_changed(self._schedule_save)
@@ -538,6 +538,25 @@ class TrialWindow(Gtk.ApplicationWindow):
         # _sync_active_regions above already pushed once (mount time, before
         # these loads ran) — push again now that region data is populated.
         self._push_region_tests_to_pain_classification()
+        self._update_medical_tab_color()
+
+    def _on_medical_changed(self) -> None:
+        """Medical section's set_on_changed callback — GTK counterpart to
+        tui.py's on_medical_section_field_changed, which does the same two
+        things (_schedule_save then _update_medical_tab_color) on every
+        field edit. Unlike the TUI, this port doesn't also refresh on
+        leaving the Medical tab or after every _do_save() — this single
+        continuously-live hook already keeps the tab colour correct at all
+        times, making those extra TUI call sites redundant here rather than
+        a missing feature."""
+        self._schedule_save()
+        self._update_medical_tab_color()
+
+    def _update_medical_tab_color(self) -> None:
+        """GTK port of assessment_view.py's _update_medical_tab_color —
+        colours the "03 Medical" sidebar tab from
+        MedicalSection.urgent_red_flag_status()."""
+        self.nav.set_tab_status("03_medical", self.medical.urgent_red_flag_status())
 
     def _on_chart_update(self, data: dict) -> None:
         """ChartFileWatcher callback — GTK counterpart to tui.py's

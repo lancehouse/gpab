@@ -98,3 +98,21 @@ class SectionNav(Gtk.Box):
             else:
                 btn.remove_css_class("nav-active")
         self.active_section = section_id
+
+    _STATUS_CLASSES = ("nav-status-pending", "nav-status-positive", "nav-status-clear")
+
+    def set_tab_status(self, section_id: str, status: str) -> None:
+        """GTK port of assessment_view.py's SectionNav.set_tab_status —
+        'pending' / 'positive' / 'clear' drives a left-border accent on the
+        given section's button (see .nav-status-* in style.css) instead of
+        Textual's Button.variant full-colour recolor. Used today only for
+        "03_medical" (urgent red-flag status), same as the TUI, but works
+        for any section_id."""
+        btn = self._buttons.get(section_id)
+        if btn is None:
+            return
+        for cls in self._STATUS_CLASSES:
+            btn.remove_css_class(cls)
+        cls = f"nav-status-{status}"
+        if cls in self._STATUS_CLASSES:
+            btn.add_css_class(cls)
