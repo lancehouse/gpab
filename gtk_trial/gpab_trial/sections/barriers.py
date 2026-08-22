@@ -139,7 +139,7 @@ class BarriersSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_physical(self) -> None:
-        self.append(_header("Physical / Nociceptive Barriers"))
+        self.append(_header("Physical / Nociceptive Barriers", "br_physical"))
         self.xref_noci = self._xref_badge()
         self.append(self.xref_noci)
 
@@ -198,7 +198,7 @@ class BarriersSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_neuropathic(self) -> None:
-        self.append(_header("Neuropathic Barriers"))
+        self.append(_header("Neuropathic Barriers", "br_neuro"))
         self.xref_neuro = self._xref_badge()
         self.append(self.xref_neuro)
         self.append(self._row(
@@ -211,7 +211,7 @@ class BarriersSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_nociplastic(self) -> None:
-        self.append(_header("Nociplastic / Central Sensitisation Barriers"))
+        self.append(_header("Nociplastic / Central Sensitisation Barriers", "br_nocip"))
         self.xref_nocip = self._xref_badge()
         self.append(self.xref_nocip)
         self.append(self._row(
@@ -225,7 +225,7 @@ class BarriersSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_psychological(self) -> None:
-        self.append(_header("Psychological Barriers"))
+        self.append(_header("Psychological Barriers", "br_psych"))
 
         self.xref_depression = self._xref_badge()
         self.append(self.xref_depression)
@@ -284,7 +284,7 @@ class BarriersSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_sleep_social(self) -> None:
-        self.append(_header("Sleep & Social / Contextual Barriers"))
+        self.append(_header("Sleep & Social / Contextual Barriers", "br_sleep"))
 
         self.append(self._flag("Moderately disturbed sleep due to pain and / or rumination", "b_sleep_disturbed"))
         self.xref_sleep = self._xref_badge()
@@ -310,7 +310,7 @@ class BarriersSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_medical(self) -> None:
-        self.append(_header("Medical / Systemic Barriers"))
+        self.append(_header("Medical / Systemic Barriers", "br_medical"))
         self.xref_red_flag = self._xref_badge()
         self.append(self.xref_red_flag)
 
@@ -337,7 +337,7 @@ class BarriersSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_custom(self) -> None:
-        self.append(_header("Custom Barriers"))
+        self.append(_header("Custom Barriers", "br_custom"))
         self.append(Gtk.Label(label="1. Barrier:", halign=Gtk.Align.START))
         self.append(self._text("custom_1_barrier"))
         self.append(Gtk.Label(label="   Strategy:", halign=Gtk.Align.START))

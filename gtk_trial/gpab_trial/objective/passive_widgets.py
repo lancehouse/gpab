@@ -54,7 +54,7 @@ class OPPAIVMTable(Gtk.Box):
         self._grid: list[list[str]] = []
         self._grid_pos: dict[str, tuple[int, int]] = {}
 
-        self.append(make_subsection_header("Overpressure"))
+        self.append(make_subsection_header("Overpressure", "pm_overpressure"))
         for label, prefix, bilateral in op_rows:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             row.add_css_class("grid-row")
@@ -89,7 +89,7 @@ class OPPAIVMTable(Gtk.Box):
         self._add_grid_row([op_notes_id])
         self.append(self.op_notes)
 
-        self.append(make_subsection_header("PAIVMs"))
+        self.append(make_subsection_header("PAIVMs", "pm_paivms"))
         hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         spacer = Gtk.Label(label="")
         spacer.set_size_request(50, -1)
@@ -338,6 +338,7 @@ class StrengthGridTable(Gtk.Box):
         rows: list[tuple[str, str]],
         unit: str = "kg",
         notes_id: str | None = None,
+        anchor_id: str | None = None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self._entries: dict[str, TouchEntry] = {}
@@ -345,7 +346,7 @@ class StrengthGridTable(Gtk.Box):
         self._grid_pos: dict[str, tuple[int, int]] = {}
         self._notes_id = notes_id
 
-        self.append(make_subsection_header(f"{title}  ({unit})"))
+        self.append(make_subsection_header(f"{title}  ({unit})", anchor_id))
         hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         spacer = Gtk.Label(label="")
         spacer.set_size_request(140, -1)

@@ -102,7 +102,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.append(title)
 
         # -- Body Chart Symptoms (dynamic) ---------------------------------
-        self.append(_header("Body Chart Symptoms"))
+        self.append(_header("Body Chart Symptoms", "subj_symptoms"))
         self.body_chart_completed = CheckButton("Body chart completed", "body_chart_completed")
         self.append(self.body_chart_completed)
         self._jump_targets["symptoms"] = self.body_chart_completed
@@ -137,7 +137,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.append(self.no_notes_msg)
 
         # -- History --------------------------------------------------------
-        self.append(_header("History"))
+        self.append(_header("History", "subj_history"))
         self.onset = AutoTextView("onset", min_lines=2)
         self.append(_field_row("Onset (mechanism / date):", self.onset))
         self._jump_targets["history"] = self.onset.textview
@@ -162,7 +162,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.append(_field_row("Previous treatment & response:", self.previous_treatment))
 
         # -- Behaviour --------------------------------------------------------
-        self.append(_header("Behaviour"))
+        self.append(_header("Behaviour", "subj_behaviour"))
         self.behaviour_boom_bust = FlagButton("Boom-Bust", "behaviour_boom_bust")
         self.behaviour_boom_bust_text = AutoTextView("behaviour_boom_bust_text", min_lines=1)
         self.append(_field_row_pair(self.behaviour_boom_bust, self.behaviour_boom_bust_text))
@@ -182,7 +182,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.append(ref)
 
         # -- Self-Management ----------------------------------------------
-        self.append(_header("Self-Management & Control"))
+        self.append(_header("Self-Management & Control", "subj_management"))
         self.pain_control_score = TouchEntry("pain_control_score", placeholder="0-10")
         self.append(_field_row("Perceived control over pain (0-10):", self.pain_control_score))
         self._jump_targets["management"] = self.pain_control_score
@@ -194,7 +194,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.append(_field_row("Confidence managing condition (0-10):", self.confidence_score))
 
         # -- Activity & Exercise --------------------------------------------
-        self.append(_header("Activity & Exercise"))
+        self.append(_header("Activity & Exercise", "subj_activity"))
         self.pre_activity_level = AutoTextView("pre_activity_level", min_lines=1)
         self.append(_field_row("Pre-injury activity level:", self.pre_activity_level))
         self._jump_targets["activity"] = self.pre_activity_level.textview
@@ -208,7 +208,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.append(_field_row("Response to exercise:", self.exercise_response))
 
         # -- Work -------------------------------------------------------------
-        self.append(_header("Work"))
+        self.append(_header("Work", "subj_work"))
         self.pre_injury_role = AutoTextView("pre_injury_role", min_lines=1)
         self.append(_field_row("Pre-injury role:", self.pre_injury_role))
         self._jump_targets["work"] = self.pre_injury_role.textview
@@ -231,7 +231,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
             self._jump_targets["sleep"] = first_sleep_widget
 
         # -- 24Hr Pattern -------------------------------------------------------
-        self.append(_header("24Hr Pattern"))
+        self.append(_header("24Hr Pattern", "subj_24hr"))
         self.hr24_am = AutoTextView("hr24_am", min_lines=1)
         self.append(_field_row("AM:", self.hr24_am))
         self._jump_targets["24hr"] = self.hr24_am.textview
@@ -247,7 +247,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.append(_field_row("Daily pattern comments:", self.daily_pattern_comments))
 
         # -- Psychosocial -------------------------------------------------------
-        self.append(_header("Psychosocial"))
+        self.append(_header("Psychosocial", "subj_psychosocial"))
         self.mood_influences = FlagButton("Mood influences pain", "mood_influences")
         self.mood_text = AutoTextView("mood_text", min_lines=1)
         self.append(_field_row_pair(self.mood_influences, self.mood_text))
@@ -264,7 +264,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.append(_field_row("Formal screening tool used:", self.screening_tool))
 
         # -- SMART Goals ----------------------------------------------------------
-        self.append(_header("SMART Goals"))
+        self.append(_header("SMART Goals", "subj_goals"))
         note2 = Gtk.Label(label="Potentially meaningful goals confirmed with patient:")
         note2.add_css_class("reference-note")
         note2.set_halign(Gtk.Align.START)
@@ -277,7 +277,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self._jump_targets["goals"] = self.goals[0].textview
 
         # -- Suicide / Self-Harm Risk ----------------------------------------------
-        self.append(_header("Suicide / Self-Harm Risk"))
+        self.append(_header("Suicide / Self-Harm Risk", "subj_suicide"))
         self.self_harm_risk = FlagButton("Thoughts of self-harm or suicide", "self_harm_risk")
         self.append(self.self_harm_risk)
         self._jump_targets["risk"] = self.self_harm_risk

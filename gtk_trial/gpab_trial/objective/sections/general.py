@@ -54,7 +54,7 @@ class GeneralSection(Gtk.Box, SectionBase):
         title.set_halign(Gtk.Align.START)
         self.append(title)
 
-        self.append(make_subsection_header("Physical"))
+        self.append(make_subsection_header("Physical", "go_physical"))
         self.general_notes = AutoTextView("go_general_notes", min_lines=2)
         self.general_notes.textview.get_buffer().connect("changed", self._field_changed)
         self.append(self.general_notes)
@@ -69,7 +69,7 @@ class GeneralSection(Gtk.Box, SectionBase):
         mob_row.append(self.transfer_cmt)
         self.append(mob_row)
 
-        self.append(make_subsection_header("Posture"))
+        self.append(make_subsection_header("Posture", "go_posture"))
         for label, key, opts in _POSTURE_ROWS:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             row.add_css_class("grid-row")

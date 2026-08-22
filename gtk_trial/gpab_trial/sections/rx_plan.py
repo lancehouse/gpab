@@ -135,7 +135,7 @@ class RxPlanSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_treatment_plan(self) -> None:
-        self.append(_header("Treatment Plan Summary"))
+        self.append(_header("Treatment Plan Summary", "rp_treatment"))
         self.append(_field_row("Education — pain type:", self._cycle("tx_pain_type", _PAIN_TYPE_OPTIONS)))
         self.append(_field_row("Debunk radiology (nociplastic):", self._cycle("tx_debunk_radiology", _DEBUNK_OPTIONS)))
         self.append(_field_row("Goal orientation:", self._text("tx_goal_orientation")))
@@ -154,7 +154,7 @@ class RxPlanSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_session1(self) -> None:
-        self.append(_header("Session 1 Treatment"))
+        self.append(_header("Session 1 Treatment", "rp_session1"))
         note = Gtk.Label(label="(Consider: (1) Specialist treatment; (2) Monitor by others; (3) Referral)")
         note.add_css_class("reference-note")
         note.set_halign(Gtk.Align.START)
@@ -179,7 +179,7 @@ class RxPlanSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_day1(self) -> None:
-        self.append(_header("Day 1 Checklist"))
+        self.append(_header("Day 1 Checklist", "rp_day1"))
         for label, fid in _D1_ITEMS:
             self.append(self._stmt_row(label, fid))
 
@@ -188,7 +188,7 @@ class RxPlanSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_followup(self) -> None:
-        self.append(_header("Follow-Up Plan"))
+        self.append(_header("Follow-Up Plan", "rp_followup"))
         self.append(_field_row("Next session focus:", self._text("fu_next_focus")))
         self.append(_field_row("Monitoring:", self._text("fu_monitoring")))
         self.append(_field_row("OM re-testing schedule:", self._entry("fu_om_schedule", placeholder="schedule")))

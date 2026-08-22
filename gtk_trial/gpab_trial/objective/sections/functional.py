@@ -84,7 +84,7 @@ class FunctionalSection(Gtk.Box, GridNav, SectionBase):
         self.append(title)
 
         # ── SMART Goals mirror ──────────────────────────────────────────────
-        self.append(make_subsection_header("— SMART Goals —"))
+        self.append(make_subsection_header("— SMART Goals —", "fn_goals"))
         ref = Gtk.Label(label="Shared with 01 Consent and 02 Subjective — edit in any section:")
         ref.add_css_class("reference-note")
         ref.set_halign(Gtk.Align.START)
@@ -103,7 +103,7 @@ class FunctionalSection(Gtk.Box, GridNav, SectionBase):
             self.append(row)
 
         # ── Functional Movement ──────────────────────────────────────────────
-        self.append(make_subsection_header("Functional Movement"))
+        self.append(make_subsection_header("Functional Movement", "fn_movement"))
         for label, rid, opts, iid in _FM_ROWS:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             row.add_css_class("grid-row")
@@ -143,7 +143,7 @@ class FunctionalSection(Gtk.Box, GridNav, SectionBase):
         self.append(custom_row)
 
         # ── Balance (Steffen 2002) ───────────────────────────────────────────
-        self.append(make_subsection_header("Balance  (Steffen 2002)"))
+        self.append(make_subsection_header("Balance  (Steffen 2002)", "fn_balance"))
         hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         spacer = Gtk.Label(label="")
         spacer.set_size_request(150, -1)
@@ -173,7 +173,7 @@ class FunctionalSection(Gtk.Box, GridNav, SectionBase):
             self.append(row)
 
         # ── Timed Capability Measures ────────────────────────────────────────
-        self.append(make_subsection_header("Timed Capability Measures"))
+        self.append(make_subsection_header("Timed Capability Measures", "fn_timed"))
         for label, fid, unit in _CAP_ROWS:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             row.add_css_class("grid-row")

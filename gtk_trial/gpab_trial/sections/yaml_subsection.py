@@ -48,7 +48,9 @@ class YamlSubsectionGtk(Gtk.Box):
                 self._v2l[f.id] = {o.value: o.label for o in f.options}
                 self._l2v[f.id] = {o.label: o.value for o in f.options}
 
-        self.append(make_subsection_header(defn.label))
+        # This renderer is only ever used for the Sleep subsection (see
+        # subjective.py) — subj_sleep is the one anchor_id it will ever need.
+        self.append(make_subsection_header(defn.label, "subj_sleep"))
 
         for f in defn.fields:
             self._build_field(f)

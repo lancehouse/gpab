@@ -19,13 +19,15 @@ within a "04_objective" section — that row doesn't need the TUI's special
 mode-switch handling here, since `app.py::_show_section` already treats any
 objective section id as directly showable regardless of current mode.
 
-One scope cut carried over from search.py's `_execute_jump`: selecting a
-heading switches to the right section (which already focuses that
-section's first field) rather than scrolling to the exact subsection
-anchor — same reasoning, same missing ~80-anchor infrastructure. Every
-other piece of the TUI's grid — the 2-D keyboard nav (skip-empty-row aware),
-the ✓ data-completion ticks, remembering cursor position across opens — is
-real, not simplified.
+Selecting a heading jumps precisely: `widgets.make_subsection_header()`
+tags each subsection's header Label with the same anchor_id used here
+(`app.py::_scroll_section_to_anchor`, via `search.find_by_anchor_id`),
+scrolling that header to the top of the section's viewport rather than
+just focusing the section's first field (which could leave the header
+itself cut off above the visible area). Region rows (Active/Passive/
+Muscle) and the Special Tests region-list row are handled specially —
+see app.py's `on_selected` for the "08_special" case, which mounts an
+inactive region before jumping to it.
 """
 
 from __future__ import annotations

@@ -37,7 +37,7 @@ from .objective.objective_nav import ObjectiveNav
 from .objective.kb_panel import KBPanel
 from .objective.kb_loader import get_registry
 from .objective.kb_db_screen import KBDBWindow
-from .search import build_index, find_by_field_id
+from .search import build_index, find_by_field_id, find_by_anchor_id
 from .search_widget import SearchModal
 from .grid_overview import (
     GridOverviewPage, SUBJ_GRID_DATA, OBJ_GRID_DATA,
@@ -758,11 +758,94 @@ class TrialWindow(Gtk.ApplicationWindow):
             # current mode, so no special-casing needed here.
             if section_id == "04_objective":
                 self._show_section(anchor_id)
+            elif section_id == "08_special":
+                # OBJ_GRID_DATA's Special Tests row lists body regions, not
+                # subsection anchors (Special Tests has no fixed layout of
+                # its own — see grid_overview.py) — anchor_id is "st_<region>";
+                # the region may not currently be mounted, unlike every other
+                # row's target, so activate it first.
+                self._show_section(section_id)
+                self._jump_to_special_region(anchor_id)
             else:
                 self._show_section(section_id)
+                name = _SECTION_ID_TO_NAME.get(section_id)
+                if name is not None:
+                    self._scroll_section_to_anchor(name, anchor_id)
 
         self.grid_overview.open(grid_data, has_data, cursor, on_selected)
         self.stack.set_visible_child_name("grid_overview")
+
+    def _scroll_section_to_anchor(self, name: str, anchor_id: str) -> None:
+        """Scroll `name`'s stack page so the widget tagged with anchor_id
+        (widgets.make_subsection_header's anchor_id, or an Outcome Measures
+        Gtk.Expander's own .anchor_id) sits at the top of the viewport,
+        instead of leaving whatever focus_first_field() already focused —
+        which can leave the subsection's own header scrolled above the
+        visible area. Deferred via GLib.timeout_add: GTK layout/allocation
+        for a stack page just made visible isn't available synchronously
+        right after set_visible_child_name (mirrors the TUI's own
+        set_timer(0.05, ...) deferral in assessment_view.py's
+        navigate_to_heading)."""
+        scroll = self.stack.get_child_by_name(name)
+        section = self._sections_by_name.get(name)
+        if scroll is None or section is None:
+            return
+
+        def do_scroll() -> bool:
+            target = find_by_anchor_id(section, anchor_id)
+            if target is None:
+                return False
+            if isinstance(target, Gtk.Expander) and not target.get_expanded():
+                # Outcome Measures blocks are collapsed by default —
+                # compute_bounds would measure the collapsed height, so
+                # expand first and re-measure next frame.
+                target.set_expanded(True)
+                GLib.timeout_add(50, do_scroll)
+                return False
+            ok, bounds = target.compute_bounds(scroll)
+            if not ok:
+                return False
+            vadj = scroll.get_vadjustment()
+            newval = max(
+                vadj.get_lower(),
+                min(vadj.get_value() + bounds.origin.y, vadj.get_upper() - vadj.get_page_size()),
+            )
+            vadj.set_value(newval)
+            if target.get_can_focus():
+                target.grab_focus()
+            return False
+
+        GLib.timeout_add(50, do_scroll)
+
+    def _jump_to_special_region(self, anchor_id: str) -> None:
+        """Special Tests row click: anchor_id is "st_<region>" — mount that
+        region if it isn't already active, then scroll straight to its
+        RegionContainer (the container itself is the target, no header
+        text-matching needed — unlike every other row)."""
+        region_id = anchor_id.removeprefix("st_")
+        if region_id not in self._active_regions:
+            self._sync_active_regions(self._active_regions + [region_id])
+
+        scroll = self.stack.get_child_by_name("special_tests")
+        if scroll is None:
+            return
+
+        def do_scroll() -> bool:
+            container = self.special_tests.get_container(region_id)
+            if container is None:
+                return False
+            ok, bounds = container.compute_bounds(scroll)
+            if not ok:
+                return False
+            vadj = scroll.get_vadjustment()
+            newval = max(
+                vadj.get_lower(),
+                min(vadj.get_value() + bounds.origin.y, vadj.get_upper() - vadj.get_page_size()),
+            )
+            vadj.set_value(newval)
+            return False
+
+        GLib.timeout_add(50, do_scroll)
 
     def _close_grid_overview(self) -> None:
         """Escape, or a second Ctrl+T — dismiss without navigating,

@@ -118,31 +118,31 @@ class CRPSSection(Gtk.Box, SectionBase):
         self.append(subtitle)
 
         # ── 1 · Disproportionate Pain ────────────────────────────────────────
-        self.append(make_subsection_header("1 · Disproportionate Pain"))
+        self.append(make_subsection_header("1 · Disproportionate Pain", "crps_disp"))
         self.append(self._rule_row("Continuing pain disproportionate to inciting event", "crps_disp_pain"))
         self._notes["crps_disp_pain_notes"] = self._add_notes("crps_disp_pain_notes")
 
         # ── 2 · Symptoms ──────────────────────────────────────────────────────
-        self.append(make_subsection_header("2 · Symptoms  (Patient Reported)"))
+        self.append(make_subsection_header("2 · Symptoms  (Patient Reported)", "crps_sx"))
         self._add_rule_desc("Rule 2: ≥ 1 symptom reported in 3 or more of the 4 domains")
         for domain_lbl, items in _SX_DOMAINS:
             self._add_domain(f"sx_{domain_lbl}", domain_lbl, items)
         self._notes["crps_sx_notes"] = self._add_notes("crps_sx_notes")
 
         # ── 3 · Signs ─────────────────────────────────────────────────────────
-        self.append(make_subsection_header("3 · Signs  (Clinician Observed)"))
+        self.append(make_subsection_header("3 · Signs  (Clinician Observed)", "crps_sg"))
         self._add_rule_desc("Rule 3: ≥ 1 sign observed in 2 or more of the 4 domains")
         for domain_lbl, items in _SG_DOMAINS:
             self._add_domain(f"sg_{domain_lbl}", domain_lbl, items)
         self._notes["crps_sg_notes"] = self._add_notes("crps_sg_notes")
 
         # ── 4 · No Other Diagnosis ────────────────────────────────────────────
-        self.append(make_subsection_header("4 · No Other Diagnosis"))
+        self.append(make_subsection_header("4 · No Other Diagnosis", "crps_no_dx"))
         self.append(self._rule_row("No better diagnosis explains this presentation", "crps_no_alt_dx"))
         self._notes["crps_no_alt_dx_notes"] = self._add_notes("crps_no_alt_dx_notes")
 
         # ── Criteria Summary ──────────────────────────────────────────────────
-        self.append(make_subsection_header("Criteria Summary"))
+        self.append(make_subsection_header("Criteria Summary", "crps_summary_hdr"))
         self.summary_label = Gtk.Label(label="")
         self.summary_label.set_halign(Gtk.Align.START)
         self.summary_label.set_justify(Gtk.Justification.LEFT)
@@ -151,7 +151,7 @@ class CRPSSection(Gtk.Box, SectionBase):
         self.append(self.summary_label)
 
         # ── Subtype Classification ───────────────────────────────────────────
-        self.append(make_subsection_header("Subtype Classification"))
+        self.append(make_subsection_header("Subtype Classification", "crps_subtype_hdr"))
         self._add_rule_desc(
             "T-I = Type I · T-II = Type II · Remit = Remission of Some Features · NOS = Not Otherwise Specified"
         )
@@ -164,15 +164,15 @@ class CRPSSection(Gtk.Box, SectionBase):
         self._notes["crps_notes"] = self._add_notes("crps_notes")
 
         # ── 5 · Two-Point Discrimination ─────────────────────────────────────
-        self.append(make_subsection_header("5 · Two-Point Discrimination"))
+        self.append(make_subsection_header("5 · Two-Point Discrimination", "crps_tpd"))
         self._notes["crps_tpd_notes"] = self._add_notes("crps_tpd_notes")
 
         # ── 6 · Visualisation ─────────────────────────────────────────────────
-        self.append(make_subsection_header("6 · Visualisation"))
+        self.append(make_subsection_header("6 · Visualisation", "crps_vis"))
         self._notes["crps_vis_notes"] = self._add_notes("crps_vis_notes")
 
         # ── 7 · Laterality ────────────────────────────────────────────────────
-        self.append(make_subsection_header("7 · Laterality"))
+        self.append(make_subsection_header("7 · Laterality", "crps_lat"))
         hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         spacer = Gtk.Label(label="")
         spacer.set_size_request(90, -1)

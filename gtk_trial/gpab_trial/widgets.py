@@ -121,7 +121,7 @@ def make_subgroup_header(text: str) -> Gtk.Label:
     return lbl
 
 
-def make_subsection_header(text: str) -> Gtk.Label:
+def make_subsection_header(text: str, anchor_id: str | None = None) -> Gtk.Label:
     """The "— History —" / "— Behaviour —" style subsection divider.
 
     ONE definition used by every section (consent/subjective/yaml_subsection
@@ -130,12 +130,21 @@ def make_subsection_header(text: str) -> Gtk.Label:
     same look, instead of needing the same CSS class remembered by hand each
     time. Styled as a full-width colored bar (see .subsection-header in
     style.css) to mirror the TUI's high-contrast subsection_header CSS.
+
+    anchor_id, when given, is the same (section_id, anchor_id) vocabulary
+    used by grid_overview.py's SUBJ_GRID_DATA/OBJ_GRID_DATA and search.py's
+    _SUBSECTIONS — stashed as a plain attribute so app.py's grid-overview
+    jump can find this exact header widget (via search.find_by_anchor_id)
+    and scroll it to the top of the section's viewport, instead of only
+    focusing the section's first field (which can leave the header itself
+    scrolled off above the visible area).
     """
     lbl = Gtk.Label(label=f"— {text} —")
     lbl.add_css_class("subsection-header")
     lbl.set_halign(Gtk.Align.FILL)
     lbl.set_hexpand(True)
     lbl.set_xalign(0.0)  # text left-aligned within the full-width bar
+    lbl.anchor_id = anchor_id
     return lbl
 
 

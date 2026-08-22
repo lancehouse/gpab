@@ -57,7 +57,7 @@ class SensorySection(Gtk.Box, SectionBase):
         title.set_halign(Gtk.Align.START)
         self.append(title)
 
-        self.append(make_subsection_header("Reduced Sensory Acuity (hyposensitivity)"))
+        self.append(make_subsection_header("Reduced Sensory Acuity (hyposensitivity)", "sn_hyposensitivity"))
         for label, sid, has_detail in _HYPO_ITEMS:
             self.append(self._flag_row(label, sid, has_detail))
         self.append(Gtk.Label(label="Body perception detail:", halign=Gtk.Align.START))
@@ -65,7 +65,7 @@ class SensorySection(Gtk.Box, SectionBase):
         self.body_detail.textview.get_buffer().connect("changed", self._field_changed)
         self.append(self.body_detail)
 
-        self.append(make_subsection_header("Heightened Sensitivity / Central Sensitisation"))
+        self.append(make_subsection_header("Heightened Sensitivity / Central Sensitisation", "sn_hypersensitivity"))
         ppt_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         ppt_row.add_css_class("grid-row")
         ppt_lbl = Gtk.Label(label="PPT (algometer)")

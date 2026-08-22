@@ -64,10 +64,10 @@ class LumbarMuscleTables(Gtk.Box):
 
     def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.hip_table = StrengthGridTable("Strength — Hip", _HIP_ROWS, unit="Wagner FPX kg")
+        self.hip_table = StrengthGridTable("Strength — Hip", _HIP_ROWS, unit="Wagner FPX kg", anchor_id="ml_strength_hip")
         self.append(self.hip_table)
 
-        self.append(make_subsection_header("SIJ Provocation Signs"))
+        self.append(make_subsection_header("SIJ Provocation Signs", "ml_sij"))
         self._checks: dict[str, CheckButton] = {}
         sij_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         for label, sid in _SIJ_ITEMS:

@@ -143,7 +143,7 @@ class PainClassificationSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_inflammatory(self) -> None:
-        self.append(_header("Inflammatory Pain"))
+        self.append(_header("Inflammatory Pain", "pc_inflammatory"))
         self.append(self._reference("Walker & Williamson 2008"))
         self.append(self._btn_row(
             self._flag("Constant symptoms", "infl_constant"),
@@ -165,7 +165,7 @@ class PainClassificationSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_nociceptive(self) -> None:
-        self.append(_header("Nociceptive Pain"))
+        self.append(_header("Nociceptive Pain", "pc_nociceptive"))
         self.append(self._reference(
             "Smart et al 2010 — pain from actual or threatened non-neural tissue damage"
         ))
@@ -199,7 +199,7 @@ class PainClassificationSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_neuropathic(self) -> None:
-        self.append(_header("Neuropathic Pain"))
+        self.append(_header("Neuropathic Pain", "pc_neuropathic"))
         self.append(self._reference(
             "Smart et al 2010 — pain from somatosensory nervous system lesion/disease"
         ))
@@ -235,7 +235,7 @@ class PainClassificationSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_nociplastic(self) -> None:
-        self.append(_header("Nociplastic Pain"))
+        self.append(_header("Nociplastic Pain", "pc_nociplastic"))
         self.append(self._reference(
             "IASP — pain from altered nociception, no clear nociceptive/neuropathic cause"
         ))
@@ -276,7 +276,7 @@ class PainClassificationSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_central_sensitisation(self) -> None:
-        self.append(_header("Central Sensitisation"))
+        self.append(_header("Central Sensitisation", "pc_central"))
         self.append(self._reference("Nijs et al 2010, Neblett et al 2013"))
         self.append(_field_row("CSI score (0–100):", self._make_csi_entry()))
         self.csi_alert_label = _alert_label()
@@ -309,7 +309,7 @@ class PainClassificationSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_fibromyalgia(self) -> None:
-        self.append(_header("Fibromyalgia"))
+        self.append(_header("Fibromyalgia", "pc_fibromyalgia"))
         self.append(self._reference("Wolfe et al 2016"))
         self.append(self._reference(
             "Criteria A: WPI > 7 and SS > 5  |  Criteria B: WPI 3–6 and SS > 9"
@@ -354,7 +354,7 @@ class PainClassificationSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_bacpap(self) -> None:
-        self.append(_header("BACPAP LBP Phenotyping"))
+        self.append(_header("BACPAP LBP Phenotyping", "pc_bacpap"))
         self.append(self._reference(
             "Nijs et al. 2024 — 7-step consensus decision tree for LBP pain phenotyping"
         ))
@@ -403,7 +403,7 @@ class PainClassificationSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_summary(self) -> None:
-        self.append(_header("Pain Type Summary"))
+        self.append(_header("Pain Type Summary", "pc_summary"))
         self.summary_dominant = PainTypeSelector("Dominant pain type:", "summary_dominant")
         self.summary_dominant.connect("changed", self._field_changed)
         self.append(self.summary_dominant)

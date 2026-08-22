@@ -117,7 +117,7 @@ class MedicalSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_comorbidities(self) -> None:
-        self.append(_header("Comorbidities / PMH"))
+        self.append(_header("Comorbidities / PMH", "med_comorbidities"))
         self.append(self._check(
             "No previous injuries or general health issues: Confirmed", "no_previous_injuries",
         ))
@@ -148,7 +148,7 @@ class MedicalSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_cardiovascular(self) -> None:
-        self.append(_header("Cardiovascular Risk Factors"))
+        self.append(_header("Cardiovascular Risk Factors", "med_cardiovascular"))
         self.append(self._btn_row(
             self._flag("Hypercholesterolaemia", "cvd_hypercholesterolaemia"),
             self._flag("Cardiac disease", "cvd_cardiac"),
@@ -170,7 +170,7 @@ class MedicalSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_red_flags(self) -> None:
-        self.append(_header("Red Flags"))
+        self.append(_header("Red Flags", "med_red_flags"))
         self.rf_alert = Gtk.Label(label="")
         self.rf_alert.set_halign(Gtk.Align.START)
         self.rf_alert.set_visible(False)
@@ -221,7 +221,7 @@ class MedicalSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_differential(self) -> None:
-        self.append(_header("Differential Screening"))
+        self.append(_header("Differential Screening", "med_differential"))
 
         self.append(_subheader("Ankylosing Spondylitis:"))
         self.append(self._btn_row(
@@ -264,7 +264,7 @@ class MedicalSection(Gtk.Box, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_medications(self) -> None:
-        self.append(_header("Medications"))
+        self.append(_header("Medications", "med_medications"))
         header_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         for lbl in _MED_COL_LABELS:
             col_lbl = Gtk.Label(label=lbl)

@@ -29,6 +29,19 @@ from ..grid_widgets import bilateral_header_row, bilateral_radio_row, bilateral_
 from ..grid_nav import GridNav
 from ...section_base import SectionBase
 
+# Block title -> grid_overview anchor_id (search.py's _SUBSECTIONS /
+# grid_overview.py's OBJ_GRID_DATA "04_neurological" row vocabulary).
+_NEURO_BLOCK_ANCHOR: dict[str, str] = {
+    "Upper Limb — Reflexes": "nr_ul_reflexes",
+    "Upper Limb — Myotomes": "nr_ul_myotomes",
+    "Upper Limb — Dermatomes": "nr_ul_dermatomes",
+    "Upper Limb — Neurodynamics": "nr_ul_neurodynamics",
+    "Lower Limb — Reflexes": "nr_reflexes",
+    "Lower Limb — Myotomes": "nr_myotomes",
+    "Lower Limb — Dermatomes": "nr_dermatomes",
+    "Lower Limb — Neurodynamics": "nr_neurodynamics",
+}
+
 # ---------------------------------------------------------------------------
 # Gang option sets — identical to the TUI's (labels, variants, cycle order)
 # ---------------------------------------------------------------------------
@@ -163,7 +176,7 @@ class NeurologicalSection(Gtk.Box, GridNav, SectionBase):
     # ------------------------------------------------------------------
 
     def _build_reflex_myotome_block(self, title: str, rows, states, notes_id: str) -> None:
-        self.append(make_subsection_header(title))
+        self.append(make_subsection_header(title, _NEURO_BLOCK_ANCHOR.get(title)))
         self.append(bilateral_header_row())
         for label, prefix in rows:
             left = RadioGroup(states, f"{prefix}_l")
@@ -179,7 +192,7 @@ class NeurologicalSection(Gtk.Box, GridNav, SectionBase):
         self._add_notes(notes_id, grid_row=True)
 
     def _build_nd_block(self, title: str, rows, notes_id: str) -> None:
-        self.append(make_subsection_header(title))
+        self.append(make_subsection_header(title, _NEURO_BLOCK_ANCHOR.get(title)))
         self.append(bilateral_header_row())
         for label, prefix, has_deg in rows:
             left_widgets = self._nd_side_widgets(prefix, "l", has_deg)
@@ -207,7 +220,7 @@ class NeurologicalSection(Gtk.Box, GridNav, SectionBase):
         return widgets
 
     def _build_umn_block(self) -> None:
-        self.append(make_subsection_header("UMN Signs"))
+        self.append(make_subsection_header("UMN Signs", "nr_umn"))
         # NOT homogeneous: this is a single independent row (unlike the
         # reflex/myotome rows, nothing below it needs matching columns), so
         # each button should size to its own label instead of every column

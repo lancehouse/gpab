@@ -37,6 +37,16 @@ from ..widgets import (
     make_subsection_header as _header,
 )
 
+# measure_id -> grid_overview anchor_id (SUBJ_GRID_DATA "05_outcome_measures"
+# row). phq4/pcl5 have no distinct grid heading — PCL-5 shares "PSEQ/PCL"
+# (om_pseq) with PSEQ since the grid only lists one combined heading for
+# both; PHQ-4 has no heading at all, so it falls back to plain _show_section.
+_OM_BLOCK_ANCHOR: dict[str, str | None] = {
+    "psfs": "om_psfs", "bpi": "om_bpi", "dass": "om_dass", "phq4": None,
+    "pcs": "om_pcs", "pseq": "om_pseq", "pcl5": "om_pseq",
+    "sleep": "om_sleep", "additional": "om_additional",
+}
+
 _DASS_OPTIONS = [
     ("Normal", "success"), ("Mild", "primary"), ("Moderate", "warning"),
     ("Severe", "error"), ("Extremely severe", "error"),
@@ -162,7 +172,7 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
         self.append(self._make_block("sleep", "Sleep Outcome Measures", self._build_sleep))
         self.append(self._make_block("additional", "Additional Measures", self._build_additional))
 
-        self.append(_header("Measures Selected for Ongoing Hypothesis Testing"))
+        self.append(_header("Measures Selected for Ongoing Hypothesis Testing", "om_hypothesis"))
         hyp_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         for lbl_text in ("Measure", "Baseline", "Interval", "Rationale"):
             lbl = Gtk.Label(label=lbl_text)
@@ -192,6 +202,11 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
 
     def _make_block(self, measure_id: str, title: str, build_fn) -> Gtk.Expander:
         expander = Gtk.Expander()
+        # om_* anchor_id (grid_overview.py's SUBJ_GRID_DATA "05_outcome_measures"
+        # row / search.py's _SUBSECTIONS) — stashed on the Expander itself
+        # (not just a child label) since app.py's grid-jump needs to call
+        # set_expanded(True) here before scrolling, unlike a plain header bar.
+        expander.anchor_id = _OM_BLOCK_ANCHOR.get(measure_id)
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         plan_btn = CheckButton("Plan", f"plan_{measure_id}")
         plan_btn.connect("changed", self._field_changed)

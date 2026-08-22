@@ -81,6 +81,27 @@ def _build_gang(options: list[str]) -> list[tuple[str, str]]:
     return [(label, _infer_variant(i, total)) for i, label in enumerate(options)]
 
 
+# YAML group label -> grid_overview anchor_id, for the two group loops below
+# (active_movement / muscle_testing) whose subsection labels come straight
+# from YAML rather than a fixed string. Only labels that actually appear as
+# a heading in OBJ_GRID_DATA's "03_passive"/"02_active"/"06_muscle" rows are
+# listed — every other region-specific group (Ankle ROM, Cervical Endurance,
+# etc.) has no corresponding grid heading and falls back to plain
+# _show_section() navigation (see app.py's _open_grid_overview), same as
+# before this anchor-tagging was added. "Thoracic ROM" legitimately appears
+# in three regions' YAML (lumbar/cervical/shoulder) — find_by_anchor_id is
+# first-match-in-tree-order, which is fine here.
+_ACTIVE_GROUP_ANCHOR: dict[str, str] = {
+    "Lumbar ROM": "am_lumbar",
+    "Thoracic ROM": "am_thoracic",
+}
+_MUSCLE_GROUP_ANCHOR: dict[str, str] = {
+    "Muscle Length": "ml_length",
+    "Muscle Activation": "ml_activation",
+    "Trunk Strength": "ml_strength_trunk",
+}
+
+
 # ---------------------------------------------------------------------------
 # ROM group widget
 # ---------------------------------------------------------------------------
@@ -94,7 +115,8 @@ class ROMGroupWidget(Gtk.Box):
         self._notes_id: str | None = group_def.get("notes_id")
         self._rows: list[ROMRow] = []
 
-        self.append(make_subsection_header(group_def.get("label", "")))
+        _label = group_def.get("label", "")
+        self.append(make_subsection_header(_label, _ACTIVE_GROUP_ANCHOR.get(_label)))
         self.append(bilateral_header_row())
         for row in group_def.get("rows", []):
             rr = ROMRow(row["label"], row["id"], bilateral=row.get("bilateral", False))
@@ -159,7 +181,8 @@ class GradeGroupWidget(Gtk.Box):
         self._grid: list[list[str]] = []
         self._grid_pos: dict[str, tuple[int, int]] = {}
 
-        self.append(make_subsection_header(group_def.get("label", "")))
+        _label = group_def.get("label", "")
+        self.append(make_subsection_header(_label, _MUSCLE_GROUP_ANCHOR.get(_label)))
         if self._bilateral:
             self.append(bilateral_header_row())
         for row in self._rows:
@@ -221,7 +244,8 @@ class TrunkStrengthWidget(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self._entries: dict[str, TouchEntry] = {}
 
-        self.append(make_subsection_header(group_def.get("label", "Trunk Strength")))
+        _label = group_def.get("label", "Trunk Strength")
+        self.append(make_subsection_header(_label, _MUSCLE_GROUP_ANCHOR.get(_label)))
         for row in group_def.get("rows", []):
             hrow = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             hrow.add_css_class("grid-row")

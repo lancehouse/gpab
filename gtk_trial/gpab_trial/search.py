@@ -714,6 +714,22 @@ def find_by_field_id(container, field_id: str):
     return None
 
 
+def find_by_anchor_id(container, anchor_id: str):
+    """First descendant of `container` whose `.anchor_id` equals `anchor_id`
+    (set by widgets.make_subsection_header), or None. Used by app.py's
+    grid-overview jump to scroll a subsection's HEADER to the top of the
+    viewport, not just focus its first field. First-match in tree order —
+    for the region tabs (active/passive/muscle) the same anchor_id can
+    legitimately appear once per currently-mounted RegionContainer; the
+    caller is expected to scope `container` to the single region container
+    it cares about when that matters (app.py does, for the region-specific
+    case), so plain first-match is correct here."""
+    for w in _iter_descendants(container):
+        if getattr(w, "anchor_id", None) == anchor_id:
+            return w
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Index builder
 # ---------------------------------------------------------------------------

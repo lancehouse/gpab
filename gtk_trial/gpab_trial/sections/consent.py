@@ -35,7 +35,7 @@ class ConsentSection(Gtk.Box, SectionBase):
         self.append(title)
 
         # -- Consent -----------------------------------------------------
-        self.append(_header("Consent"))
+        self.append(_header("Consent", "cs_consent"))
         btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4, homogeneous=True)
         self.consent_to_proceed = CheckButton("Consent to proceed", "consent_to_proceed")
         self.consent_sensitive_topics = CheckButton("Consent to sensitive topics", "consent_sensitive_topics")
@@ -47,7 +47,7 @@ class ConsentSection(Gtk.Box, SectionBase):
         self.append(_field_row("Preferred name (required):", self.preferred_name))
 
         # -- Session Framing ----------------------------------------------
-        self.append(_header("Session Framing"))
+        self.append(_header("Session Framing", "cs_framing"))
         btn_row2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4, homogeneous=True)
         self.framing_pain_multifactorial = CheckButton("Pain multifactorial explained", "pain_multifactorial_explained")
         self.framing_education_treatment = CheckButton("Education as treatment explained", "education_as_treatment_explained")
@@ -59,7 +59,7 @@ class ConsentSection(Gtk.Box, SectionBase):
         self.append(_field_row("Patient expectations of this session:", self.patient_expectations))
 
         # -- Patient Perspective (ICE+) -------------------------------------
-        self.append(_header("Patient Perspective (ICE+)"))
+        self.append(_header("Patient Perspective (ICE+)", "cs_ice"))
 
         self.reason_for_attending = AutoTextView("reason_for_attending")
         self.append(_field_row("Reason for attending (patient's own words):", self.reason_for_attending))
@@ -77,7 +77,7 @@ class ConsentSection(Gtk.Box, SectionBase):
         self.append(_field_row("Treatment preference (what will help them):", self.treatment_preference))
 
         # -- SMART Goals (mirror only — not part of collect(), synced from Subjective) --
-        self.append(_header("SMART Goals"))
+        self.append(_header("SMART Goals", "consent_goals"))
         note = Gtk.Label(label="Shared with Subjective section — enter in either place:")
         note.add_css_class("reference-note")
         note.set_halign(Gtk.Align.START)
@@ -89,7 +89,7 @@ class ConsentSection(Gtk.Box, SectionBase):
             self.consent_goals.append(ta)
 
         # -- Beliefs --------------------------------------------------------
-        self.append(_header("Beliefs"))
+        self.append(_header("Beliefs", "cs_beliefs"))
         belief_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4, homogeneous=True)
         self.belief_hurt_harm = FlagButton("Hurt=Harm", "belief_hurt_harm")
         self.belief_unsafe = FlagButton("Unsafe", "belief_unsafe")
