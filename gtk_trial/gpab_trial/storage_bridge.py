@@ -35,6 +35,8 @@ SECTION_KEYS = {
 # _GENERIC_TABS list).
 OBJECTIVE_SECTION_KEYS = {
     "04_neurological": "neurological",
+    "04a_general": "general",
+    "04f_functional": "functional",
 }
 
 

@@ -14,6 +14,12 @@ from gi.repository import Gtk, Gdk, GObject, Pango, GLib  # noqa: E402
 
 MIN_TOUCH = 48  # px, GNOME HIG minimum touch target
 
+# Chip buttons in a RadioGroup/MultiSelectGroup gang need more than the bare
+# touch minimum: 5-6 char labels like "↓Mrkd"/"Ovact" were wrapping into two
+# tiny hyphenated lines at MIN_TOUCH width (e.g. "↓Mr-\nkd"), unreadable at a
+# glance. Single source of truth so every gang chip gets the same width.
+CHIP_MIN_WIDTH = 72
+
 # Single source of truth for the "left column" of every field row across the
 # whole app — whether that slot holds a Label or a toggle button standing in
 # for one (e.g. the Behaviour rows: FlagButton + text field). Every left-slot
@@ -245,6 +251,7 @@ class CycleField(Gtk.Box):
 
     __gsignals__ = {
         "changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "navigate": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
 
     CYCLE: list[str | None] = [None]
@@ -293,7 +300,26 @@ class CycleField(Gtk.Box):
         self.button.connect("clicked", self._on_clicked)
         self.append(self.button)
 
+        # Arrow-key grid nav, mirroring RadioGroup's pattern: Up/Down escape
+        # to the containing grid; Enter/Space cycle this cell then advance,
+        # so an objective table row can be filled with Enter alone the same
+        # way a RadioGroup row can.
+        key_ctrl = Gtk.EventControllerKey()
+        key_ctrl.connect("key-pressed", self._on_key_pressed)
+        self.button.add_controller(key_ctrl)
+
         self._apply()
+
+    def _on_key_pressed(self, _ctrl, keyval, _keycode, _state) -> bool:
+        name = Gdk.keyval_name(keyval) or ""
+        if name in ("Up", "Down"):
+            self.emit("navigate", "up" if name == "Up" else "down")
+            return True
+        if name in ("Return", "KP_Enter", "space"):
+            self._on_clicked(self.button)
+            self.emit("navigate", "next")
+            return True
+        return False
 
     @property
     def value(self) -> str | None:
@@ -403,7 +429,7 @@ class RadioGroup(Gtk.Box):
 
         for label, variant in options:
             btn = Gtk.ToggleButton(label=label)
-            btn.set_size_request(MIN_TOUCH, MIN_TOUCH)
+            btn.set_size_request(CHIP_MIN_WIDTH, MIN_TOUCH)
             btn.set_can_focus(False)  # the gang is one tab stop, not each chip
             btn.set_focus_on_click(False)
             btn.add_css_class(self._VARIANT_CLASS.get(variant, "rb-default"))
@@ -517,6 +543,87 @@ class RadioGroup(Gtk.Box):
             return True
         if name in ("Return", "KP_Enter", "space"):
             self._key_commit()
+            return True
+        return False
+
+
+class MultiSelectGroup(Gtk.Box):
+    """Independent multi-select gang of chip buttons — ONE tab stop.
+
+    Same visual chip appearance as RadioGroup, but each chip toggles
+    independently (any number selected, including none). value returns
+    list[str] of selected labels in option order, mirroring
+    pab_assessment.widgets.MultiSelectGroup exactly (used for General
+    Observation's "Antalgic lean" row, where more than one direction can
+    apply at once — unlike every other row on that tab, which is exclusive).
+    """
+
+    __gsignals__ = {
+        "changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "navigate": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+    }
+
+    _VARIANT_CLASS = RadioGroup._VARIANT_CLASS
+
+    def __init__(self, options: list[tuple[str, str]], field_id: str) -> None:
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        self.field_id = field_id
+        self._options = options
+        self._buttons: list[Gtk.ToggleButton] = []
+        self.add_css_class("radio-group")
+
+        for label, variant in options:
+            btn = Gtk.ToggleButton(label=label)
+            btn.set_size_request(CHIP_MIN_WIDTH, MIN_TOUCH)
+            btn.set_can_focus(False)
+            btn.set_focus_on_click(False)
+            btn.add_css_class(self._VARIANT_CLASS.get(variant, "rb-default"))
+            btn.connect("toggled", self._on_toggled)
+            chip_label = btn.get_child()
+            if isinstance(chip_label, Gtk.Label):
+                chip_label.set_wrap(True)
+                chip_label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+                chip_label.set_justify(Gtk.Justification.CENTER)
+                chip_label.set_lines(2)
+            self._buttons.append(btn)
+            self.append(btn)
+
+        self.set_can_focus(True)
+        self.set_focusable(True)
+        focus_ctrl = Gtk.EventControllerFocus()
+        focus_ctrl.connect("enter", lambda _c: self.add_css_class("rg-focused"))
+        focus_ctrl.connect("leave", lambda _c: self.remove_css_class("rg-focused"))
+        self.add_controller(focus_ctrl)
+
+        key_ctrl = Gtk.EventControllerKey()
+        key_ctrl.connect("key-pressed", self._on_key_pressed)
+        self.add_controller(key_ctrl)
+
+    @property
+    def value(self) -> list[str]:
+        return [label for (label, _), btn in zip(self._options, self._buttons) if btn.get_active()]
+
+    def set_value(self, labels) -> None:
+        if isinstance(labels, str):
+            labels = [labels] if labels else []
+        labels = set(labels or [])
+        for (label, _), btn in zip(self._options, self._buttons):
+            active = label in labels
+            if btn.get_active() != active:
+                btn.handler_block_by_func(self._on_toggled)
+                btn.set_active(active)
+                btn.handler_unblock_by_func(self._on_toggled)
+
+    def _on_toggled(self, _btn) -> None:
+        self.emit("changed")
+
+    def _on_key_pressed(self, _ctrl, keyval, _keycode, _state) -> bool:
+        name = Gdk.keyval_name(keyval) or ""
+        if name in ("Up", "Down"):
+            self.emit("navigate", "up" if name == "Up" else "down")
+            return True
+        if name in ("Return", "KP_Enter", "space"):
+            self.emit("navigate", "next")
             return True
         return False
 

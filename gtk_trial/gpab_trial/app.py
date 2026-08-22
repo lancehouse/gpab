@@ -27,6 +27,13 @@ from .sections.diagnosis import DiagnosisSection
 from .sections.barriers import BarriersSection
 from .sections.rx_plan import RxPlanSection
 from .objective.sections.neurological import NeurologicalSection
+from .objective.sections.general import GeneralSection
+from .objective.sections.functional import FunctionalSection
+from .objective.sections.sensory import SensorySection
+from .objective.sections.crps import CRPSSection
+from .objective.region_section import RegionTabContent
+from .objective.region_topbar import RegionTopbar
+from .objective.objective_nav import ObjectiveNav
 from .nav import SectionNav
 from .topbar import SubsectionNavBar
 from .footer import FooterBar
@@ -35,6 +42,8 @@ from .notes_overlay import NotesOverlay
 
 AUTOSAVE_DEBOUNCE_MS = 2000
 
+# Assessment-mode section ids (nav.py's SectionNav) — "04_objective" here is
+# not a content page, it's the sentinel that enters Objective mode.
 _NAME_TO_SECTION_ID = {
     "consent": "01_consent",
     "subjective": "02_subjective",
@@ -44,9 +53,33 @@ _NAME_TO_SECTION_ID = {
     "diagnosis": "06_diagnosis",
     "barriers": "07_barriers",
     "rx_plan": "08_rx_plan",
-    "neurological": "04_objective",
 }
+
+# Objective-mode section ids (objective_nav.py's ObjectiveNav) — these are
+# the TUI's own ids (see ObjectiveSidebar.SECTION_LABELS), kept 1:1 so this
+# dispatch stays a direct mirror of assessment_view.py's.
+_OBJECTIVE_NAME_TO_SECTION_ID = {
+    "general": "01_general",
+    "functional": "07_functional",
+    "active_movement": "02_active",
+    "passive_movement": "03_passive",
+    "neurological": "04_neurological",
+    "sensory": "05_sensory",
+    "muscle_testing": "06_muscle",
+    "special_tests": "08_special",
+    "crps": "09_crps",
+}
+
+_NAME_TO_SECTION_ID.update(_OBJECTIVE_NAME_TO_SECTION_ID)
+
+# Default active region on a fresh/unsaved session — toggled live from
+# RegionTopbar thereafter, and overridden by whatever "active_regions" list
+# was last saved once a session is loaded. No live body-chart region sync in
+# this trial (same deferral as the KB panel) — toggling is manual only.
+_DEFAULT_ACTIVE_REGIONS = ["lumbar"]
+
 _SECTION_ID_TO_NAME = {v: k for k, v in _NAME_TO_SECTION_ID.items()}
+_OBJECTIVE_SECTION_IDS = set(_OBJECTIVE_NAME_TO_SECTION_ID.values())
 
 
 class TrialWindow(Gtk.ApplicationWindow):
@@ -78,20 +111,43 @@ class TrialWindow(Gtk.ApplicationWindow):
         # -- top bar: the ONE persistent bar, shown on every sidebar tab
         # (there is no separate app-title bar — that wasted a second row of
         # vertical space duplicating the OS window title; removed per
-        # feedback). Its buttons always jump into Subjective, switching there
-        # first if another tab is active.
+        # feedback). It swaps content depending on the active tab: the
+        # Subjective mnemonic row everywhere, or the body-region toggle
+        # chips across every Objective tab (mirrors the TUI's RegionTopbar
+        # being shown for the whole Objective mode, not just the
+        # region-variable tabs) — see _show_section.
+        self._active_regions: list[str] = []
         self.subsection_nav = SubsectionNavBar()
         self.subsection_nav.connect("jump", self._on_subsection_jump)
-        outer.append(self.subsection_nav)
+        self.region_topbar = RegionTopbar(_DEFAULT_ACTIVE_REGIONS)
+        self.region_topbar.connect("region-toggled", self._on_region_toggled)
+
+        self.topbar_stack = Gtk.Stack()
+        self.topbar_stack.set_transition_type(Gtk.StackTransitionType.NONE)
+        self.topbar_stack.add_named(self.subsection_nav, "subjective")
+        self.topbar_stack.add_named(self.region_topbar, "region")
+        outer.append(self.topbar_stack)
 
         main_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         main_row.set_vexpand(True)
         outer.append(main_row)
 
-        # -- left sidebar nav (mirrors TUI's SectionNav) ----------------------
+        # -- left sidebar nav — TWO separate sidebars that swap wholesale,
+        # mirroring the TUI's SectionNav / ObjectiveSidebar split (see
+        # _enter_objective_mode/_exit_objective_mode), not one combined list.
+        self._in_objective_mode = False
+        self._last_assessment_section_id = "01_consent"
         self.nav = SectionNav()
         self.nav.connect("section-selected", self._on_nav_selected)
-        main_row.append(self.nav)
+        self.objective_nav = ObjectiveNav()
+        self.objective_nav.connect("section-selected", self._on_objective_nav_selected)
+        self.objective_nav.connect("back", self._on_objective_back)
+
+        self.sidebar_stack = Gtk.Stack()
+        self.sidebar_stack.set_transition_type(Gtk.StackTransitionType.NONE)
+        self.sidebar_stack.add_named(self.nav, "assessment")
+        self.sidebar_stack.add_named(self.objective_nav, "objective")
+        main_row.append(self.sidebar_stack)
 
         content_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content_column.set_hexpand(True)
@@ -112,6 +168,20 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.barriers = BarriersSection()
         self.rx_plan = RxPlanSection()
         self.neurological = NeurologicalSection()
+        self.general = GeneralSection()
+        self.functional = FunctionalSection()
+        self.sensory = SensorySection()
+        self.crps = CRPSSection()
+
+        self.active_movement = RegionTabContent("active", "02 Active Movement")
+        self.passive_movement = RegionTabContent("passive", "03 Passive / OP")
+        self.muscle_testing = RegionTabContent("muscle", "06 Muscle Testing")
+        self.special_tests = RegionTabContent("special", "08 Special Tests")
+        self._region_tabs = (self.active_movement, self.passive_movement,
+                              self.muscle_testing, self.special_tests)
+        for region_id in _DEFAULT_ACTIVE_REGIONS:
+            self._mount_region(region_id)
+            self._active_regions.append(region_id)
 
         self._sections_by_name = {
             "consent": self.consent,
@@ -123,6 +193,14 @@ class TrialWindow(Gtk.ApplicationWindow):
             "barriers": self.barriers,
             "rx_plan": self.rx_plan,
             "neurological": self.neurological,
+            "general": self.general,
+            "functional": self.functional,
+            "sensory": self.sensory,
+            "crps": self.crps,
+            "active_movement": self.active_movement,
+            "passive_movement": self.passive_movement,
+            "muscle_testing": self.muscle_testing,
+            "special_tests": self.special_tests,
         }
 
         for name, section in self._sections_by_name.items():
@@ -154,6 +232,14 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.barriers.set_on_changed(self._schedule_save)
         self.rx_plan.set_on_changed(self._schedule_save)
         self.neurological.set_on_changed(self._schedule_save_obj)
+        self.general.set_on_changed(self._schedule_save_obj)
+        self.functional.set_on_changed(self._schedule_save_obj)
+        self.sensory.set_on_changed(self._schedule_save_obj)
+        self.crps.set_on_changed(self._schedule_save_obj)
+        self.functional.set_on_goals_changed(self._on_functional_goal_changed)
+        for tab in (self.active_movement, self.passive_movement,
+                    self.muscle_testing, self.special_tests):
+            tab.connect("field-changed", lambda *_a: self._schedule_save_obj())
 
         # -- global hotkeys (capture phase — fire before the focused widget
         # sees the key, matching Textual's Binding(priority=True)) ------------
@@ -172,15 +258,57 @@ class TrialWindow(Gtk.ApplicationWindow):
     def _on_nav_selected(self, _nav, section_id: str) -> None:
         self._show_section(section_id)
 
+    def _on_objective_nav_selected(self, _nav, section_id: str) -> None:
+        self._show_section(section_id)
+
+    def _on_objective_back(self, _nav) -> None:
+        self._show_section(self._last_assessment_section_id or "01_consent")
+
     def _on_subsection_jump(self, _bar, key: str) -> None:
         self._show_section("02_subjective")
         self.subjective.jump_to(key)
 
+    def _enter_objective_mode(self) -> None:
+        self._show_section("04_objective")
+
+    def _current_section_id(self) -> str:
+        return self.objective_nav.active_section if self._in_objective_mode else self.nav.active_section
+
     def _show_section(self, section_id: str) -> None:
+        """Single dispatch point for both sidebars — mirrors
+        assessment_view.py's _show_section: "04_objective" enters Objective
+        mode (swapping to the second sidebar + region topbar); any
+        assessment-mode id exits Objective mode first if it was active
+        (any assessment F-key/nav click while in Objective mode leaves it,
+        same as the TUI); any Objective-mode id enters Objective mode's UI
+        chrome without changing which assessment section to return to."""
+        if section_id == "04_objective":
+            if not self._in_objective_mode:
+                self._last_assessment_section_id = self.nav.active_section
+            self._in_objective_mode = True
+            self.sidebar_stack.set_visible_child_name("objective")
+            self.topbar_stack.set_visible_child_name("region")
+            section_id = self.objective_nav.active_section
+        elif section_id in _OBJECTIVE_SECTION_IDS:
+            if not self._in_objective_mode:
+                self._last_assessment_section_id = self.nav.active_section
+            self._in_objective_mode = True
+            self.sidebar_stack.set_visible_child_name("objective")
+            self.topbar_stack.set_visible_child_name("region")
+        else:
+            if self._in_objective_mode:
+                self._in_objective_mode = False
+                self.sidebar_stack.set_visible_child_name("assessment")
+                self.topbar_stack.set_visible_child_name("subjective")
+            self._last_assessment_section_id = section_id
+
         name = _SECTION_ID_TO_NAME.get(section_id)
         if name is None:
             return
-        self.nav.set_active(section_id)
+        if section_id in _OBJECTIVE_SECTION_IDS:
+            self.objective_nav.set_active(section_id)
+        else:
+            self.nav.set_active(section_id)
         self.stack.set_visible_child_name(name)
         self._sections_by_name[name].focus_first_field()
         if name in ("pain_classification", "outcome_measures"):
@@ -199,6 +327,42 @@ class TrialWindow(Gtk.ApplicationWindow):
                 "outcome_measures": self.outcome_measures.collect(),
                 "diagnosis": self.diagnosis.collect(),
             })
+
+    # ------------------------------------------------------------------
+    # Region toggling — mirrors objective_view.py's _mount_region /
+    # _unmount_region / _sync_active_regions exactly. Only the four Phase 2
+    # region tabs are affected; Neurological (and any future generic
+    # objective tab) is untouched.
+    # ------------------------------------------------------------------
+
+    def _mount_region(self, region_id: str) -> None:
+        for tab in self._region_tabs:
+            tab.mount_region(region_id)
+
+    def _unmount_region(self, region_id: str) -> None:
+        for tab in self._region_tabs:
+            tab.unmount_region(region_id)
+
+    def _sync_active_regions(self, regions: list[str]) -> None:
+        current = set(self._active_regions)
+        target = set(regions)
+        for rid in current - target:
+            self._unmount_region(rid)
+        for rid in target - current:
+            self._mount_region(rid)
+        self._active_regions = list(regions)
+        self.region_topbar.set_active_regions(regions)
+
+    def _on_region_toggled(self, _bar, region_id: str, active: bool) -> None:
+        regions = list(self._active_regions)
+        if active and region_id not in regions:
+            regions.append(region_id)
+        elif not active and region_id in regions:
+            regions.remove(region_id)
+        else:
+            return
+        self._sync_active_regions(regions)
+        self._schedule_save_obj()
 
     def _load(self) -> None:
         assessment = load_assessment_block(self.session_file)
@@ -221,18 +385,28 @@ class TrialWindow(Gtk.ApplicationWindow):
 
         objective = load_objective_block(self.session_file)
         self.neurological.load(objective.get("neurological", {}))
+        self.general.load(objective.get("general", {}))
+        self.functional.load(objective.get("functional", {}))
+        self.sensory.load(objective.get("sensory", {}))
+        self.crps.load(objective.get("crps", {}))
+        self.functional.load_goals(subjective_data)
+        self._sync_active_regions(objective.get("active_regions", _DEFAULT_ACTIVE_REGIONS))
+        for region_id in self._active_regions:
+            region_data = objective.get(region_id, {})
+            self.active_movement.get_container(region_id).load(region_data.get("active", {}))
+            self.passive_movement.get_container(region_id).load(region_data.get("passive", {}))
+            self.muscle_testing.get_container(region_id).load(region_data.get("muscle", {}))
+            self.special_tests.get_container(region_id).load(region_data.get("special", {}))
 
     # ------------------------------------------------------------------
     # Global hotkeys — mirrors main.py's PhysioAssessment.BINDINGS for the
     # sections this trial implements:
     #   F1/F2            section switch      (BINDINGS f1/f2)
-    #   F4               → Neurological      (BINDINGS f4 "section_objective" —
-    #                      the TUI's F4 opens Objective mode's first section;
-    #                      Neurological is the only Objective tab built here,
-    #                      so F4 goes straight to it)
+    #   F4               → Objective mode    (BINDINGS f4 "section_objective" —
+    #                      enters Objective mode, resuming whichever objective
+    #                      tab was last active there, default General Obs)
     #   Ctrl+F5          → Neurological      (BINDINGS ctrl+f5 "obj_neurological"
-    #                      — the TUI's precise jump straight to this section;
-    #                      kept as well since it's the more exact match)
+    #                      — the TUI's precise jump straight to this section)
     #   Alt+<letter>     subjective jump     (BINDINGS alt+s/h/b/m/a/w/e/4/p/g/r)
     #   Ctrl+Q           quit, flushing any pending debounced save first
     #   Ctrl+A           select-all in the focused text field
@@ -277,13 +451,14 @@ class TrialWindow(Gtk.ApplicationWindow):
             self._toggle_notes()
             return True
         if name == "F4":
-            self._show_section("04_objective")
+            self._enter_objective_mode()
             return True
         if name == "F11":
             self._toggle_fullscreen()
             return True
         if ctrl_held and name == "F5":
-            self._show_section("04_objective")
+            self._enter_objective_mode()
+            self._show_section("04_neurological")
             return True
         if ctrl_held and name.lower() == "q":
             self._flush_and_quit()
@@ -320,7 +495,7 @@ class TrialWindow(Gtk.ApplicationWindow):
         visible = self.notes_overlay.get_visible()
         self.notes_overlay.set_visible(not visible)
         if visible:
-            name = _SECTION_ID_TO_NAME.get(self.nav.active_section)
+            name = _SECTION_ID_TO_NAME.get(self._current_section_id())
             if name:
                 self._sections_by_name[name].focus_first_field()
         else:
@@ -372,36 +547,38 @@ class TrialWindow(Gtk.ApplicationWindow):
     # overwrites the widget the user is currently typing into.
     # ------------------------------------------------------------------
 
-    def _sync_goals_consent_to_subj(self) -> None:
+    def _sync_goals(self, source_goals: list, *dest_sections) -> None:
+        """Push source_goals' text into each dest section's .goals list,
+        skipping whichever widget currently has focus (never overwrite what
+        the user is actively typing into) and any dest whose text already
+        matches (avoids redundant "changed" churn)."""
         focused = self.get_focus()
-        self.subjective._loading = True
-        try:
-            for src, dst in zip(self.consent.consent_goals, self.subjective.goals):
-                if dst.textview is focused:
-                    continue
-                if dst.text != src.text:
-                    dst.text = src.text
-        finally:
-            self.subjective._loading = False
-
-    def _sync_goals_subj_to_consent(self) -> None:
-        focused = self.get_focus()
-        self.consent._loading = True
-        try:
-            for src, dst in zip(self.subjective.goals, self.consent.consent_goals):
-                if dst.textview is focused:
-                    continue
-                if dst.text != src.text:
-                    dst.text = src.text
-        finally:
-            self.consent._loading = False
+        for dest in dest_sections:
+            dest._loading = True
+            try:
+                for src, dst in zip(source_goals, dest.goals):
+                    if dst.textview is focused:
+                        continue
+                    if dst.text != src.text:
+                        dst.text = src.text
+            finally:
+                dest._loading = False
 
     def _on_consent_changed(self) -> None:
-        self._sync_goals_consent_to_subj()
+        self._sync_goals(self.consent.consent_goals, self.subjective, self.functional)
         self._schedule_save()
 
     def _on_subjective_changed(self) -> None:
-        self._sync_goals_subj_to_consent()
+        self._sync_goals(self.subjective.goals, self.consent, self.functional)
+        self._schedule_save()
+
+    def _on_functional_goal_changed(self) -> None:
+        """Functional's ft_goal_N mirror lives in _objective.json, but
+        Consent/Subjective's own goal fields (assessment.json) must reflect
+        an edit made here too — so this also flushes the assessment-file
+        save, on top of the objective-file save already triggered by
+        set_on_changed for every Functional field edit."""
+        self._sync_goals(self.functional.goals, self.consent, self.subjective)
         self._schedule_save()
 
     # ------------------------------------------------------------------
@@ -464,8 +641,32 @@ class TrialWindow(Gtk.ApplicationWindow):
         self._save_source_id_obj = None
         self.save_status.set_label("saving…")
 
-        section_data = {OBJECTIVE_SECTION_KEYS["04_neurological"]: self.neurological.collect()}
-        sections_complete = {"04_neurological": self.neurological.is_complete()}
+        section_data = {
+            OBJECTIVE_SECTION_KEYS["04_neurological"]: self.neurological.collect(),
+            "general": self.general.collect(),
+            "functional": self.functional.collect(),
+            "sensory": self.sensory.collect(),
+            "crps": self.crps.collect(),
+            "active_regions": list(self._active_regions),
+        }
+        sections_complete = {
+            "04_neurological": self.neurological.is_complete(),
+            "04_general": self.general.is_complete(),
+            "04_functional": self.functional.is_complete(),
+            "04_sensory": self.sensory.is_complete(),
+            "04_crps": self.crps.is_complete(),
+            "04_active": self.active_movement.is_complete(),
+            "04_passive": self.passive_movement.is_complete(),
+            "04_muscle": self.muscle_testing.is_complete(),
+            "04_special": self.special_tests.is_complete(),
+        }
+        for region_id in self._active_regions:
+            section_data[region_id] = {
+                "active": self.active_movement.get_container(region_id).collect(),
+                "passive": self.passive_movement.get_container(region_id).collect(),
+                "muscle": self.muscle_testing.get_container(region_id).collect(),
+                "special": self.special_tests.get_container(region_id).collect(),
+            }
 
         ok = save_objective_sections(self.session_file, section_data, sections_complete)
         self.save_status.set_label("saved" if ok else "SAVE FAILED")

@@ -2,8 +2,18 @@
 
 Mirrors the TUI's structure: full-width stacked buttons in a fixed-width
 left sidebar, active section highlighted. Sections not yet built in this
-trial (03-09) are shown as disabled placeholders so the sidebar reads the
-same as the real TUI's — see plan's "explicitly out of scope" list.
+trial are shown as disabled placeholders so the sidebar reads the same as
+the real TUI's.
+
+The TUI actually uses TWO separate sidebars — this one (assessment mode:
+Consent/Subjective/Medical/Objective-entry/Pain Class/Outcomes/Diagnosis/
+Barriers/Rx & Plan) and a second, entirely different one shown only while
+inside Objective mode (see objective_nav.py) — switching wholesale rather
+than growing one sidebar to list every section from both modes at once.
+That second-sidebar switch was lost in an earlier pass (both modes' items
+got flattened into one long list here), which is what overflowed the
+sidebar vertically — restored per user feedback, matching the original
+PhysioChart TUI's screenshots exactly.
 """
 
 from __future__ import annotations
@@ -16,11 +26,13 @@ from gi.repository import Gtk, GObject  # noqa: E402
 SIDEBAR_WIDTH = 190  # px — TUI uses `width: 20` (character cells); this is the touch-scaled equivalent
 
 # Matches assessment_view.py's SectionNav.SECTION_LABELS order exactly.
+# "04_objective" is not a content page — clicking it enters Objective mode
+# (see app.py's _enter_objective_mode), same as the TUI's F4/"04 Objective →".
 SECTION_LABELS = [
     ("01_consent", "01 Consent"),
     ("02_subjective", "02 Subjective"),
     ("03_medical", "03 Medical"),
-    ("04_objective", "04 Objective — Neuro"),
+    ("04_objective", "04 Objective →"),
     ("04_pain_classification", "05 Pain Class"),
     ("05_outcome_measures", "06 Outcomes"),
     ("06_diagnosis", "07 Diagnosis"),
@@ -29,10 +41,6 @@ SECTION_LABELS = [
 ]
 
 # Sections this trial actually implements — everything else renders disabled.
-# "04_objective" only ever opens Neurological here — the TUI's Objective mode
-# has its own 8-section sidebar (General/Active/Passive/.../Special); this
-# trial builds just the one tab, so the label above says so rather than
-# implying the rest of Objective mode is reachable.
 BUILT_SECTIONS = {
     "01_consent", "02_subjective", "03_medical", "04_objective",
     "04_pain_classification", "05_outcome_measures", "06_diagnosis", "07_barriers",

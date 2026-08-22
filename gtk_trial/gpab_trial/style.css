@@ -253,6 +253,16 @@ entry {
     font-weight: bold;
 }
 
+/* Objective sidebar's "← Subjective" back button — muted, visually distinct
+   from the section rows above it, mirrors the TUI's ObjectiveSidebar .back. */
+.nav-back {
+    background: alpha(currentColor, 0.08);
+    opacity: 0.75;
+}
+.nav-back:hover {
+    opacity: 1;
+}
+
 .save-status {
     padding: 4px 8px;
     font-style: italic;
@@ -279,6 +289,13 @@ entry {
     background: alpha(white, 0.12);
 }
 
+/* Region toggle chips (objective/region_topbar.py) reuse this bar's look,
+   but need a distinct "on" state since they're toggles, not one-shot jumps. */
+.subsection-nav-btn:checked {
+    background: #1565c0;
+    font-weight: bold;
+}
+
 /* Bottom bar — hotkey hints, mirrors the TUI's Footer widget */
 .app-footer {
     background: #14181f;
@@ -294,6 +311,20 @@ entry {
 .footer-desc {
     color: alpha(white, 0.7);
     font-size: 0.85rem;
+}
+
+/* Region blocks (objective/region_section.py) — collapsible per-region
+   card within an Active Movement / Passive / Muscle / Special tab. */
+.region-container {
+    border: 1px solid alpha(currentColor, 0.25);
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin-bottom: 8px;
+}
+.region-header {
+    font-weight: bold;
+    opacity: 0.85;
+    padding-bottom: 4px;
 }
 
 /* Bilateral L/R grid rows (Neurological, and future Sensory/Muscle/ROM tabs) */
