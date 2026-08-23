@@ -7,6 +7,7 @@ relaxation of 2026-08-22) a real ~/PAB/<name>/ session directly.
 
 from __future__ import annotations
 import logging
+import threading
 from pathlib import Path
 
 import gi
@@ -20,6 +21,7 @@ from gi.repository import Gtk, Gdk, GLib  # noqa: E402
 from .storage_bridge import (
     load_assessment_block, save_sections, SECTION_KEYS,
     load_objective_block, save_objective_sections, OBJECTIVE_SECTION_KEYS,
+    generate_all_reports_final,
 )
 from .sections.consent import ConsentSection
 from .sections.subjective import SubjectiveSection
@@ -358,7 +360,7 @@ class TrialWindow(Gtk.ApplicationWindow):
         self._report_timer = ReportTimer(self.session_file)
         self._report_timer.start()
 
-        self.connect("destroy", lambda *_a: (self._chart_watcher.stop(), self._report_timer.stop()))
+        self.connect("close-request", self._on_close_request)
 
     # ------------------------------------------------------------------
     # Navigation
@@ -994,10 +996,32 @@ class TrialWindow(Gtk.ApplicationWindow):
         return False
 
     def _flush_and_quit(self) -> None:
-        """Ctrl+Q — flush any pending debounced save before exiting.
+        """Ctrl+Q — just closes the window; _on_close_request does the actual
+        flush-then-report work, uniformly for every close path (this, the
+        window's own close button, and window-manager close), not just this
+        one. Kept as a separate method since Ctrl+Q's key handler already
+        calls it by name."""
+        self.close()
 
-        Mirrors main.py's action_quit()/_flush_pending_saves(): a quit within
-        the 2s autosave debounce window must not silently drop the last edit.
+    def _on_close_request(self, *_a) -> bool:
+        """Runs for every close path — window-manager close, the window's own
+        close button, and Ctrl+Q's _flush_and_quit — not just one of them.
+
+        Gap fixed 2026-08-23: previously only a "destroy" handler existed
+        here, which just stopped the chart watcher / 60s report timer with no
+        final flush or report regeneration at all. Confirmed live: text typed
+        into a real session made it into *_assessment.json (autosave worked)
+        but never into any report file, because nothing ever called the
+        report generators on close — the periodic 60s timer only covers
+        edits made at least 60s before the app closes. Mirrors
+        assessment_view.py's AssessmentView.on_unmount() exactly: flush any
+        pending debounced save first (same reasoning as _show_report's own
+        flush — the report must reflect the latest edit, not whatever was
+        last on disk before the debounce fired), stop the background
+        watchers, then run a FINAL full regeneration (raw + markdown + clean
+        + docx — the one format the periodic timer deliberately skips) in a
+        non-daemon background thread so it keeps completing (including the
+        slower pandoc/docx step) even after the window itself has closed.
         """
         if self._save_source_id is not None:
             GLib.source_remove(self._save_source_id)
@@ -1007,7 +1031,20 @@ class TrialWindow(Gtk.ApplicationWindow):
             GLib.source_remove(self._save_source_id_obj)
             self._save_source_id_obj = None
             self._do_save_obj()
-        self.close()
+
+        self._chart_watcher.stop()
+        self._report_timer.stop()
+
+        session_file = self.session_file
+
+        def _run() -> None:
+            try:
+                generate_all_reports_final(session_file)
+            except Exception as e:
+                logger.error("_on_close_request: generate_all_reports_final failed: %s", e)
+
+        threading.Thread(target=_run, daemon=False).start()
+        return False  # allow the close to proceed
 
     # ------------------------------------------------------------------
     # Live goal mirror — mirrors assessment_view.py's

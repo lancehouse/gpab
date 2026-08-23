@@ -19,6 +19,7 @@ from pab_assessment.storage import (  # noqa: E402
     export_session_report,
     save_raw_report,
     save_clean_reports,
+    save_docx_report,
 )
 
 # Section id -> JSON key, matching assessment_view.py's _SEC_KEYS convention.
@@ -128,6 +129,32 @@ def generate_all_reports(session_file: str) -> None:
     save_clean_reports(session_file)
 
 
+def generate_all_reports_final(session_file: str) -> None:
+    """Final regeneration on app exit — same four calls as assessment_view.py's
+    on_unmount()/_exit_generate_all_reports() (raw + markdown + clean +
+    **docx**, the one report format the 60s timer above deliberately doesn't
+    produce). Ported gap fixed 2026-08-23: gpab had generate_all_reports()
+    (the periodic path) wired to a 60s timer, but nothing wired to app exit
+    — every close path (window-close button, window-manager close, and
+    Ctrl+Q) skipped straight to destroying the window with no final
+    regeneration, so any edit made after the last periodic tick (or made
+    during a session too short-lived for the timer to ever fire, e.g.
+    reopened/closed quickly) was saved correctly to *_assessment.json /
+    *_objective.json but never made it into any report file. Confirmed live:
+    text typed into a real session showed up in *_assessment.json but not in
+    *_report.md/_clean.*, exactly matching this gap. Call from a non-daemon
+    background thread on window close (see app.py's close-request handler)
+    — daemon=False is deliberate, mirroring the reference thread exactly:
+    CPython waits for non-daemon threads at interpreter shutdown, which is
+    what lets this finish (including the slower pandoc/docx step) even
+    though the GTK window itself has already visually closed.
+    """
+    save_raw_report(session_file)
+    export_session_report(session_file)
+    save_clean_reports(session_file)
+    save_docx_report(session_file)
+
+
 __all__ = [
     "assessment_path",
     "objective_path",
@@ -137,6 +164,8 @@ __all__ = [
     "load_objective_block",
     "save_objective_sections",
     "generate_report",
+    "generate_all_reports",
+    "generate_all_reports_final",
     "SECTION_KEYS",
     "OBJECTIVE_SECTION_KEYS",
 ]
