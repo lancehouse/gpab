@@ -6,7 +6,6 @@ gtk4_dep    = dependency('gtk4')
 cairo_dep   = dependency('cairo')
 rsvg_dep    = dependency('librsvg-2.0')
 jsonc_dep   = dependency('json-c')
-vte_dep     = dependency('vte-2.91-gtk4')
 m_dep       = meson.get_compiler('c').find_library('m', required : false)
 
 sources = files(
@@ -33,7 +32,7 @@ sources = files(
 
 executable('bodychart',
   sources,
-  dependencies : [gtk4_dep, cairo_dep, rsvg_dep, jsonc_dep, vte_dep, m_dep],
+  dependencies : [gtk4_dep, cairo_dep, rsvg_dep, jsonc_dep, m_dep],
   install : true)
 
 install_data('data/com.pab.bodychart.desktop',

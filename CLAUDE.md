@@ -12,15 +12,32 @@ small touch-vs-terminal trial (Consent + Subjective only) proved out well enough
 now a **full conversion of the assessment TUI to native GTK4**. See `PROJECT_BRIEF.md` for what's
 been proven so far and why, and `CONVERSION_PLAN.md` for the section-by-section plan going forward.
 
+**Permanent end state (decided 2026-08-23, see `CONVERSION_PLAN.md` Phase 6):** gpab is never
+merged back into `pab`, and `~/Projects/pab` itself is never modified by this project — `pab`
+stays installed and untouched as a working fallback, and `pabd`/`pabs` keep building and running
+its original, unmodified `bodychart/src/integration.c` indefinitely. There is no plan to port
+gpab's code into `~/Projects/pab`. Within *this clone only*, `bodychart/src/integration.c` and
+`bodychart/meson.build` **have been** deliberately modified (2026-08-23) so this clone's own
+`bodychart` build launches `gpab` directly instead of the old VTE-embedded TUI — see the isolation
+guarantee below for exactly what that does and doesn't change.
+
 ## Isolation guarantee — read before touching anything here
 
 - **This is a `git clone` of `~/Projects/pab`, with its own independent `.git` and no remote.**
   (`git remote -v` returns nothing — confirm this hasn't changed before doing anything risky.)
   It cannot push to, pull from, or otherwise affect the real `pab` or `kb` repos.
-- `assessment/` and `bodychart/` in this clone are **read-only reference copies** — the actual
-  TUI/GTK-C source, kept so the conversion has something authoritative to port from and compare
-  against. Never edit them; if a fix is needed, it needs to happen in the real `~/Projects/pab`
-  separately, by hand, later — not here.
+- `assessment/` in this clone is a **read-only reference copy** — the actual TUI source, kept so
+  the conversion has something authoritative to port from and compare against. Never edit it; if a
+  fix is needed, it needs to happen in the real `~/Projects/pab` separately, by hand, later — not
+  here.
+- `bodychart/` was also a read-only reference copy until 2026-08-23, when `integration.c` and
+  `meson.build` were deliberately modified (see `CONVERSION_PLAN.md` Phase 6) so this clone's own
+  `bodychart` build launches `gpab` in place of the old embedded TUI. This is a vendored,
+  intentionally-diverged copy now, **local to this clone only** — the real `~/Projects/pab/bodychart`
+  is untouched, `pabd`/`pabs` still build and run that original unmodified source, and nothing here
+  is ever copied back. Build this clone's copy with `ninja -C build` only — **never `ninja install`
+  / `meson install`** from here, since that would write over the binaries/desktop file the real
+  install may use rather than staying confined to this clone's own `build/` directory.
 - All new conversion code lives in `gtk_trial/` (name is a holdover from the touch-trial phase;
   not yet renamed since renaming mid-conversion would churn every import path for no benefit —
   revisit once the conversion is far enough along that a rename is worth the diff).

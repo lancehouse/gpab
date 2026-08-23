@@ -92,7 +92,123 @@ it's a separate 60s `set_interval`, decoupled from the debounced save cycle (see
 `assessment_view.py` audit row). gpab now has the same 60s timer (`report_timer.py`, Phase 3),
 independent of Ctrl+R (`report_modal.py`) exactly like the reference — this phase is complete.
 
-## Phase 6 — cutover to production
+## Phase 6 — daily-use cutover (revised 2026-08-23 — supersedes the plan below)
+
+**Direction reversed by explicit user decision 2026-08-23.** The original plan below (port gpab's
+code back into `~/Projects/pab` and wire `bodychart/src/integration.c` to launch it) is **not**
+happening. `pab` stays permanently untouched as a safe, working fallback install — `pabd`/`pabs`
+keep launching the real bodychart + Textual TUI exactly as they do today, unmodified, indefinitely.
+`gpab` becomes the thing actually used day-to-day instead, as a fully standalone app — not merged
+into `pab`, not wired into `bodychart/src/integration.c`, never pushed back. This is *less* work
+than the original Phase 6 and has already-lower risk: `gpab` already writes real `~/PAB/` sessions
+(relaxed 2026-08-22) and already has its own launcher (root `./gpab <session>`), so no new
+integration code is needed for this to work — the two apps cooperate purely by reading/writing the
+same session files under `~/PAB/`, the same way bodychart and the old TUI always did.
+
+**Concretely, day-to-day use looks like:** run real bodychart (via `pabd`/`pabs`, untouched) for
+body-chart drawing; run `gpab <session>` separately for the assessment, instead of the Textual TUI
+that used to be embedded inside bodychart's VTE terminal. `gpab_trial/chart_watcher.py`
+(`gtk_trial/gpab_trial/chart_watcher.py`) is what's supposed to keep gpab in sync with strokes drawn
+in the separately-running bodychart window, by polling the shared session file for changes.
+
+**What "pull from pab as needed" means going forward** (the user's own framing): this clone is
+frozen at the moment it was cloned and has no remote, so there is no automatic sync. If a real bug
+gets fixed in `pab`'s `storage.py`/`mapping.py`/`logic.py`/etc. later, pulling it into gpab means
+manually copying the changed file(s) from `~/Projects/pab/assessment/` into this clone's own
+`assessment/` (still exactly the same "reference copy `gtk_trial` imports from via
+`pab_path_bootstrap.py`" role it has always had — nothing about that changes) and re-running the
+`collect()`/`load()` round-trip diffs per Standing Rule 1 to confirm the copy didn't silently change
+behavior. Never the other direction.
+
+**Live test run 2026-08-23 found the actual blocker, and it's now being fixed.** Ran real bodychart
+(`pabd`) + gpab side by side against a fresh test session (`GPAB-test_23_08_2026_1044`). Findings:
+- Chart→gpab sync (`chart_watcher.py`) **worked**: bodychart strokes/notes did flow into gpab's
+  Subjective tab correctly.
+- But **bodychart's own launcher unconditionally auto-spawns the old embedded Textual TUI** in a
+  VTE terminal every time a session is opened (`bodychart/src/window.c`'s
+  `launch_commit_new`/`launch_commit_open` both call `integration_create_tui_window`) — there was
+  no way to get bodychart running *without* the old TUI also opening and independently writing
+  `_assessment.json`/`_objective.json`. With three programs (bodychart, TUI, gpab) all touching the
+  same session files, the TUI and gpab drifted apart (each only reads its files once at startup,
+  neither watches the other's writes — expected, but made side-by-side literally unusable), and
+  Ctrl+C on the TUI terminal killed bodychart too, so the TUI couldn't even be closed independently
+  to work around it.
+- **User's explicit call in response**: don't modify `~/Projects/pab` (stays untouched, permanent
+  safe fallback, `pabd`/`pabs` keep building/running the original code) — instead vendor+modify
+  bodychart's C source **inside this clone's own `bodychart/` directory** so gpab's own build can
+  launch gpab instead of the TUI. This is a further refinement of the same Phase 6 direction above,
+  not a reversal of it.
+
+**In progress, NOT yet built or tested (mid-edit when the session ended for a reboot)**:
+`bodychart/src/integration.c` in this clone has been rewritten — `integration_create_tui_window` no
+longer creates a VTE terminal/embedded window at all; it `g_spawn_async`s
+`gtk_trial/.venv/bin/python -m gpab_trial.main --session <path>` as a fully independent process
+(gpab manages its own window). `integration_focus_tui`/`integration_destroy_tui` are now no-ops —
+this is a deliberate decoupling, not an oversight: bodychart and gpab no longer own each other's
+lifecycle the way bodychart used to own the embedded TUI's (closing one no longer closes the
+other — the old Ctrl+C-kills-both problem that triggered this work is gone by construction).
+`meson.build`'s `vte_dep` was removed (confirmed via grep: `vte` was only ever referenced from
+`integration.c`, nowhere else in `bodychart/src/`). **Next session must**, in order: (1) run
+`meson setup --reconfigure build && ninja -C build` inside `~/Projects/gpab/bodychart/` and fix any
+compile errors — this has not been attempted yet; (2) confirm
+`git -C ~/Projects/pab status --short | wc -l` is still 11 and `~/Projects/kb` still 5 (isolation
+check, unaffected by this since only this clone's own `bodychart/` was edited, but verify, don't
+assume); (3) kill the currently-running old bodychart/TUI/gpab trio from the live test, launch the
+newly-built `bodychart` binary against a session, confirm it spawns gpab directly with no VTE/TUI
+window and both apps save correctly with no file contention; (4) update
+`bodychart/CLAUDE.md` (still describes the VTE/TUI-embedding architecture as current — now stale
+for this clone specifically) and the top-level `CLAUDE.md`'s isolation section, which currently
+says `bodychart/` (like `assessment/`) is a "read-only reference copy... never edit them" — that
+sentence is now factually wrong for `bodychart/` specifically (`assessment/` is still correctly
+read-only; only `bodychart/` changed) and needs correcting before it misleads a future session.
+
+**✅ ALL OF THE ABOVE DONE, 2026-08-23 (same day, follow-on session).** Top-level `CLAUDE.md`
+corrected (the "Permanent end state" paragraph and the isolation-guarantee bullet now correctly
+describe `bodychart/` as a deliberately-modified vendored copy, `assessment/` still read-only, plus
+an explicit "`ninja -C build` only, never `ninja install`" rule). `meson setup --reconfigure build
+&& ninja -C build` succeeded cleanly (one pre-existing, unrelated warning in `canvas.c`; nothing
+from the isolation-check grep or the AppState struct broke the build — both prior-session claims
+held up). Isolation counts re-confirmed unchanged (`pab` 11, `kb` 5) both before and after the
+build, which stayed fully contained in this clone's own `bodychart/build/`.
+
+**Live-tested against real sessions on the actual machine, not just headlessly**, and this surfaced
+a real bug beyond what was planned: `integration_create_tui_window` originally tracked gpab's PID
+per-bodychart-process and killed only that one before respawning — but bodychart only shows its
+launch dialog once, at startup, so in real use a bodychart process only ever calls
+`integration_create_tui_window` once; that PID check could never fire for the actual failure mode.
+Confirmed live: with gpab open for one patient, launching a second gpab process (e.g. via a freshly
+relaunched bodychart, for a different patient) doesn't open a new window — gpab's own
+single-instance `GtkApplication` silently hands the second launch off to the existing instance and
+exits, leaving the wrong patient's data on screen with no error at all. Fixed by killing any
+running gpab process **by name** (`pkill -f 'gpab_trial\.main'`, mirroring the same approach the
+`./gpab` launcher script already uses for its own staleness problem) before every spawn, rather
+than relying on this-process-only PID tracking — verified live: patient A open in gpab, bodychart
+quit and relaunched for patient B, old gpab process gone, exactly one new gpab process running
+against B's session file, screen confirmed showing B's data. Also added a visible `GtkAlertDialog`
+(matching the existing style in `window.c`, not the deprecated `gtk_message_dialog_new`) for a spawn
+failure, so it's never silent on a touchscreen-only machine — not yet exercised live (would require
+deliberately breaking the launch, e.g. renaming the venv), but the code path is in place.
+
+**Still outstanding before Phase 6 is fully done** (unchanged from the list below): the full manual
+touchscreen pass, the goniometer-import hold, and the `DEFAULT_SESSION` fallback / `.desktop` entry
+cleanup items.
+
+**Once the above passes, still left before calling gpab "done" for daily use**:
+1. **A real full manual pass on the Yoga touchscreen**, not just headless round-trip diffs — walk
+   every assessment section and every objective region/tab by hand with the stylus, per
+   `PROJECT_BRIEF.md`'s own "Decision" section, which called for this before considering the trial
+   phase's promise (touch-latency fix without losing keyboard workflow) actually validated end to
+   end.
+2. **Goniometer-import wizard stays on hold** — this list doesn't change that; it was never a
+   blocker for daily use of everything else, and the condition the user set for picking it back up
+   ("properly handling data with the loader and output files established") hasn't been revisited.
+3. Retire the `DEFAULT_SESSION` fallback hack in the root `gpab` launcher script (its own comment
+   already flags it as temporary, "remove this once Phase 6 lands") and decide whether a
+   `.desktop` entry or similar is worth adding for daily launch convenience — small, optional, not
+   a blocker.
+
+<details>
+<summary>Original Phase 6 plan (superseded 2026-08-23, kept for history)</summary>
 
 This repo (`gpab`) has no remote and stays a pure R&D sandbox permanently — it is never the
 deployment target. Once the conversion is validated here end-to-end (every section ported,
@@ -105,6 +221,8 @@ the real `assessment/` package, wire `bodychart/src/integration.c` to launch it 
 alongside, during a transition period) the VTE-embedded Textual TUI, and only then consider `pab`'s
 Textual `tui.py`/`main.py` for retirement. None of that work should start until this plan's Phases
 1–5 are substantially complete and tested here.
+
+</details>
 
 ## Standing rules for every phase
 

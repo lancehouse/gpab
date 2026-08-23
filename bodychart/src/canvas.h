@@ -181,8 +181,9 @@ struct _AppState {
     char     session_file[512];   /* full path to _session.json */
     time_t   session_created;
     GFileMonitor *session_file_monitor;  /* file watcher for session JSON */
-    GtkWidget   *tui_window;             /* second GtkWindow housing the VteTerminal */
-    GtkWidget   *tui_terminal;           /* VteTerminal widget inside tui_window */
+    GtkWidget   *tui_window;             /* unused since the 2026-08-23 gpab integration change */
+    GtkWidget   *tui_terminal;           /* unused since the 2026-08-23 gpab integration change */
+    GPid         gpab_pid;               /* PID of the spawned gpab process, 0 if none running */
     gint64   last_own_save_us;           /* timestamp of last persistence_save() call */
     int      next_stroke_id;             /* monotonic counter — never decremented on undo */
     int      next_note_id;              /* monotonic counter — never decremented on undo */

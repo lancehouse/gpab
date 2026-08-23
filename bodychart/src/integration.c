@@ -1,110 +1,132 @@
 #include "integration.h"
 #include "persistence.h"
 #include <gtk/gtk.h>
-#include <vte/vte.h>
 
-/* ── Internal callbacks ───────────────────────────────────────────────────── */
+/* GPAB INTEGRATION (this clone only, changed 2026-08-23) ───────────────────
+ *
+ * The original PAB integration embedded the Textual assessment TUI in a VTE
+ * terminal inside a window owned by this app (see git history for the prior
+ * version of this file). gpab replaces that TUI with a standalone GTK4 app
+ * that manages its own window entirely, so there is nothing left to embed —
+ * this just launches it as an independent process against the same session
+ * file and otherwise gets out of the way. Deliberately NOT supervised in the
+ * sense that gpab exiting doesn't close bodychart and vice versa (see
+ * on_main_window_close / this file's own no-op focus/destroy below) — the
+ * two are meant to run side by side as separate programs now, not one
+ * owning the other's lifecycle the way the embedded TUI window used to.
+ * The one thing that IS tracked here is gpab's PID (app->gpab_pid), purely
+ * for bookkeeping/reaping — see on_gpab_exited below. Making way for a
+ * newly-opened session is instead done by killing any running gpab process
+ * BY NAME (kill_existing_gpab), not just one this bodychart process itself
+ * spawned. That distinction matters: bodychart only shows its launch dialog
+ * once, at startup, so in practice a bodychart process only ever calls
+ * integration_create_tui_window once — a this-process-only PID check would
+ * never fire for the actual real-world case, which is: bodychart is quit
+ * and relaunched for a different patient while gpab (independent lifetime,
+ * by design) is still open from before. Confirmed live 2026-08-23: gpab is
+ * a single-instance GtkApplication, so launching a second copy for a
+ * DIFFERENT session doesn't open a new window — it silently hands off to
+ * the existing instance and exits, leaving the wrong patient's data on
+ * screen with no error at all. Killing by name mirrors the same pkill this
+ * repo's own `./gpab <session>` launcher script already uses for the
+ * identical staleness problem.
+ *
+ * This file only exists modified in ~/Projects/gpab's own clone of
+ * bodychart/ — see ../../CLAUDE.md's isolation guarantee. ~/Projects/pab is
+ * never touched by this change; pabd/pabs keep building and running the
+ * original integration.c unmodified. */
 
-/* Deferred fullscreen — same rationale as window.c: 200 ms timeout to let
- * Mutter complete the windowed configure round-trip and establish
- * zwp_tablet_v2 input routing before we request fullscreen. */
-static gboolean deferred_fullscreen(gpointer w)
+#define GPAB_PYTHON  "/home/lance/Projects/gpab/gtk_trial/.venv/bin/python"
+#define GPAB_WORKDIR "/home/lance/Projects/gpab/gtk_trial"
+
+/* Reap the gpab child when it exits (window closed by the user, crash, or
+ * killed below to make way for a new session) so app->gpab_pid never goes
+ * stale. Guards against clobbering a newer PID: if a session was reopened
+ * while this watch was still pending on the old process, app->gpab_pid
+ * already points at the new one by the time this fires. */
+static void on_gpab_exited(GPid pid, gint status, gpointer user_data)
 {
-    gtk_window_fullscreen(GTK_WINDOW(w));
-    return G_SOURCE_REMOVE;
-}
-
-/* TUI process exited (Ctrl+D, `exit`, or crash) — treat as session end. */
-static void on_tui_child_exited(VteTerminal *term, int status, gpointer user_data)
-{
-    (void)term; (void)status;
+    (void)status;
     AppState *app = user_data;
-    if (app->window)
-        gtk_window_destroy(GTK_WINDOW(app->window));
+    if (app->gpab_pid == pid)
+        app->gpab_pid = 0;
+    g_spawn_close_pid(pid);
 }
 
-/* F11 captured at the TUI window level before VTE sees it. */
-static gboolean on_tui_key_pressed(GtkEventControllerKey *ctrl,
-                                    guint keyval, guint keycode,
-                                    GdkModifierType mods, gpointer user_data)
+/* Kill any running gpab process by name — see file header for why this has
+ * to be name-based rather than app->gpab_pid-based. */
+static void kill_existing_gpab(void)
 {
-    (void)ctrl; (void)keycode; (void)mods;
-    GtkWindow *win = GTK_WINDOW(user_data);
-    if (keyval == GDK_KEY_F11) {
-        if (gtk_window_is_fullscreen(win))
-            gtk_window_unfullscreen(win);
-        else
-            gtk_window_fullscreen(win);
-        return TRUE;
-    }
-    return FALSE;
+    char *argv[] = { "pkill", "-f", "gpab_trial\\.main", NULL };
+    g_spawn_sync(NULL, argv, NULL,
+                 G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+                 NULL, NULL, NULL, NULL, NULL, NULL);
+    /* Give the old process a moment to release its D-Bus name/GtkApplication
+     * registration before spawning a new one — otherwise a spawn that races
+     * the old process's teardown can still hand off to it instead of
+     * starting fresh, the same race `./gpab`'s own `sleep 0.3` exists to
+     * avoid. */
+    g_usleep(300000);
 }
 
-/* TUI window destroyed (window manager close button or integration_destroy_tui). */
-static void on_tui_window_destroyed(GtkWidget *w, gpointer user_data)
+/* A launch failure is otherwise silent — just a line to a terminal nobody's
+ * watching on a machine used touchscreen-only. */
+static void show_launch_error(AppState *app, const char *message)
 {
-    (void)w;
-    AppState *app = user_data;
-    app->tui_window   = NULL;
-    app->tui_terminal = NULL;
-    if (app->window)
-        gtk_window_destroy(GTK_WINDOW(app->window));
+    GtkAlertDialog *dlg = gtk_alert_dialog_new("Could not launch the assessment app");
+    gtk_alert_dialog_set_detail(dlg, message);
+    gtk_alert_dialog_show(dlg, app->window ? GTK_WINDOW(app->window) : NULL);
+    g_object_unref(dlg);
 }
-
-/* ── Public API ───────────────────────────────────────────────────────────── */
 
 void integration_create_tui_window(AppState *app, GtkApplication *gapp)
 {
+    (void)gapp;
     if (!app->session_file[0]) return;
 
-    GtkWidget *term = vte_terminal_new();
-    app->tui_terminal = term;
+    kill_existing_gpab();
+    app->gpab_pid = 0;
 
-    GtkWidget *win = gtk_application_window_new(gapp);
-    gtk_window_set_title(GTK_WINDOW(win), "PAB Assessment");
-    gtk_window_set_default_size(GTK_WINDOW(win), 900, 700);
-    gtk_window_set_child(GTK_WINDOW(win), term);
-    app->tui_window = win;
+    char *argv[] = {
+        (char *)GPAB_PYTHON, "-m", "gpab_trial.main",
+        "--session", app->session_file,
+        NULL
+    };
 
-    /* Capture F11 at window level before VTE consumes it */
-    GtkEventController *key_ctrl = gtk_event_controller_key_new();
-    gtk_event_controller_set_propagation_phase(key_ctrl, GTK_PHASE_CAPTURE);
-    gtk_widget_add_controller(win, key_ctrl);
-    g_signal_connect(key_ctrl, "key-pressed",
-                     G_CALLBACK(on_tui_key_pressed), win);
-
-    g_signal_connect(term, "child-exited",
-                     G_CALLBACK(on_tui_child_exited), app);
-    g_signal_connect(win, "destroy",
-                     G_CALLBACK(on_tui_window_destroyed), app);
-
-    gtk_window_present(GTK_WINDOW(win));
-    g_timeout_add(200, deferred_fullscreen, win);
-
-    char *argv[] = { "assessment", "--session", app->session_file, NULL };
-    vte_terminal_spawn_async(
-        VTE_TERMINAL(term),
-        VTE_PTY_DEFAULT,
-        NULL,               /* working dir — inherit */
+    GError *error = NULL;
+    GPid pid = 0;
+    gboolean ok = g_spawn_async(
+        GPAB_WORKDIR,
         argv,
-        NULL,               /* env — inherit */
-        G_SPAWN_SEARCH_PATH,
-        NULL, NULL,         /* child setup */
-        NULL,               /* pid out */
-        -1,                 /* timeout */
-        NULL,               /* cancellable */
-        NULL, NULL);        /* callback */
+        NULL,
+        G_SPAWN_DO_NOT_REAP_CHILD,
+        NULL, NULL,
+        &pid,
+        &error);
+
+    if (!ok) {
+        g_warning("Failed to launch gpab: %s", error ? error->message : "unknown error");
+        show_launch_error(app, error ? error->message : "unknown error");
+        g_clear_error(&error);
+        return;
+    }
+
+    app->gpab_pid = pid;
+    g_child_watch_add(pid, on_gpab_exited, app);
 }
 
 void integration_focus_tui(AppState *app)
 {
-    if (app->tui_window)
-        gtk_window_present(GTK_WINDOW(app->tui_window));
+    (void)app;
+    /* No embedded window to focus — gpab manages its own window/taskbar
+     * presence as an independent process. */
 }
 
 void integration_destroy_tui(AppState *app)
 {
-    if (app->tui_window)
-        gtk_window_destroy(GTK_WINDOW(app->tui_window));
-    /* on_tui_window_destroyed NULLs the pointers; no further action needed. */
+    (void)app;
+    /* gpab's lifetime is independent of bodychart's now — see file header.
+     * Deliberately does NOT kill app->gpab_pid: bodychart's own window
+     * closing shouldn't reach out and close gpab's, matching the "neither
+     * owns the other's lifecycle" design stated above. */
 }
