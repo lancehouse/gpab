@@ -73,6 +73,11 @@ class KBEntry:
     variants: str = ""
     cluster: str = ""
     note: str = ""
+    image_filename: str = ""  # bare filename (test.image_filename), DB-backed
+                               # entries only — resolve via kb_db.resolve_image_path()
+                               # before display. Empty for YAML-sourced entries
+                               # (added 2026-08-23; YAML KB files have no image
+                               # support yet — see kb_panel.py's module docstring).
 
     def render_lines(self) -> list[str]:
         """Return display lines for the KB panel."""
@@ -185,6 +190,7 @@ def _resolve_from_db(field_id: str) -> KBEntry | None:
         sn_sp=sn_sp,
         cluster="; ".join(cluster_lines),
         note=note,
+        image_filename=row["image_filename"] or "",
     )
 
 

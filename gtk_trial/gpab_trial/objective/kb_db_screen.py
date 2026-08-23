@@ -762,6 +762,17 @@ class KBDBWindow(Gtk.Window):
         tree_box.append(tree_scroll)
 
         # -- right: detail panel --------------------------------------------------
+        # Reference image (added 2026-08-23, no reference-TUI equivalent — see
+        # kb_panel.py's module docstring for the same feature/reasoning in the
+        # Ctrl+K panel): shown above the text, only for a "test" node whose
+        # image_filename resolves to a real file via kb_db.resolve_image_path;
+        # hidden for every other node type.
+        self.detail_picture = Gtk.Picture()
+        self.detail_picture.set_can_shrink(True)
+        self.detail_picture.set_content_fit(Gtk.ContentFit.CONTAIN)
+        self.detail_picture.set_size_request(-1, 220)
+        self.detail_picture.set_visible(False)
+
         self.detail_label = Gtk.Label()
         self.detail_label.set_use_markup(True)
         self.detail_label.set_wrap(True)
@@ -771,14 +782,21 @@ class KBDBWindow(Gtk.Window):
         self.detail_label.set_valign(Gtk.Align.START)
         self.detail_label.set_justify(Gtk.Justification.LEFT)
         self.detail_label.set_selectable(True)
-        self.detail_label.set_margin_top(8)
-        self.detail_label.set_margin_bottom(8)
-        self.detail_label.set_margin_start(10)
-        self.detail_label.set_margin_end(10)
         self.detail_label.set_markup(_dim("Select a condition, cluster, or test."))
+        # self.detail_picture starts hidden (set_visible(False) above) —
+        # nothing else to do here.
+
+        detail_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        detail_content.set_margin_top(8)
+        detail_content.set_margin_bottom(8)
+        detail_content.set_margin_start(10)
+        detail_content.set_margin_end(10)
+        detail_content.append(self.detail_picture)
+        detail_content.append(self.detail_label)
+
         self.detail_scroll = Gtk.ScrolledWindow()
         self.detail_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        self.detail_scroll.set_child(self.detail_label)
+        self.detail_scroll.set_child(detail_content)
         self.detail_scroll.set_size_request(420, -1)
         self.detail_scroll.set_vexpand(True)
 
@@ -889,6 +907,15 @@ class KBDBWindow(Gtk.Window):
         new_val = max(adj.get_lower(), min(new_val, adj.get_upper() - page))
         adj.set_value(new_val)
 
+    def _set_detail_image(self, image_filename: str | None) -> None:
+        path = kb_db.resolve_image_path(image_filename)
+        if path is None:
+            self.detail_picture.set_visible(False)
+            self.detail_picture.set_paintable(None)
+        else:
+            self.detail_picture.set_filename(str(path))
+            self.detail_picture.set_visible(True)
+
     # ------------------------------------------------------------------
     # Region list / tree loading
     # ------------------------------------------------------------------
@@ -898,6 +925,7 @@ class KBDBWindow(Gtk.Window):
             self._regions = _load_regions()
         except Exception as e:
             self.detail_label.set_markup(_color(f"DB error: {e}", "#e53935"))
+            self._set_detail_image(None)
             return
         for r in self._regions:
             self.region_list.append(_RegionRow(r["pab_id"], r["label"]))
@@ -933,6 +961,7 @@ class KBDBWindow(Gtk.Window):
             self.detail_label.set_markup(
                 _dim(f"Select a condition, cluster, or test from the {label} region.")
             )
+            self._set_detail_image(None)
             return
 
         cpr_conditions = [c for c in conditions if c["cluster_count"] > 0]
@@ -969,6 +998,7 @@ class KBDBWindow(Gtk.Window):
         self.detail_label.set_markup(
             _dim(f"Select a condition, cluster, or test from the {label} region.")
         )
+        self._set_detail_image(None)
 
     def _on_tree_selection_changed(self, selection: Gtk.TreeSelection) -> None:
         model, it = selection.get_selected()
@@ -980,10 +1010,14 @@ class KBDBWindow(Gtk.Window):
         node_type = data.get("type")
         if node_type == "condition":
             self.detail_label.set_markup(_render_condition(data["row"], data.get("region", "")))
+            self._set_detail_image(None)
         elif node_type == "cluster":
             self.detail_label.set_markup(_render_cluster(data["row"]))
+            self._set_detail_image(None)
         elif node_type == "test":
             self.detail_label.set_markup(_render_test(data["id"]))
+            test_row = _load_test_detail(data["id"])
+            self._set_detail_image(test_row["image_filename"] if test_row else None)
         else:
             return
         self.detail_scroll.get_vadjustment().set_value(0)

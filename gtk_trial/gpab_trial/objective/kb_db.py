@@ -7,6 +7,12 @@ DB path search order:
   2. ~/Projects/kb/output/clinical_kb.db (dev fallback, used if the symlink above
      hasn't been set up)
 
+Test reference images (added 2026-08-23) follow the identical pattern via
+find_images_dir(): ~/.local/share/pab/kb_images/ (symlinked to
+~/Projects/kb/output/images/), falling back to that dev path directly. The
+`test` table's `image_filename` column is a bare filename, never a path —
+resolve it against find_images_dir() before use.
+
 Connection is always read-only (mode=ro). Every query function opens and closes its
 own connection — nothing is cached, so callers always see the latest rebuilt DB.
 
@@ -24,12 +30,40 @@ _DB_CANDIDATES = [
     Path.home() / "Projects/kb/output/clinical_kb.db",
 ]
 
+_IMAGES_DIR_CANDIDATES = [
+    Path.home() / ".local/share/pab/kb_images",
+    Path.home() / "Projects/kb/output/images",
+]
+
 
 def find_db() -> Path | None:
     for p in _DB_CANDIDATES:
         if p.exists():
             return p
     return None
+
+
+def find_images_dir() -> Path | None:
+    for p in _IMAGES_DIR_CANDIDATES:
+        if p.is_dir():
+            return p
+    return None
+
+
+def resolve_image_path(image_filename: str | None) -> Path | None:
+    """image_filename is a bare filename from test.image_filename — resolve
+    it against find_images_dir() and confirm the file actually exists.
+    Returns None for no filename, no images dir, or a filename that doesn't
+    resolve to a real file (a stale/typo'd reference shouldn't crash the
+    panel, just show no image — same "missing data degrades gracefully"
+    approach as a KB resolve() miss elsewhere in this module)."""
+    if not image_filename:
+        return None
+    images_dir = find_images_dir()
+    if images_dir is None:
+        return None
+    path = images_dir / image_filename
+    return path if path.is_file() else None
 
 
 def open_db() -> sqlite3.Connection:
@@ -78,7 +112,7 @@ def load_tests_for_pab_region(pab_region_id: str) -> list[sqlite3.Row]:
             """
             SELECT t.id, t.name, t.also_known_as, t.procedure, t.positive_finding,
                    t.patient_position, t.sn, t.sp, t.plr, t.nlr, t.clinical_notes,
-                   t.pitfalls, tfm.pab_field_id, tfm.side, tfm.pab_json_path
+                   t.pitfalls, t.image_filename, tfm.pab_field_id, tfm.side, tfm.pab_json_path
             FROM test_field_map tfm
             JOIN test t ON t.id = tfm.test_id
             WHERE tfm.pab_json_path LIKE ?
@@ -99,7 +133,7 @@ def load_test_for_field(pab_field_id: str) -> sqlite3.Row | None:
             """
             SELECT t.id, t.name, t.also_known_as, t.procedure, t.positive_finding,
                    t.patient_position, t.sn, t.sp, t.plr, t.nlr, t.clinical_notes,
-                   t.pitfalls, tfm.pab_field_id, tfm.side
+                   t.pitfalls, t.image_filename, tfm.pab_field_id, tfm.side
             FROM test_field_map tfm
             JOIN test t ON t.id = tfm.test_id
             WHERE tfm.pab_field_id = ?

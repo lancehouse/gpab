@@ -6,6 +6,14 @@ is mounted once at the AssessmentView level, not per-section). Call
 update(region, field_id) whenever the focused field changes; a resolve
 miss preserves whatever's currently shown (no flicker moving focus to
 notes/sidebar/non-KB fields).
+
+Reference images (added 2026-08-23, no reference-TUI equivalent — this
+was one of the original motivations for moving off Textual, which can't
+render images at all): a Gtk.Picture above the text label, shown only
+when the resolved KBEntry has an image_filename that actually resolves to
+a real file (kb_db.resolve_image_path) — no reference image today just
+means the Picture stays hidden, not an error. DB-backed entries only
+(currently cervical/shoulder); YAML-sourced entries never have one.
 """
 
 from __future__ import annotations
@@ -15,6 +23,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Pango  # noqa: E402
 
+from . import kb_db
 from .kb_loader import get_registry, KBEntry
 
 
@@ -62,6 +71,19 @@ class KBPanel(Gtk.ScrolledWindow):
         self.add_css_class("kb-panel")
         self.set_visible(False)
 
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        content.set_margin_top(8)
+        content.set_margin_bottom(8)
+        content.set_margin_start(10)
+        content.set_margin_end(10)
+
+        self.picture = Gtk.Picture()
+        self.picture.set_can_shrink(True)
+        self.picture.set_content_fit(Gtk.ContentFit.CONTAIN)
+        self.picture.set_size_request(-1, 220)
+        self.picture.set_visible(False)
+        content.append(self.picture)
+
         self.label = Gtk.Label()
         self.label.set_hexpand(True)
         self.label.set_wrap(True)
@@ -70,14 +92,21 @@ class KBPanel(Gtk.ScrolledWindow):
         self.label.set_yalign(0.0)
         self.label.set_valign(Gtk.Align.START)
         self.label.set_justify(Gtk.Justification.LEFT)
-        self.label.set_margin_top(8)
-        self.label.set_margin_bottom(8)
-        self.label.set_margin_start(10)
-        self.label.set_margin_end(10)
         self.label.set_selectable(True)
-        self.set_child(self.label)
+        content.append(self.label)
+
+        self.set_child(content)
 
         self.show_placeholder()
+
+    def _set_image(self, image_filename: str) -> None:
+        path = kb_db.resolve_image_path(image_filename)
+        if path is None:
+            self.picture.set_visible(False)
+            self.picture.set_paintable(None)
+        else:
+            self.picture.set_filename(str(path))
+            self.picture.set_visible(True)
 
     def update(self, region: str, field_id: str) -> None:
         """Look up field_id in the KB and refresh panel text.
@@ -89,10 +118,13 @@ class KBPanel(Gtk.ScrolledWindow):
         if entry is None:
             return
         self.label.set_label(_render_entry(entry))
+        self._set_image(entry.image_filename)
 
     def show_raw(self, text: str) -> None:
         """Set panel content directly, bypassing the KB registry lookup."""
         self.label.set_label(text)
+        self._set_image("")
 
     def show_placeholder(self) -> None:
         self.label.set_label("Knowledge Base\n\nFocus a test or field to see info.")
+        self._set_image("")
