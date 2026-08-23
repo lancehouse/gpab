@@ -532,6 +532,20 @@ class TrialWindow(Gtk.ApplicationWindow):
             regions.remove(region_id)
         else:
             return
+        # Flush any pending debounced save FIRST, same reasoning as
+        # _flush_and_quit/_show_report: _sync_active_regions below destroys
+        # the outgoing region's container immediately. If a save was already
+        # scheduled (2s debounce) from an edit made moments ago and hadn't
+        # fired yet, _do_save_obj would run AFTER the container is gone —
+        # collect() can't see a destroyed widget, so that edit would be
+        # silently dropped from the merge-write entirely (found + fixed
+        # 2026-08-23 alongside the mount_region data-loss bug, as part of an
+        # audit for the same class of "widget destroyed before its data was
+        # ever read" bug).
+        if self._save_source_id_obj is not None:
+            GLib.source_remove(self._save_source_id_obj)
+            self._save_source_id_obj = None
+            self._do_save_obj()
         self._sync_active_regions(regions)
         self._schedule_save_obj()
 
