@@ -202,10 +202,13 @@ cleanup items.
 2. **Goniometer-import wizard stays on hold** — this list doesn't change that; it was never a
    blocker for daily use of everything else, and the condition the user set for picking it back up
    ("properly handling data with the loader and output files established") hasn't been revisited.
-3. Retire the `DEFAULT_SESSION` fallback hack in the root `gpab` launcher script (its own comment
-   already flags it as temporary, "remove this once Phase 6 lands") and decide whether a
-   `.desktop` entry or similar is worth adding for daily launch convenience — small, optional, not
-   a blocker.
+3. **✅ DONE, 2026-08-23.** Retired the `DEFAULT_SESSION` fallback in the root `gpab` launcher
+   script — it's now a manual/dev entry point only (`bodychart` is the real daily launch path since
+   it spawns `gpab` per session directly), so a missing session name is a plain usage error again,
+   matching `scripts/run.sh`'s own behavior. **`.desktop` entry: deliberately skipped, by user
+   decision** — `gpab` always requires a session name with no picker, and `bodychart`'s own existing
+   `.desktop` icon (from the real `pab` install, unaffected by this project) already is the daily
+   entry point post-integration; a bare "launch gpab" icon would have nothing to open.
 
 <details>
 <summary>Original Phase 6 plan (superseded 2026-08-23, kept for history)</summary>

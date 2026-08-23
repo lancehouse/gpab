@@ -8,15 +8,13 @@
 # instance predated it, not because the tab wasn't built) — this script kills
 # any running instance first so `gpab <name>` always reflects the latest code.
 #
-# Usage: gpab [session-name]   (same names scripts/run.sh accepts — checks
+# Usage: gpab <session-name>   (same names scripts/run.sh accepts — checks
 #                                ~/PAB/<name>/ first, then ~/PAB-gtktrial/<name>/)
 #
-# With no argument, falls back to a fixed test session (DEFAULT_SESSION
-# below) rather than printing a usage message — this is a temporary
-# convenience until the real launcher integration (CONVERSION_PLAN.md Phase
-# 6) replaces this script entirely; remove this fallback once that lands.
-DEFAULT_SESSION="XX_17_08_2026_2141"
-
+# No default-session fallback: now that bodychart launches gpab directly per
+# session (CONVERSION_PLAN.md Phase 6), this script's own daily-use role is
+# gone — it's a manual/dev entry point only, so a missing session name is a
+# usage error, not a convenience to paper over.
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")/gtk_trial"
 
@@ -24,8 +22,8 @@ pkill -f "gpab_trial\.main" 2>/dev/null || true
 sleep 0.3
 
 if [ $# -eq 0 ]; then
-    echo "No session given — defaulting to test session '$DEFAULT_SESSION'." >&2
-    exec bash scripts/run.sh "$DEFAULT_SESSION"
+    echo "Usage: gpab <session-name>" >&2
+    exit 1
 fi
 
 exec bash scripts/run.sh "$@"
