@@ -58,7 +58,7 @@ from .chart_watcher import ChartFileWatcher
 from .report_timer import ReportTimer
 from .goniometer_import import importer as gonio_importer
 from .goniometer_import.matcher import match_batch
-from .goniometer_import.wizard_screen import GonioImportWizard
+from .goniometer_import.wizard_screen import GonioImportWizard, GonioPatientPickerWindow
 
 AUTOSAVE_DEBOUNCE_MS = 2000
 
@@ -799,13 +799,42 @@ class TrialWindow(Gtk.ApplicationWindow):
         be what determines the inbox directory name convention
         (~/PAB/_inbox/goniometer/<code>/) in real use, confirmed against the
         two real .gonio.json samples already on this machine.
+
+        NO REFERENCE EQUIVALENT for what happens next (added 2026-08-23 per
+        direct user feedback): the reference TUI's exact-code match has no
+        fallback at all — a typo'd or mismatched patient_id is a silent
+        dead end there. This port tries the exact code first (unchanged
+        behaviour otherwise), and only when that finds nothing does it offer
+        a picker over whatever codes DO have data waiting
+        (GonioPatientPickerWindow), via importer.available_patient_codes().
         """
         session_json = load_session_json(self.session_file)
         patient_code = (session_json.get("patient_id") or "").strip()
-        if not patient_code:
-            self.save_status.set_label("No patient code on this session")
+
+        if patient_code and (gonio_importer.inbox_files_for(patient_code)
+                              or gonio_importer.imported_files_for(patient_code)):
+            self._run_gonio_import_for(patient_code)
             return
 
+        available = [s for s in gonio_importer.available_patient_codes() if s.code != patient_code]
+        if not available:
+            msg = (f"No goniometer data waiting for {patient_code}" if patient_code
+                   else "No goniometer data waiting for any patient")
+            self.save_status.set_label(msg)
+            return
+
+        def _after_pick(code: str | None) -> None:
+            if code:
+                self._run_gonio_import_for(code)
+
+        GonioPatientPickerWindow(self, patient_code, available, _after_pick).present()
+
+    def _run_gonio_import_for(self, patient_code: str) -> None:
+        """Given a resolved patient_code (exact match, or picked from
+        GonioPatientPickerWindow's fallback list), runs the actual
+        find-files -> match -> wizard -> apply flow. Split out from
+        _open_gonio_import so both the direct-match and picker-fallback
+        paths share it."""
         files = gonio_importer.inbox_files_for(patient_code)
         reimporting = False
         if not files:

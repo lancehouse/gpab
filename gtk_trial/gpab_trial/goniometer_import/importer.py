@@ -9,13 +9,22 @@ delete every other field already recorded for that region (active, muscle,
 special sections, other passive fields, notes). See matcher.py's docstring
 for the field-selection rationale.
 
-GTK port note (2026-08-23): identical to the reference
-pab_assessment/goniometer_import/importer.py except the import of `storage`
-(`from .. import storage` -> `pab_path_bootstrap` + `from pab_assessment
-import storage`, this port's standard pattern for reaching the reference
-package — see sections/diagnosis.py's cal_cp_model import for the same
-shape). Everything else — INBOX_ROOT, the read-modify-write logic, archive
-handling — is unchanged.
+GTK port note (2026-08-23): everything through archive_imported_file is
+identical to the reference pab_assessment/goniometer_import/importer.py
+except the import of `storage` (`from .. import storage` -> `pab_path_bootstrap`
++ `from pab_assessment import storage`, this port's standard pattern for
+reaching the reference package — see sections/diagnosis.py's cal_cp_model
+import for the same shape). INBOX_ROOT, the read-modify-write logic, and
+archive handling are unchanged.
+
+available_patient_codes() (below) is NEW, added the same day per direct
+user feedback: the reference TUI's action_import_gonio has no fallback at
+all when the open session's own patient_id has no exact-match inbox
+folder — a typo'd or mismatched code is a silent dead end there. This port
+adds one: app.py's _open_gonio_import tries the exact patient_id first
+(unchanged behaviour), and only when that finds nothing does it call this
+function to offer whatever codes DO have data waiting, rather than a flat
+"no data" message with no way forward.
 
 CALLER MUST, in this order (see app.py's _open_gonio_import): flush any
 pending debounced objective save BEFORE calling apply_grouped_values (an
@@ -29,6 +38,7 @@ tree) — mirrors tui.py's action_import_gonio exactly.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from .. import pab_path_bootstrap  # noqa: F401  (sys.path side effect)
@@ -36,6 +46,32 @@ from pab_assessment import storage  # noqa: E402
 from .matcher import GroupedValue, Measurement
 
 INBOX_ROOT = Path.home() / "PAB" / "_inbox" / "goniometer"
+
+
+@dataclass
+class InboxPatientSummary:
+    code: str
+    pending: int   # not-yet-imported .gonio.json count
+    imported: int  # already-imported .gonio.json count (available to re-apply)
+
+
+def available_patient_codes() -> list[InboxPatientSummary]:
+    """Every patient code with ANY goniometer data waiting under INBOX_ROOT —
+    pending or already-imported — sorted by code. Used only as a fallback
+    when the open session's own patient_id has no exact match; see this
+    module's own docstring."""
+    if not INBOX_ROOT.exists():
+        return []
+    summaries: list[InboxPatientSummary] = []
+    for d in sorted(INBOX_ROOT.iterdir()):
+        if not d.is_dir():
+            continue
+        pending = len(list(d.glob("*.gonio.json")))
+        imported_dir = d / "_imported"
+        imported = len(list(imported_dir.glob("*.gonio.json"))) if imported_dir.exists() else 0
+        if pending or imported:
+            summaries.append(InboxPatientSummary(d.name, pending, imported))
+    return summaries
 
 
 def inbox_files_for(patient_code: str) -> list[Path]:

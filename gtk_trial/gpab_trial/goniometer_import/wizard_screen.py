@@ -32,6 +32,12 @@ GTK port notes:
   initial focus and digits work immediately; grabbing the entry via
   Tab/click is what switches digits back to being typed instead of
   picking).
+
+GonioPatientPickerWindow (below) has NO reference equivalent — added
+2026-08-23 per direct user feedback: the reference TUI's exact-patient-code
+match has no fallback at all, so a typo'd or mismatched code was a silent
+dead end. See importer.available_patient_codes()'s docstring for the
+matching app.py-side change.
 """
 
 from __future__ import annotations
@@ -45,6 +51,7 @@ from gi.repository import Gtk, Gdk, Pango  # noqa: E402
 
 from .field_dictionary_active import ROM_FIELDS
 from .field_dictionary_passive import ROM_FIELDS as PASSIVE_ROM_FIELDS
+from .importer import InboxPatientSummary
 from .matcher import GroupedValue, MatchResult, group_resolved
 from .rom_field import RomField
 
@@ -365,4 +372,73 @@ class GonioImportWizard(Gtk.Window):
             return
         self._finished = True
         self._on_result(result)
+        self.close()
+
+
+class GonioPatientPickerWindow(Gtk.Window):
+    """Shown when the open session's own patient code has no exact-match
+    goniometer data waiting — lists every OTHER patient code that does have
+    something in the inbox (pending and/or already-imported), so a mismatched
+    or typo'd code isn't a dead end. Calls on_picked with the chosen code, or
+    None if cancelled. No reference equivalent — see module docstring."""
+
+    def __init__(self, parent: Gtk.Window, requested_code: str,
+                 available: list[InboxPatientSummary], on_picked) -> None:
+        super().__init__(transient_for=parent, modal=True, title="Import ROM — pick a patient")
+        self.set_default_size(420, -1)
+        self._on_picked = on_picked
+        self._finished = False
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.set_margin_top(12)
+        box.set_margin_bottom(12)
+        box.set_margin_start(12)
+        box.set_margin_end(12)
+
+        if requested_code:
+            header_text = f'No goniometer data for "{requested_code}" — pick from what\'s waiting:'
+        else:
+            header_text = "No patient code on this session — pick which patient's data to import:"
+        prompt = Gtk.Label(label=header_text)
+        prompt.set_wrap(True)
+        prompt.set_halign(Gtk.Align.START)
+        box.append(prompt)
+
+        self._first_button: Gtk.Button | None = None
+        for s in available:
+            parts = []
+            if s.pending:
+                parts.append(f"{s.pending} new")
+            if s.imported:
+                parts.append(f"{s.imported} already imported")
+            detail = ", ".join(parts) if parts else "no files"
+            btn = Gtk.Button(label=f"{s.code}  ({detail})")
+            btn.connect("clicked", lambda _b, code=s.code: self._pick(code))
+            box.append(btn)
+            if self._first_button is None:
+                self._first_button = btn
+
+        self.set_child(box)
+
+        key_ctrl = Gtk.EventControllerKey()
+        key_ctrl.connect("key-pressed", self._on_key)
+        self.add_controller(key_ctrl)
+
+        if self._first_button is not None:
+            self.connect("show", lambda *_a: self._first_button.grab_focus())
+
+    def _pick(self, code: str) -> None:
+        self._finish(code)
+
+    def _on_key(self, _ctrl, keyval, _keycode, _state) -> bool:
+        if Gdk.keyval_name(keyval) == "Escape":
+            self._finish(None)
+            return True
+        return False
+
+    def _finish(self, result) -> None:
+        if self._finished:
+            return
+        self._finished = True
+        self._on_picked(result)
         self.close()
