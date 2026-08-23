@@ -21,7 +21,7 @@ from gi.repository import Gtk, Gdk, GLib  # noqa: E402
 from .storage_bridge import (
     load_assessment_block, save_sections, SECTION_KEYS,
     load_objective_block, save_objective_sections, OBJECTIVE_SECTION_KEYS,
-    generate_all_reports_final,
+    generate_all_reports_final, load_session_json,
 )
 from .sections.consent import ConsentSection
 from .sections.subjective import SubjectiveSection
@@ -56,6 +56,9 @@ from .report_modal import ReportModal
 from .notes_overlay import NotesOverlay
 from .chart_watcher import ChartFileWatcher
 from .report_timer import ReportTimer
+from .goniometer_import import importer as gonio_importer
+from .goniometer_import.matcher import match_batch
+from .goniometer_import.wizard_screen import GonioImportWizard
 
 AUTOSAVE_DEBOUNCE_MS = 2000
 
@@ -446,6 +449,22 @@ class TrialWindow(Gtk.ApplicationWindow):
     # objective tab) is untouched.
     # ------------------------------------------------------------------
 
+    def _load_region_data(self, region_id: str, objective: dict | None = None) -> None:
+        """Loads region_id's saved data (active/passive/muscle/special) from
+        _objective.json into its four containers — regardless of whether
+        they were just mounted or have been sitting mounted all along.
+        Pass a pre-read objective block (from load_objective_block) to
+        avoid re-reading the file when the caller already has one, e.g.
+        _load()'s own loop over every active region; omit it for a
+        standalone call, e.g. from _mount_region."""
+        if objective is None:
+            objective = load_objective_block(self.session_file)
+        region_data = objective.get(region_id, {})
+        self.active_movement.get_container(region_id).load(region_data.get("active", {}))
+        self.passive_movement.get_container(region_id).load(region_data.get("passive", {}))
+        self.muscle_testing.get_container(region_id).load(region_data.get("muscle", {}))
+        self.special_tests.get_container(region_id).load(region_data.get("special", {}))
+
     def _mount_region(self, region_id: str) -> None:
         """Mount region_id's four containers (active/passive/muscle/special)
         AND load its previously-saved data into them — see bug fixed
@@ -461,16 +480,24 @@ class TrialWindow(Gtk.ApplicationWindow):
         disk), toggled back on (field blank), which then got saved back as
         blank, wiping the real value. Loading here, unconditionally on every
         mount (construction-time default regions included), makes "freshly
-        mounted" and "has its saved data" the same thing, so no caller needs
-        its own follow-up load step — _load() no longer needs one either."""
+        mounted" and "has its saved data" the same thing.
+
+        NOTE (bug found 2026-08-23, same day, goniometer-import testing):
+        this alone is NOT enough for _load() to correctly refresh an
+        ALREADY-mounted region — _sync_active_regions only calls this for
+        regions newly transitioning to active, so a region that was active
+        both before and after a reload (the common case) never went through
+        here again, and its on-screen values silently stayed stale even
+        though the file changed. Confirmed live: a goniometer import wrote
+        124° into an already-active Shoulder region's data, apply correctly
+        rewrote _objective.json and called _load(), but the on-screen field
+        kept showing an old manually-typed value — because _load() only
+        reloads a region THROUGH here when _sync_active_regions treats it as
+        newly-mounted. Fixed there, not here — see _load()'s own explicit
+        loop over every currently-active region."""
         for tab in self._region_tabs:
             tab.mount_region(region_id)
-        objective = load_objective_block(self.session_file)
-        region_data = objective.get(region_id, {})
-        self.active_movement.get_container(region_id).load(region_data.get("active", {}))
-        self.passive_movement.get_container(region_id).load(region_data.get("passive", {}))
-        self.muscle_testing.get_container(region_id).load(region_data.get("muscle", {}))
-        self.special_tests.get_container(region_id).load(region_data.get("special", {}))
+        self._load_region_data(region_id)
 
     def _unmount_region(self, region_id: str) -> None:
         for tab in self._region_tabs:
@@ -575,14 +602,18 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.sensory.load(objective.get("sensory", {}))
         self.crps.load(objective.get("crps", {}))
         self.functional.load_goals(subjective_data)
-        # _mount_region (called from _sync_active_regions below, for every
-        # region in "active_regions") now loads each region's saved data
-        # itself — see its docstring — so no separate loop is needed here
-        # any more (removed 2026-08-23; used to be the ONLY place region
-        # data ever got loaded, which was the root cause of the
-        # toggle-off/toggle-on data-loss bug _mount_region's docstring
-        # describes).
         self._sync_active_regions(objective.get("active_regions", _DEFAULT_ACTIVE_REGIONS))
+        # Explicit, unconditional loop — NOT redundant with _mount_region's
+        # own load (bug found 2026-08-23, see _mount_region's docstring
+        # note): _sync_active_regions only mounts (and therefore only loads)
+        # regions newly transitioning to active. A region already active
+        # both before and after this _load() call — the common case for any
+        # reload of an already-open session, e.g. after a goniometer import
+        # writes new values into an already-active region — would otherwise
+        # never have its on-screen containers refreshed at all, even though
+        # the file just changed underneath them.
+        for region_id in self._active_regions:
+            self._load_region_data(region_id, objective)
         self._push_region_tests_to_pain_classification()
         self._update_medical_tab_color()
 
@@ -728,6 +759,9 @@ class TrialWindow(Gtk.ApplicationWindow):
         if ctrl_held and name.lower() == "t":
             self._toggle_grid_overview()
             return True
+        if ctrl_held and name.lower() == "g":
+            self._open_gonio_import()
+            return True
         if alt_held and name.lower() in self._ALT_KEY_MAP:
             self._show_section("02_subjective")
             self.subjective.jump_to(self._ALT_KEY_MAP[name.lower()])
@@ -747,6 +781,90 @@ class TrialWindow(Gtk.ApplicationWindow):
             self._save_source_id_obj = None
             self._do_save_obj()
         ReportModal(self, self.session_file).present()
+
+    def _open_gonio_import(self) -> None:
+        """Ctrl+G — import goniometer ROM measurements for the open patient
+        from ~/PAB/_inbox/goniometer/<code>/, via a fast review wizard, into
+        the matching AROM or PROM fields per each measurement's phone-set
+        mode. GTK port of tui.py's action_import_gonio — same fallback to
+        the most-recently-imported file when nothing new is pending (so a
+        mistake spotted after Apply can be fixed by re-running and
+        re-applying), same combine-multiple-pending-files-into-one-review
+        behaviour, same reload-from-disk after apply.
+
+        patient_code source: the reference TUI reads SessionHeader.patient_id
+        (a TUI-only widget gpab has no equivalent of) — this port reads the
+        same value gpab already has on disk, _session.json's own
+        "patient_id" field, via load_session_json. That file also happens to
+        be what determines the inbox directory name convention
+        (~/PAB/_inbox/goniometer/<code>/) in real use, confirmed against the
+        two real .gonio.json samples already on this machine.
+        """
+        session_json = load_session_json(self.session_file)
+        patient_code = (session_json.get("patient_id") or "").strip()
+        if not patient_code:
+            self.save_status.set_label("No patient code on this session")
+            return
+
+        files = gonio_importer.inbox_files_for(patient_code)
+        reimporting = False
+        if not files:
+            files = gonio_importer.imported_files_for(patient_code)[:1]  # most recent only
+            reimporting = True
+        if not files:
+            self.save_status.set_label(f"No goniometer data waiting for {patient_code}")
+            return
+
+        # Combine every pending file for this patient into one review pass —
+        # grouping/side-inference then spans the whole visit even if the
+        # phone sent it in more than one batch.
+        combined = []
+        offset = 0
+        for f in files:
+            _, measurements = gonio_importer.load_gonio_measurements(f)
+            for m in measurements:
+                m.index += offset
+            combined.extend(measurements)
+            offset += len(measurements)
+
+        if not combined:
+            self.save_status.set_label(f"Goniometer file(s) for {patient_code} had no measurements")
+            return
+
+        results = match_batch(combined)
+
+        def _after_wizard(grouped) -> None:
+            if not grouped:
+                return  # cancelled — nothing written, files stay where they were
+
+            # Flush any pending debounced objective save FIRST — apply_grouped_values
+            # writes _objective.json directly, behind the live widget tree. An
+            # already-armed debounce firing AFTER that write would collect
+            # stale in-memory values and silently overwrite the freshly
+            # imported ones (same class of bug fixed in _on_region_toggled
+            # earlier the same day). Order matters: flush, then apply, then
+            # archive, then reload.
+            if self._save_source_id_obj is not None:
+                GLib.source_remove(self._save_source_id_obj)
+                self._save_source_id_obj = None
+                self._do_save_obj()
+
+            gonio_importer.apply_grouped_values(self.session_file, grouped)
+            for f in files:
+                gonio_importer.archive_imported_file(f)
+
+            verb = "Re-imported" if reimporting else "Imported"
+            self.save_status.set_label(f"{verb} {len(grouped)} ROM field(s) for {patient_code}")
+
+            # Reload everything from disk so the new values show immediately
+            # — same path used for opening a session, and the only way the
+            # live widget tree picks up a write that just happened entirely
+            # outside it. _load()'s _sync_active_regions call correctly
+            # mounts (and now loads data into, per the mount_region fix)
+            # any region the import newly activated.
+            self._load()
+
+        GonioImportWizard(self, results, _after_wizard).present()
 
     def _toggle_notes(self) -> None:
         """F10 — matches main.py's action_toggle_notes: hiding refocuses the
