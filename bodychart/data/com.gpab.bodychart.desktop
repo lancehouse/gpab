@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=PhysioChart (gpab dev)
+Comment=gpab R&D build — bodychart + native GTK assessment (launches gpab directly, no terminal)
+Exec=/home/lance/Projects/gpab/bodychart/build/bodychart
+Icon=/home/lance/Projects/gpab/bodychart/data/icons/hicolor/128x128/apps/com.pab.bodychart.png
+Terminal=false
+Type=Application
+Categories=Science;MedicalSoftware;
+Keywords=physio;physiotherapy;body chart;pain;dermatome;gpab;
+StartupNotify=true

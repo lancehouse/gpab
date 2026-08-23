@@ -85,8 +85,16 @@ int main(int argc, char *argv[])
     settings_apply_args(&state, &argc, argv);
     svg_regions_load(&state.svg_regions);
 
+    /* Distinct app ID from production's "com.pab.bodychart" (this clone
+     * only, 2026-08-23) — GtkApplication is single-instance per ID, so
+     * sharing production's ID would mean launching this gpab-integrated
+     * build while pabd/pabs's own bodychart is already running silently
+     * hands off to that OLD process instead of starting this one, the same
+     * class of bug fixed for gpab itself in integration.c. See CLAUDE.md's
+     * isolation guarantee — this file is deliberately modified here only,
+     * ~/Projects/pab's own main.c is untouched. */
     GtkApplication *gtk_app = gtk_application_new(
-        "com.pab.bodychart",
+        "com.gpab.bodychart",
         G_APPLICATION_DEFAULT_FLAGS);
 
     g_signal_connect(gtk_app, "activate", G_CALLBACK(on_activate), &state);

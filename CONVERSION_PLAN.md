@@ -205,10 +205,24 @@ cleanup items.
 3. **✅ DONE, 2026-08-23.** Retired the `DEFAULT_SESSION` fallback in the root `gpab` launcher
    script — it's now a manual/dev entry point only (`bodychart` is the real daily launch path since
    it spawns `gpab` per session directly), so a missing session name is a plain usage error again,
-   matching `scripts/run.sh`'s own behavior. **`.desktop` entry: deliberately skipped, by user
-   decision** — `gpab` always requires a session name with no picker, and `bodychart`'s own existing
-   `.desktop` icon (from the real `pab` install, unaffected by this project) already is the daily
-   entry point post-integration; a bare "launch gpab" icon would have nothing to open.
+   matching `scripts/run.sh`'s own behavior. **A standalone "launch gpab directly" `.desktop` entry
+   was deliberately skipped**, by user decision — `gpab` always requires a session name with no
+   picker, so a bare icon for it would have nothing to open.
+
+   **A `.desktop` entry for this clone's own `bodychart` build was added instead** (same day,
+   follow-on request) — `bodychart/data/com.gpab.bodychart.desktop`, installed at
+   `~/.local/share/applications/com.gpab.bodychart.desktop`, `Exec`ing this clone's binary
+   (`~/Projects/gpab/bodychart/build/bodychart`) by absolute path directly, never through
+   `pabd`/`pabs`. This is what makes "launch from the GNOME app grid instead of a terminal" actually
+   work, since *this* bodychart is the one that spawns `gpab` per session. Building it surfaced one
+   more instance of the exact bug class fixed earlier for `gpab` itself: `main.c` still used
+   production's own GTK application ID (`com.pab.bodychart`), and `GtkApplication` is single-instance
+   per ID — launching this build while `pabd`/`pabs`'s production bodychart was already running would
+   have silently handed off to *that* process instead of starting this one. Fixed by giving this
+   clone's `main.c` a distinct ID, `com.gpab.bodychart` (source change, this clone only — production
+   `~/Projects/pab/bodychart/src/main.c` untouched). Verified live via `gtk-launch com.gpab.bodychart`
+   (the same path GNOME's app grid uses): launch dialog appeared, icon shows correctly in the GNOME
+   grid/search.
 
 <details>
 <summary>Original Phase 6 plan (superseded 2026-08-23, kept for history)</summary>
