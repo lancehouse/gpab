@@ -584,8 +584,12 @@ class TrialWindow(Gtk.ApplicationWindow):
     #   F4               → Objective mode    (BINDINGS f4 "section_objective" —
     #                      enters Objective mode, resuming whichever objective
     #                      tab was last active there, default General Obs)
-    #   Ctrl+F5          → Neurological      (BINDINGS ctrl+f5 "obj_neurological"
-    #                      — the TUI's precise jump straight to this section)
+    #   Ctrl+F1–F8       → direct objective-tab jump (BINDINGS ctrl+f1..f8
+    #                      "obj_general"/"obj_functional"/"obj_active"/
+    #                      "obj_passive"/"obj_neurological"/"obj_sensory"/
+    #                      "obj_muscle"/"obj_special" — each just
+    #                      _enter_objective_mode() + _show_section(), same as
+    #                      main.py's own _goto_objective_section helper)
     #   Alt+<letter>     subjective jump     (BINDINGS alt+s/h/b/m/a/w/e/4/p/g/r)
     #   Ctrl+Q           quit, flushing any pending debounced save first
     #   Ctrl+A           select-all in the focused text field
@@ -595,6 +599,22 @@ class TrialWindow(Gtk.ApplicationWindow):
         "s": "symptoms", "h": "history", "b": "behaviour", "m": "management",
         "a": "activity", "w": "work", "e": "sleep", "4": "24hr",
         "p": "psychosocial", "g": "goals", "r": "risk",
+    }
+
+    # Ctrl+F1..F8 -> objective section id, matching main.py's BINDINGS table
+    # and action_obj_* methods exactly (order: General, Functional, Active,
+    # Passive, Neurological, Sensory, Muscle, Special — NOT the sidebar's
+    # own display order, which puts Functional after Active/Passive; this
+    # is the TUI's own F-key numbering, kept as-is for muscle memory).
+    _CTRL_FN_OBJECTIVE_MAP = {
+        "F1": "01_general",
+        "F2": "07_functional",
+        "F3": "02_active",
+        "F4": "03_passive",
+        "F5": "04_neurological",
+        "F6": "05_sensory",
+        "F7": "06_muscle",
+        "F8": "08_special",
     }
 
     def _on_global_key(self, _ctrl, keyval, _keycode, state) -> bool:
@@ -613,13 +633,18 @@ class TrialWindow(Gtk.ApplicationWindow):
                 self.grid_overview.move_cursor(name)
                 return True
 
-        if name == "F1":
+        if ctrl_held and name in self._CTRL_FN_OBJECTIVE_MAP:
+            self._enter_objective_mode()
+            self._show_section(self._CTRL_FN_OBJECTIVE_MAP[name])
+            return True
+
+        if name == "F1" and not ctrl_held:
             self._show_section("01_consent")
             return True
-        if name == "F2":
+        if name == "F2" and not ctrl_held:
             self._show_section("02_subjective")
             return True
-        if name == "F3":
+        if name == "F3" and not ctrl_held:
             self._show_section("03_medical")
             return True
         if name == "F5" and not ctrl_held:
@@ -640,15 +665,11 @@ class TrialWindow(Gtk.ApplicationWindow):
         if name == "F10":
             self._toggle_notes()
             return True
-        if name == "F4":
+        if name == "F4" and not ctrl_held:
             self._enter_objective_mode()
             return True
         if name == "F11":
             self._toggle_fullscreen()
-            return True
-        if ctrl_held and name == "F5":
-            self._enter_objective_mode()
-            self._show_section("04_neurological")
             return True
         if ctrl_held and name.lower() == "q":
             self._flush_and_quit()
