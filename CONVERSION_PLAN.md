@@ -275,6 +275,49 @@ Textual `tui.py`/`main.py` for retirement. None of that work should start until 
 
 </details>
 
+## Flagged for future work (2026-08-23 — deliberately not started)
+
+User is taking gpab into real clinical use starting tomorrow and wants real-world feedback to drive
+what comes next, rather than speculatively building either of these now. Both were researched and
+discussed in detail same day as the KB image feature (commits `80222af`/`96e1baf`); recorded here so
+neither needs re-deriving cold.
+
+**1. Non-region-based KB images (e.g. a dermatome map in the Neurological section).** The mechanism
+built for region-based test images (Ctrl+K/Ctrl+D, `image_filename` column, `output/images/`) applies
+identically here — no new plumbing needed. What's actually needed:
+- Real, reusable source assets already exist and don't need to be created: `bodychart/views/anterior
+  dermatomes.svg` / `posterior dermatomes.svg` (full labeled reference diagrams), and
+  `bodychart/src/overlay_data/dermatomes.c` (per-dermatome path data C4–S2, what bodychart's own live
+  overlay renders from).
+- Two tiers: (a) cheap — export the two existing SVGs as-is, show the same whole map for every
+  dermatome field (~an hour); (b) better — batch-render each dermatome's own highlighted shape into
+  its own PNG from the existing per-segment path data (no live bodychart coupling needed, a one-time
+  script), mapped per-field like any other KB image.
+- **Real blocker, found during research, not about images at all**: individual dermatome fields
+  (`sn_c5_l`, `sn_t1_l`, etc.) have **no `test_field_map` entry in the KB database yet** —
+  `source/msk_clusters_pab.csv` has an explicit existing note flagging this as an unresolved
+  authorship decision (one entry per dermatome vs. one composite entry). This needs a clinical-content
+  decision before an image would even have a field to attach to — not something to solve in code.
+- Durability risk: `overlay_data/dermatomes.c` self-describes as "clinically-approximate initial
+  paths — refine over time." Pre-rendered per-dermatome PNGs (tier b) would silently drift from
+  bodychart's own live shapes if those are ever corrected, with no automatic link between the two.
+
+**2. Drag-gesture bulk-select for grid rows** (e.g. dragging down a myotome grade column C5→T1 to set
+several rows to the same value in one motion, instead of tapping each one). Technically a good fit —
+`Gtk.GestureDrag` + `Gtk.Widget.pick()` for live hit-testing, not `Gtk.GestureZoom`/pinch (that's a
+2-finger distance gesture, the wrong tool for "apply this value to a range"). Estimated ~a day or two
+for a first working version on one grid type, built as a shared/reusable behavior (same pattern as
+`grid_nav.py`) so it generalizes to Sensory/Muscle grades rather than being one-off. **Three design
+decisions still needed from the user before building, not something to decide unilaterally**:
+1. Same column-position replicated down every row the drag passes over (recommended — more
+   touch-reliable than raw spatial hit-testing on a dense grid), vs. literally whatever's under the
+   finger.
+2. Live visual feedback (highlight each row as the drag passes over it, before commit on release) —
+   recommended given "never lose data" is already a standing project rule; a silent bulk-set is the
+   wrong default.
+3. Misfire protection so an accidental drag-that-starts-as-a-scroll doesn't turn into a bulk edit,
+   and so the gesture coexists cleanly with the tab's own normal scroll behavior on the same surface.
+
 ## Standing rules for every phase
 
 1. **Verify, don't eyeball.** Every section gets a `collect()`/`load()` round-trip diff against
