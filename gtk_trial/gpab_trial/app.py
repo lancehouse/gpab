@@ -447,8 +447,30 @@ class TrialWindow(Gtk.ApplicationWindow):
     # ------------------------------------------------------------------
 
     def _mount_region(self, region_id: str) -> None:
+        """Mount region_id's four containers (active/passive/muscle/special)
+        AND load its previously-saved data into them — see bug fixed
+        2026-08-23. RegionTabContent.mount_region() only ever creates blank
+        containers; nothing loaded saved data back in except a one-time loop
+        in _load() covering whichever regions happened to already be active
+        at session-open time. Toggling a region off then back on (or any
+        region not active at open) called this method directly with no
+        equivalent step, so the new container stayed blank — and the very
+        next debounced autosave then collected that blank container and
+        overwrote the correct on-disk data with it. Confirmed live: cervical
+        flexion ROM entered, region toggled off (data still correct on
+        disk), toggled back on (field blank), which then got saved back as
+        blank, wiping the real value. Loading here, unconditionally on every
+        mount (construction-time default regions included), makes "freshly
+        mounted" and "has its saved data" the same thing, so no caller needs
+        its own follow-up load step — _load() no longer needs one either."""
         for tab in self._region_tabs:
             tab.mount_region(region_id)
+        objective = load_objective_block(self.session_file)
+        region_data = objective.get(region_id, {})
+        self.active_movement.get_container(region_id).load(region_data.get("active", {}))
+        self.passive_movement.get_container(region_id).load(region_data.get("passive", {}))
+        self.muscle_testing.get_container(region_id).load(region_data.get("muscle", {}))
+        self.special_tests.get_container(region_id).load(region_data.get("special", {}))
 
     def _unmount_region(self, region_id: str) -> None:
         for tab in self._region_tabs:
@@ -539,15 +561,14 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.sensory.load(objective.get("sensory", {}))
         self.crps.load(objective.get("crps", {}))
         self.functional.load_goals(subjective_data)
+        # _mount_region (called from _sync_active_regions below, for every
+        # region in "active_regions") now loads each region's saved data
+        # itself — see its docstring — so no separate loop is needed here
+        # any more (removed 2026-08-23; used to be the ONLY place region
+        # data ever got loaded, which was the root cause of the
+        # toggle-off/toggle-on data-loss bug _mount_region's docstring
+        # describes).
         self._sync_active_regions(objective.get("active_regions", _DEFAULT_ACTIVE_REGIONS))
-        for region_id in self._active_regions:
-            region_data = objective.get(region_id, {})
-            self.active_movement.get_container(region_id).load(region_data.get("active", {}))
-            self.passive_movement.get_container(region_id).load(region_data.get("passive", {}))
-            self.muscle_testing.get_container(region_id).load(region_data.get("muscle", {}))
-            self.special_tests.get_container(region_id).load(region_data.get("special", {}))
-        # _sync_active_regions above already pushed once (mount time, before
-        # these loads ran) — push again now that region data is populated.
         self._push_region_tests_to_pain_classification()
         self._update_medical_tab_color()
 
