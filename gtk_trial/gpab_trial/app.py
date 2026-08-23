@@ -1395,5 +1395,22 @@ def build_app(session_file: str) -> Gtk.Application:
 
         win.present()
 
+        # Default to fullscreen on startup — per direct user feedback
+        # 2026-08-23: "full attention, no distraction" was the whole point
+        # of this touch-first port, and opening windowed undercut that.
+        # Deferred 200ms, not called immediately after present() — same
+        # rationale, and the same proven fix, as bodychart's own
+        # deferred_fullscreen in window.c: requesting fullscreen before the
+        # compositor has finished the initial windowed configure round-trip
+        # is exactly the kind of thing that's already needed a workaround
+        # once on this machine's compositor. F11 (_toggle_fullscreen) still
+        # works normally afterward since _is_fullscreen is set to match.
+        def _start_fullscreen() -> bool:
+            win.fullscreen()
+            win._is_fullscreen = True
+            return GLib.SOURCE_REMOVE
+
+        GLib.timeout_add(200, _start_fullscreen)
+
     app.connect("activate", on_activate)
     return app
