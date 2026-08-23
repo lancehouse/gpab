@@ -53,6 +53,7 @@ from .footer import FooterBar
 from .report_modal import ReportModal
 from .notes_overlay import NotesOverlay
 from .chart_watcher import ChartFileWatcher
+from .report_timer import ReportTimer
 
 AUTOSAVE_DEBOUNCE_MS = 2000
 
@@ -349,7 +350,15 @@ class TrialWindow(Gtk.ApplicationWindow):
         # read, not a stale/absent value.
         self._chart_watcher = ChartFileWatcher(self.session_file, self._on_chart_update)
         self._chart_watcher.start()
-        self.connect("destroy", lambda *_a: self._chart_watcher.stop())
+
+        # -- Periodic background report regeneration — see report_timer.py's
+        # module docstring for the full design (60s cadence, matching
+        # assessment_view.py's own _report_interval; independent of Ctrl+R's
+        # report_modal.py, exactly like the reference TUI).
+        self._report_timer = ReportTimer(self.session_file)
+        self._report_timer.start()
+
+        self.connect("destroy", lambda *_a: (self._chart_watcher.stop(), self._report_timer.stop()))
 
     # ------------------------------------------------------------------
     # Navigation

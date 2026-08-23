@@ -17,6 +17,8 @@ from pab_assessment.storage import (  # noqa: E402
     load_objective,
     save_objective,
     export_session_report,
+    save_raw_report,
+    save_clean_reports,
 )
 
 # Section id -> JSON key, matching assessment_view.py's _SEC_KEYS convention.
@@ -108,6 +110,22 @@ def generate_report(session_file: str) -> str:
         return Path(out_path).read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def generate_all_reports(session_file: str) -> None:
+    """Regenerate *_raw.txt, *_report.md, and *_clean.txt/*_clean.md — same
+    three calls as assessment_view.py's _generate_reports() (its 60s
+    background-timer path, not Ctrl+R's, which additionally passes
+    clean=True/dev=True to export_session_report and also runs pandoc/docx —
+    neither of those apply to this 60s path, matching the TUI exactly: see
+    tui.py's action_open_report_modal vs assessment_view.py's
+    _generate_reports for the two different call shapes). Called from
+    report_timer.py's background thread — see that module's docstring for
+    why storage.py's own functions are safe to call off the GTK main thread.
+    """
+    save_raw_report(session_file)
+    export_session_report(session_file)
+    save_clean_reports(session_file)
 
 
 __all__ = [
