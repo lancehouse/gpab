@@ -28,6 +28,11 @@ class ConsentSection(Gtk.Box, SectionBase):
         self.set_margin_end(8)
         self._loading = False
         self._on_changed = None  # set by app.py: callable(), fired on any field change
+        self._on_below_framing_changed = None  # set by app.py: callable(), fired only on
+        # fields from "Session Framing" onward (starts the session timer —
+        # deliberately narrower than _on_changed, which also covers
+        # preferred_name/consent checkboxes above the Session Framing
+        # header and shouldn't start the clock)
 
         title = Gtk.Label(label="Consent & Session Setup")
         title.add_css_class("section-title")
@@ -143,6 +148,25 @@ class ConsentSection(Gtk.Box, SectionBase):
         ):
             ta.textview.get_buffer().connect("changed", self._field_changed)
 
+        # Second, narrower wiring for the session-timer trigger: every field
+        # from "Session Framing" onward, EXCLUDING preferred_name and the two
+        # Consent checkboxes above it (see _on_below_framing_changed above).
+        below_framing_checkbuttons = (
+            self.framing_pain_multifactorial, self.framing_education_treatment,
+            self.cause_understanding,
+            self.belief_hurt_harm, self.belief_unsafe, self.belief_passive,
+            self.belief_rehab, self.belief_high_se, self.belief_internal_locus,
+        )
+        for cb in below_framing_checkbuttons:
+            cb.connect("changed", self._below_framing_field_changed)
+
+        for ta in (
+            self.patient_expectations, self.reason_for_attending,
+            self.cause_understanding_detail, self.prognosis_expectations,
+            self.treatment_preference, self.belief_notes,
+        ):
+            ta.textview.get_buffer().connect("changed", self._below_framing_field_changed)
+
     # ------------------------------------------------------------------
 
     def _field_changed(self, *_args) -> None:
@@ -154,6 +178,15 @@ class ConsentSection(Gtk.Box, SectionBase):
 
     def set_on_changed(self, callback) -> None:
         self._on_changed = callback
+
+    def _below_framing_field_changed(self, *_args) -> None:
+        if self._loading:
+            return
+        if self._on_below_framing_changed:
+            self._on_below_framing_changed()
+
+    def set_on_below_framing_changed(self, callback) -> None:
+        self._on_below_framing_changed = callback
 
     # ------------------------------------------------------------------
     # Data — keys match pab_assessment.sections.consent.ConsentSection exactly

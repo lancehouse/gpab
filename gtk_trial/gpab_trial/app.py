@@ -7,6 +7,7 @@ relaxation of 2026-08-22) a real ~/PAB/<name>/ session directly.
 
 from __future__ import annotations
 import logging
+import subprocess
 import threading
 from pathlib import Path
 
@@ -56,11 +57,21 @@ from .report_modal import ReportModal
 from .notes_overlay import NotesOverlay
 from .chart_watcher import ChartFileWatcher
 from .report_timer import ReportTimer
+from .timer_widget import SessionTimerWidget
 from .goniometer_import import importer as gonio_importer
 from .goniometer_import.matcher import match_batch
 from .goniometer_import.wizard_screen import GonioImportWizard, GonioPatientPickerWindow
 
 AUTOSAVE_DEBOUNCE_MS = 2000
+
+# Session-timer alert tuning — dialled in with the user 2026-08-24 via a
+# standalone scratchpad workshop app before landing here (see
+# session_timer.py / timer_widget.py for the rest of the timer design).
+TIMER_ALERT_SOUND = Path(__file__).parent / "assets" / "timer_alert.wav"
+TIMER_ALERT_VOLUME_PCT = 80
+TIMER_FLASH_OPACITY = 0.80
+TIMER_FLASH_DURATION_MS = 150
+TIMER_FLASH_PULSE_GAP_MS = 700
 
 # Assessment-mode section ids (nav.py's SectionNav) — "04_objective" here is
 # not a content page, it's the sentinel that enters Objective mode.
@@ -126,7 +137,22 @@ class TrialWindow(Gtk.ApplicationWindow):
         # Outer vertical: title bar (top) / main row / footer bar (bottom) —
         # mirrors the TUI's Header/content/Footer docking.
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.set_child(outer)
+
+        # Wrapped in a Gtk.Overlay so the session-timer's 20/40/55-min
+        # screen flash (self._timer_flash_box, below) can cover the WHOLE
+        # window rather than just one section — the overlay child has
+        # can_target(False) so it never intercepts clicks/taps, matching
+        # the "brief, non-blocking, doesn't steal focus" requirement
+        # confirmed with the user 2026-08-24.
+        root_overlay = Gtk.Overlay()
+        root_overlay.set_child(outer)
+        self.set_child(root_overlay)
+
+        self._timer_flash_box = Gtk.Box()
+        self._timer_flash_box.add_css_class("timer-flash-overlay")
+        self._timer_flash_box.set_can_target(False)
+        self._timer_flash_box.set_opacity(0)
+        root_overlay.add_overlay(self._timer_flash_box)
 
         # -- top bar: the ONE persistent bar, shown on every sidebar tab
         # (there is no separate app-title bar — that wasted a second row of
@@ -167,7 +193,21 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.sidebar_stack.set_transition_type(Gtk.StackTransitionType.NONE)
         self.sidebar_stack.add_named(self.nav, "assessment")
         self.sidebar_stack.add_named(self.objective_nav, "objective")
-        main_row.append(self.sidebar_stack)
+        self.sidebar_stack.set_vexpand(True)
+
+        # -- session-length clock — pinned at the bottom of the left sidebar
+        # column, below sidebar_stack rather than inside SectionNav or
+        # ObjectiveNav individually, so it stays put across BOTH modes
+        # (those two swap wholesale via sidebar_stack — anything placed only
+        # inside one would vanish when the other is shown). See
+        # timer_widget.py's module docstring for the full behaviour.
+        self.session_timer_widget = SessionTimerWidget()
+        self.session_timer_widget.set_on_alert(self._on_session_timer_alert)
+
+        sidebar_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        sidebar_column.append(self.sidebar_stack)
+        sidebar_column.append(self.session_timer_widget)
+        main_row.append(sidebar_column)
 
         content_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content_column.set_hexpand(True)
@@ -314,6 +354,7 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.save_status = self.footer.save_status
 
         self.consent.set_on_changed(self._on_consent_changed)
+        self.consent.set_on_below_framing_changed(self.session_timer_widget.on_field_edit)
         self.subjective.set_on_changed(self._on_subjective_changed)
         self.medical.set_on_changed(self._on_medical_changed)
         self.pain_classification.set_on_changed(self._schedule_save)
@@ -1216,6 +1257,7 @@ class TrialWindow(Gtk.ApplicationWindow):
 
         self._chart_watcher.stop()
         self._report_timer.stop()
+        self.session_timer_widget.stop()
 
         session_file = self.session_file
 
@@ -1255,6 +1297,45 @@ class TrialWindow(Gtk.ApplicationWindow):
     def _on_consent_changed(self) -> None:
         self._sync_goals(self.consent.consent_goals, self.subjective, self.functional)
         self._schedule_save()
+
+    def _on_session_timer_alert(self, pulses: int) -> None:
+        """20/40 min -> pulses=1 (one beep, one flash); 55 min -> pulses=2
+        (two of each, TIMER_FLASH_PULSE_GAP_MS apart). Sound playback is
+        fire-and-forget via a detached subprocess — never block the GTK
+        main thread waiting on audio playback."""
+        self._play_timer_alert_sound()
+        self._flash_timer_alert()
+        if pulses == 2:
+            GLib.timeout_add(TIMER_FLASH_PULSE_GAP_MS, self._session_timer_second_pulse)
+
+    def _session_timer_second_pulse(self) -> bool:
+        self._play_timer_alert_sound()
+        self._flash_timer_alert()
+        return GLib.SOURCE_REMOVE
+
+    def _play_timer_alert_sound(self) -> None:
+        paplay_volume = int(65536 * (TIMER_ALERT_VOLUME_PCT / 100.0))
+        try:
+            subprocess.Popen(
+                ["paplay", f"--volume={paplay_volume}", str(TIMER_ALERT_SOUND)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            try:
+                subprocess.Popen(
+                    ["aplay", str(TIMER_ALERT_SOUND)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+            except FileNotFoundError as e:
+                logger.error("session timer: no audio player found (paplay/aplay): %s", e)
+
+    def _flash_timer_alert(self) -> None:
+        self._timer_flash_box.set_opacity(TIMER_FLASH_OPACITY)
+        GLib.timeout_add(TIMER_FLASH_DURATION_MS, self._end_timer_flash)
+
+    def _end_timer_flash(self) -> bool:
+        self._timer_flash_box.set_opacity(0)
+        return GLib.SOURCE_REMOVE
 
     def _on_subjective_changed(self) -> None:
         self._sync_goals(self.subjective.goals, self.consent, self.functional)

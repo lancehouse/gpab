@@ -425,3 +425,42 @@ entry {
     min-width: 90px;
     min-height: 48px;
 }
+
+/* Session-length clock (timer_widget.py) — pinned at the bottom of the left
+   sidebar column, persistent across assessment AND objective tabs. New
+   feature, no TUI equivalent; dialled in with the user 2026-08-24. The
+   clock face is a fixed dark LCD-style chip (not theme-aware) so its
+   contrast is guaranteed regardless of the app's own light/dark theme —
+   simpler than tuning two colour sets for a widget whose whole point is to
+   be readable at a glance. */
+.session-timer-heading {
+    font-size: 0.7rem;
+    font-weight: bold;
+    opacity: 0.6;
+    letter-spacing: 1px;
+}
+.session-timer-status {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    min-height: 1em; /* reserve the line so the clock doesn't jump when it appears/disappears */
+}
+.session-timer-clock {
+    font-family: "DS-Digital", monospace;
+    font-weight: bold;
+    font-size: 2.6rem;
+    background: #101010;
+    color: #ffb300;
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+.session-timer-clock.session-timer-clock-paused {
+    color: #757575;
+}
+
+/* Whole-window 20/40/55-min alert flash (app.py's _timer_flash_box) —
+   opacity is toggled 0/TIMER_FLASH_OPACITY in code; this just sets the
+   colour. Amber matches the app's existing warning colour (.rf-alert-*,
+   .rb-warning) so it reads as "in-house", not an invented new colour. */
+.timer-flash-overlay {
+    background: #f9a825;
+}
