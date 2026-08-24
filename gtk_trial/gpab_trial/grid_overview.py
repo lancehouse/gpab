@@ -163,7 +163,9 @@ OBJ_GRID_DATA: list[tuple[str, str, list[tuple[str, str]]]] = [
         ("Activation",   "ml_activation"),
         ("Trunk Str",    "ml_strength_trunk"),
         ("Hip Str",      "ml_strength_hip"),
-        ("SIJ",          "ml_sij"),
+        # SIJ Provocation Signs moved to Special Tests 2026-08-24 (was
+        # misfiled under Muscle here and in the reference TUI — see
+        # lumbar_tables.py's module docstring). No longer listed here.
     ]),
     # The TUI's own grid_overview.py has no "08 Special Tests" row at all
     # (OBJ_GRID_DATA jumps straight from Muscle to CRPS there too) — a

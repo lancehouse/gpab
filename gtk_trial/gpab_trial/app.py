@@ -58,6 +58,7 @@ from .notes_overlay import NotesOverlay
 from .chart_watcher import ChartFileWatcher
 from .report_timer import ReportTimer
 from .timer_widget import SessionTimerWidget
+from .objective.sections.lumbar_tables import sij_report_compat
 from .goniometer_import import importer as gonio_importer
 from .goniometer_import.matcher import match_batch
 from .goniometer_import.wizard_screen import GonioImportWizard, GonioPatientPickerWindow
@@ -504,6 +505,10 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.active_movement.get_container(region_id).load(region_data.get("active", {}))
         self.passive_movement.get_container(region_id).load(region_data.get("passive", {}))
         self.muscle_testing.get_container(region_id).load(region_data.get("muscle", {}))
+        # SIJ Provocation Signs (Lumbar Special Tests) is the one field set
+        # whose real data lives entirely in "special" — the OLD-shape values
+        # also written into "muscle" (see _do_save_obj) are a write-only
+        # summary for storage.py's report generator, never read back here.
         self.special_tests.get_container(region_id).load(region_data.get("special", {}))
 
     def _mount_region(self, region_id: str) -> None:
@@ -1430,11 +1435,24 @@ class TrialWindow(Gtk.ApplicationWindow):
             "04_special": self.special_tests.is_complete(),
         }
         for region_id in self._active_regions:
+            muscle_data = self.muscle_testing.get_container(region_id).collect()
+            special_data = self.special_tests.get_container(region_id).collect()
+            if region_id == "lumbar":
+                # SIJ Provocation Signs is collected from the Special Tests
+                # widget (moved there 2026-08-24) using new st_sij_* field
+                # ids — special_data keeps that real data untouched.
+                # storage.py's report generator — reused unchanged, never
+                # edited — hardcodes reading these 6 tests as one plain
+                # boolean each from the region's "muscle" dict under their
+                # OLD field ids (see lumbar_tables.py's module docstring),
+                # so ADDITIONALLY merge in a derived summary under those old
+                # ids purely for the report text to keep working.
+                muscle_data.update(sij_report_compat(special_data))
             section_data[region_id] = {
                 "active": self.active_movement.get_container(region_id).collect(),
                 "passive": self.passive_movement.get_container(region_id).collect(),
-                "muscle": self.muscle_testing.get_container(region_id).collect(),
-                "special": self.special_tests.get_container(region_id).collect(),
+                "muscle": muscle_data,
+                "special": special_data,
             }
 
         ok = save_objective_sections(self.session_file, section_data, sections_complete)

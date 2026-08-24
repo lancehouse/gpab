@@ -190,7 +190,7 @@ _SUBSECTIONS: list[tuple[str, str, str]] = [
     ("obj:06_muscle",   "ml_activation",         "Muscle: Activation"),
     ("obj:06_muscle",   "ml_strength_trunk",     "Muscle: Strength (Trunk)"),
     ("obj:06_muscle",   "ml_strength_hip",       "Muscle: Strength (Hip)"),
-    ("obj:06_muscle",   "ml_sij",                "Muscle: SIJ Provocation"),
+    ("obj:08_special",  "st_sij",                "Special Tests: SIJ Provocation"),
     ("obj:06_muscle",   "ml_cx_neck",            "Muscle: Neck Strength"),
     ("obj:06_muscle",   "ml_sh_length",          "Muscle: Shoulder Length"),
     ("obj:06_muscle",   "ml_sh_activation",      "Muscle: Shoulder Activation"),

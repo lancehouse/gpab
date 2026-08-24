@@ -44,6 +44,21 @@ _GLOBAL_DB_FIELDS = {
     "nr_umn_lhermitte", "nr_umn_inv_sup",
     "sn_static_allodynia", "sn_pin_prick", "sn_ppt", "sn_cold",
     "sn_cpm", "sn_nerve_palpation",
+    # Lumbar SIJ Provocation Signs (objective/sections/lumbar_tables.py,
+    # moved to Special Tests 2026-08-24) — wired here as individual fields
+    # rather than adding "lumbar" to _DB_BACKED_REGIONS, deliberately:
+    # lumbar's OTHER special-test fields (st_faber_l/_r) already have a
+    # genuine pre-existing DB data-quality issue (two conflicting test rows,
+    # different Sn/Sp, mapped to the same field id — test_id 36 vs 68,
+    # found while wiring this) that a region-wide flip would have made
+    # live/user-visible in an arbitrary way. Flagged to the user, not fixed
+    # here — out of scope for the SIJ task. These 10 are all clean, single
+    # DB mappings (confirmed 2026-08-24) so wiring just these is safe.
+    "sij_sacral", "sij_dist",
+    "sij_ptt_l", "sij_ptt_r",
+    "sij_comp_l", "sij_comp_r",
+    "sij_gaenslen_l", "sij_gaenslen_r",
+    "sij_aslr_l", "sij_aslr_r",
 }
 
 

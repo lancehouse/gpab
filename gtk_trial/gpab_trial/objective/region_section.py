@@ -45,7 +45,7 @@ from .sections.ankle_tables import AnkleMuscleTables, AnklePassiveTables
 from .sections.cervical_tables import CervicalMuscleTables, CervicalPassiveTables
 from .sections.hip_tables import HipMuscleTables, HipPassiveTables
 from .sections.knee_tables import KneeMuscleTables, KneePassiveTables
-from .sections.lumbar_tables import LumbarMuscleTables, LumbarPassiveTables
+from .sections.lumbar_tables import LumbarMuscleTables, LumbarPassiveTables, LumbarSpecialTables
 from .sections.shoulder_tables import ShoulderMuscleTables, ShoulderPassiveTables
 
 # Reads the same YAML the TUI uses, from the read-only reference clone —
@@ -507,6 +507,7 @@ REGION_EXTRAS: dict[tuple[str, str], Type] = {
     ("knee", "muscle"): KneeMuscleTables,
     ("lumbar", "passive"): LumbarPassiveTables,
     ("lumbar", "muscle"): LumbarMuscleTables,
+    ("lumbar", "special"): LumbarSpecialTables,
     ("shoulder", "passive"): ShoulderPassiveTables,
     ("shoulder", "muscle"): ShoulderMuscleTables,
 }
