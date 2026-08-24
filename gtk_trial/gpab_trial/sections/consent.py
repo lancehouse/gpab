@@ -141,10 +141,15 @@ class ConsentSection(Gtk.Box, SectionBase):
 
         self.preferred_name.connect("changed", self._field_changed)
 
+        # consent_goals (SMART Goals, goal_1..4) were previously left
+        # unwired entirely — editing them here triggered neither autosave
+        # nor the live mirror to Subjective/Functional (_sync_goals, only
+        # ever ran off the OTHER sections' own edits) until fixed 2026-08-24.
         for ta in (
             self.patient_expectations, self.reason_for_attending,
             self.cause_understanding_detail, self.prognosis_expectations,
             self.treatment_preference, self.belief_notes,
+            *self.consent_goals,
         ):
             ta.textview.get_buffer().connect("changed", self._field_changed)
 
@@ -164,6 +169,7 @@ class ConsentSection(Gtk.Box, SectionBase):
             self.patient_expectations, self.reason_for_attending,
             self.cause_understanding_detail, self.prognosis_expectations,
             self.treatment_preference, self.belief_notes,
+            *self.consent_goals,
         ):
             ta.textview.get_buffer().connect("changed", self._below_framing_field_changed)
 
