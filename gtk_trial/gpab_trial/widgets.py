@@ -533,6 +533,27 @@ class RadioGroup(Gtk.Box):
                     break
         self._select(idx, emit=False)
 
+    def chip_index_at(self, x: float, y: float) -> int | None:
+        """Which chip (by option index) is at (x, y) in this gang's own
+        coordinate space, or None if the point misses every chip (e.g. the
+        small gaps between them). Used by grid_drag_select.py to resolve a
+        drag's start/hover position — kept here so that module never needs
+        to reach into self._buttons directly."""
+        picked = self.pick(x, y, Gtk.PickFlags.DEFAULT)
+        while picked is not None and picked is not self:
+            if picked in self._buttons:
+                return self._buttons.index(picked)
+            picked = picked.get_parent()
+        return None
+
+    def select_by_index(self, idx: int) -> None:
+        """Public wrapper around _select with emit=True — used by
+        grid_drag_select.py to set a value the same way a real tap would,
+        so autosave/live-sync pick it up exactly as if the user had tapped
+        this chip directly (unlike set_value, which is for silent
+        programmatic load() and deliberately does not emit "changed")."""
+        self._select(idx, emit=True)
+
     def _select(self, idx: int | None, emit: bool = True) -> None:
         self._selected = idx
         for i, btn in enumerate(self._buttons):

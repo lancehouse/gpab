@@ -27,6 +27,7 @@ from gi.repository import Gtk  # noqa: E402
 from ...widgets import RadioGroup, FlagButton, AutoTextView, TouchEntry, make_subsection_header
 from ..grid_widgets import bilateral_header_row, bilateral_radio_row, bilateral_field_row
 from ..grid_nav import GridNav
+from ..grid_drag_select import GridDragSelect
 from ...section_base import SectionBase
 
 # Block title -> grid_overview anchor_id (search.py's _SUBSECTIONS /
@@ -131,7 +132,13 @@ _NOTES_IDS = [
 ]
 
 
-class NeurologicalSection(Gtk.Box, GridNav, SectionBase):
+class NeurologicalSection(Gtk.Box, GridNav, GridDragSelect, SectionBase):
+    """Drag-gesture bulk-select (grid_drag_select.py) is wired in HERE ONLY
+    for now — this is the user's chosen test tab for that feature
+    (2026-08-24), not yet generalized to Muscle Testing/Sensory. See
+    CONVERSION_PLAN.md's "Flagged for future work" section and
+    grid_drag_select.py's module docstring for the full design."""
+
     def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.set_margin_top(8)
@@ -146,6 +153,7 @@ class NeurologicalSection(Gtk.Box, GridNav, SectionBase):
         self._notes: dict[str, AutoTextView] = {}
         self._umn_buttons: dict[str, FlagButton] = {}
         self._init_grid()
+        self._init_drag_select()
 
         title = Gtk.Label(label="04 Neurological")
         title.add_css_class("section-title")
@@ -178,6 +186,8 @@ class NeurologicalSection(Gtk.Box, GridNav, SectionBase):
     def _build_reflex_myotome_block(self, title: str, rows, states, notes_id: str) -> None:
         self.append(make_subsection_header(title, _NEURO_BLOCK_ANCHOR.get(title)))
         self.append(bilateral_header_row())
+        left_column: list[RadioGroup] = []
+        right_column: list[RadioGroup] = []
         for label, prefix in rows:
             left = RadioGroup(states, f"{prefix}_l")
             right = RadioGroup(states, f"{prefix}_r")
@@ -189,6 +199,14 @@ class NeurologicalSection(Gtk.Box, GridNav, SectionBase):
             right.connect("navigate", self._on_navigate)
             self._add_grid_row([left.field_id, right.field_id])
             self.append(bilateral_radio_row(label, left, right))
+            left_column.append(left)
+            right_column.append(right)
+        # Drag-select columns: Left-side gangs drag together top-to-bottom,
+        # Right-side gangs separately — a drag never crosses from Left to
+        # Right (see grid_drag_select.py; "same column position" per the
+        # user's 2026-08-24 decision).
+        self._register_drag_column(left_column)
+        self._register_drag_column(right_column)
         self._add_notes(notes_id, grid_row=True)
 
     def _build_nd_block(self, title: str, rows, notes_id: str) -> None:
