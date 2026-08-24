@@ -59,6 +59,26 @@ _GLOBAL_DB_FIELDS = {
     "sij_comp_l", "sij_comp_r",
     "sij_gaenslen_l", "sij_gaenslen_r",
     "sij_aslr_l", "sij_aslr_r",
+    # CRPS section (objective/sections/crps.py) — Budapest/Valencia diagnostic
+    # criteria checklist items. Not region-scoped (CRPS is assessed per-limb,
+    # independent of which lumbar/cervical/etc. tabs are active), so global
+    # like the Sensory/UMN fields above. Added 2026-08-24 with the matching
+    # clinical_kb.db test_field_map rows (source/msk_clusters_pab.csv in
+    # ~/Projects/kb, standalone tests — no condition/cluster — mirroring the
+    # sn_ppt/sn_nerve_palpation pattern), sourced from Goebel et al. 2021
+    # PAIN 162:2346-2348 (Valencia consensus, reproducing the Budapest
+    # criteria table verbatim).
+    "crps_disp_pain", "crps_no_alt_dx",
+    "crps_sx_hyperesth", "crps_sx_hyperalg", "crps_sx_allodynia",
+    "crps_sx_temp_asymm", "crps_sx_skin_colour", "crps_sx_colour_asymm",
+    "crps_sx_oedema", "crps_sx_sweat_chng", "crps_sx_sweat_asymm",
+    "crps_sx_rom_dec", "crps_sx_weakness", "crps_sx_tremor",
+    "crps_sx_dystonia", "crps_sx_trophic",
+    "crps_sg_hyperalg_pp", "crps_sg_allod_lt", "crps_sg_allod_press",
+    "crps_sg_allod_jt", "crps_sg_temp_asymm", "crps_sg_skin_colour",
+    "crps_sg_colour_asymm", "crps_sg_oedema", "crps_sg_sweat_chng",
+    "crps_sg_sweat_asymm", "crps_sg_rom_dec", "crps_sg_weakness",
+    "crps_sg_tremor", "crps_sg_dystonia", "crps_sg_trophic",
 }
 
 
@@ -106,6 +126,8 @@ class KBEntry:
     purpose: str = ""
     position: str = ""
     procedure: str = ""
+    positive_finding: str = ""  # DB-backed entries only (test.positive_finding);
+                                 # YAML-sourced entries have no equivalent column.
     assess: str = ""      # decision-criteria entries (non-test KB)
     sn_sp: str = ""
     variants: str = ""
@@ -128,6 +150,8 @@ class KBEntry:
             lines += ["Position:", _wrap(self.position.strip(), 44), ""]
         if self.procedure:
             lines += ["Procedure:", _wrap(self.procedure.strip(), 44), ""]
+        if self.positive_finding:
+            lines += ["Positive finding:", _wrap(self.positive_finding.strip(), 44), ""]
         if self.assess:
             lines += ["Assess:", _wrap(self.assess.strip(), 44), ""]
         if self.variants:
@@ -230,6 +254,7 @@ def _resolve_from_db(field_id: str) -> KBEntry | None:
         label=row["name"],
         position=position,
         procedure=row["procedure"] or "",
+        positive_finding=row["positive_finding"] or "",
         sn_sp=sn_sp,
         cluster="; ".join(cluster_lines),
         note=note,

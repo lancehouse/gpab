@@ -45,6 +45,7 @@ def _render_entry(entry: KBEntry) -> str:
         ("Purpose", entry.purpose),
         ("Position", entry.position),
         ("Procedure", entry.procedure),
+        ("Positive finding", entry.positive_finding),
         ("Assess", entry.assess),
         ("Variants", entry.variants),
         ("Sn / Sp", entry.sn_sp),
