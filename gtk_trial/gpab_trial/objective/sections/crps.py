@@ -25,47 +25,47 @@ _SX_DOMAINS: list[tuple[str, str, list]] = [
         ("crps_sx_allodynia", "Allodynia"),
     ]),
     ("Vasomotor", [
-        ("crps_sx_temp_asymm", "Temp asymm"),
-        ("crps_sx_skin_colour", "Skin colour"),
-        ("crps_sx_colour_asymm", "Colour asymm"),
+        ("crps_sx_temp_asymm", "Temperature asymmetry"),
+        ("crps_sx_skin_colour", "Skin colour change"),
+        ("crps_sx_colour_asymm", "Colour asymmetry"),
     ]),
     ("Sudomotor/Oedema", [
         ("crps_sx_oedema", "Oedema"),
-        ("crps_sx_sweat_chng", "Sweat chng"),
-        ("crps_sx_sweat_asymm", "Sweat asymm"),
+        ("crps_sx_sweat_chng", "Sweating change"),
+        ("crps_sx_sweat_asymm", "Sweating asymmetry"),
     ]),
     ("Motor/Trophic", [
-        ("crps_sx_rom_dec", "Decr ROM"),
+        ("crps_sx_rom_dec", "Decreased range of motion"),
         ("crps_sx_weakness", "Weakness"),
         ("crps_sx_tremor", "Tremor"),
         ("crps_sx_dystonia", "Dystonia"),
-        ("crps_sx_trophic", "Trophic"),
+        ("crps_sx_trophic", "Trophic changes"),
     ]),
 ]
 
 _SG_DOMAINS: list[tuple[str, list]] = [
     ("Sensory", [
-        ("crps_sg_hyperalg_pp", "Hyperalg PP"),
-        ("crps_sg_allod_lt", "Allod LT"),
-        ("crps_sg_allod_press", "Allod Pres"),
-        ("crps_sg_allod_jt", "Allod Joint"),
+        ("crps_sg_hyperalg_pp", "Hyperalgesia (pinprick)"),
+        ("crps_sg_allod_lt", "Allodynia (light touch)"),
+        ("crps_sg_allod_press", "Allodynia (pressure)"),
+        ("crps_sg_allod_jt", "Allodynia (joint movement)"),
     ]),
     ("Vasomotor", [
-        ("crps_sg_temp_asymm", "Temp asymm"),
-        ("crps_sg_skin_colour", "Skin colour"),
-        ("crps_sg_colour_asymm", "Colour asymm"),
+        ("crps_sg_temp_asymm", "Temperature asymmetry"),
+        ("crps_sg_skin_colour", "Skin colour change"),
+        ("crps_sg_colour_asymm", "Colour asymmetry"),
     ]),
     ("Sudomotor/Oedema", [
         ("crps_sg_oedema", "Oedema"),
-        ("crps_sg_sweat_chng", "Sweat chng"),
-        ("crps_sg_sweat_asymm", "Sweat asymm"),
+        ("crps_sg_sweat_chng", "Sweating change"),
+        ("crps_sg_sweat_asymm", "Sweating asymmetry"),
     ]),
     ("Motor/Trophic", [
-        ("crps_sg_rom_dec", "Decr ROM"),
+        ("crps_sg_rom_dec", "Decreased range of motion"),
         ("crps_sg_weakness", "Weakness"),
         ("crps_sg_tremor", "Tremor"),
         ("crps_sg_dystonia", "Dystonia"),
-        ("crps_sg_trophic", "Trophic"),
+        ("crps_sg_trophic", "Trophic changes"),
     ]),
 ]
 
@@ -243,9 +243,9 @@ class CRPSSection(Gtk.Box, SectionBase):
         hdr.append(ind_lbl)
         self.append(hdr)
 
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4, homogeneous=True)
         for fid, flabel in items:
-            btn = FlagButton(flabel, fid, compact=True)
+            btn = FlagButton(flabel, fid)
             btn.connect("changed", self._field_changed)
             self._flags[fid] = btn
             row.append(btn)
