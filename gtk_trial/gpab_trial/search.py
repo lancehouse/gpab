@@ -639,7 +639,7 @@ _OBJ_KB_FIELDS: list[tuple[str, str, str, str, str]] = [
     # ── Sensory — pain sensitisation screen ──────────────────────────────────────
     ("sn_static_allodynia",  "screening", "obj:05_sensory", "Static Allodynia",         "tactile mechanical allodynia von frey monofilament pain sensitisation"),
     ("sn_pin_prick",         "screening", "obj:05_sensory", "Sharp Hyperalgesia",       "pin prick hyperalgesia toothpick pain sensitisation"),
-    ("sn_ppt",               "screening", "obj:05_sensory", "Pressure Hyperalgesia (PPT)", "pressure pain threshold algometer central sensitisation"),
+    ("sn_secondary_hyper",   "screening", "obj:05_sensory", "Pressure Pain Threshold", "pressure hyperalgesia algometer central sensitisation PPT"),
     ("sn_cold",              "screening", "obj:05_sensory", "Cold Hyperalgesia",        "ice pain test cold hyperalgesia thermal pain sensitisation"),
     ("sn_cpm",               "screening", "obj:05_sensory", "Conditioned Pain Modulation", "CPM cold pressor endogenous analgesia descending pain modulation"),
     ("sn_nerve_palpation",   "screening", "obj:05_sensory", "Upper Limb Nerve Trunk Palpation", "median ulnar radial nerve mechanosensitivity neural tissue"),

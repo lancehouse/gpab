@@ -42,8 +42,8 @@ _DB_BACKED_REGIONS = {"cervical", "shoulder"}
 _GLOBAL_DB_FIELDS = {
     "nr_umn_hoffman", "nr_umn_tromner", "nr_umn_bab",
     "nr_umn_lhermitte", "nr_umn_inv_sup",
-    "sn_static_allodynia", "sn_pin_prick", "sn_ppt", "sn_cold",
-    "sn_cpm", "sn_nerve_palpation",
+    "sn_static_allodynia", "sn_pin_prick", "sn_secondary_hyper",
+    "sn_cold", "sn_cpm", "sn_nerve_palpation",
     # Lumbar SIJ Provocation Signs (objective/sections/lumbar_tables.py,
     # moved to Special Tests 2026-08-24) — wired here as individual fields
     # rather than adding "lumbar" to _DB_BACKED_REGIONS, deliberately:
@@ -60,6 +60,29 @@ _GLOBAL_DB_FIELDS = {
     "sij_gaenslen_l", "sij_gaenslen_r",
     "sij_aslr_l", "sij_aslr_r",
 }
+
+
+# Sensory's "Pressure Pain Threshold" button (field id sn_secondary_hyper —
+# kept as-is for storage.py schema compatibility; it used to be labelled "2°
+# hyperalgesia (algometer)") now carries the DB content that used to live
+# under the removed sn_ppt severity radio group (test id 173, "Pressure Pain
+# Threshold (Algometer)" — also_known_as "Pressure hyperalgesia"). Resolved
+# here rather than in clinical_kb.db's test_field_map, since that DB is
+# vendored from the separate ~/Projects/kb repo and out of scope to edit.
+_FIELD_ALIASES = {"sn_secondary_hyper": "sn_ppt"}
+
+
+def _bullet_list(text: str) -> str:
+    """Reformat a "N sites: a; b; c" sentence as an intro line plus dot
+    points, one per semicolon-separated clause — same clinical wording,
+    just restructured out of a single run-on sentence for readability."""
+    if ":" not in text:
+        return text
+    intro, _, rest = text.partition(":")
+    items = [seg.strip() for seg in rest.split(";") if seg.strip()]
+    if len(items) < 2:
+        return text
+    return intro.strip() + ":\n" + "\n".join(f"• {item}" for item in items)
 
 
 def is_db_backed_region(region_id: str) -> bool:
@@ -172,10 +195,11 @@ def _resolve_from_db(field_id: str) -> KBEntry | None:
     reachable at all — so the caller falls back to YAML rather than showing
     nothing or crashing. Never fabricates content for an unmapped field.
     """
+    db_field_id = _FIELD_ALIASES.get(field_id, field_id)
     try:
-        row = kb_db.load_test_for_field(field_id)
+        row = kb_db.load_test_for_field(db_field_id)
         if row is None:
-            row = kb_db.load_test_for_field(f"st_{field_id}")
+            row = kb_db.load_test_for_field(f"st_{db_field_id}")
     except FileNotFoundError:
         return None
     if row is None:
@@ -198,9 +222,13 @@ def _resolve_from_db(field_id: str) -> KBEntry | None:
     if row["pitfalls"]:
         note = f"{note}\nPitfalls: {row['pitfalls']}" if note else f"Pitfalls: {row['pitfalls']}"
 
+    position = row["patient_position"] or ""
+    if row["name"] == "Upper Limb Nerve Trunk Palpation":
+        position = _bullet_list(position)
+
     return KBEntry(
         label=row["name"],
-        position=row["patient_position"] or "",
+        position=position,
         procedure=row["procedure"] or "",
         sn_sp=sn_sp,
         cluster="; ".join(cluster_lines),

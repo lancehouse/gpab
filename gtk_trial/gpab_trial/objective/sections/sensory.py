@@ -14,10 +14,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
-from ...widgets import FlagButton, RadioGroup, TouchEntry, AutoTextView, make_subsection_header
+from ...widgets import FlagButton, TouchEntry, AutoTextView, make_subsection_header
 from ...section_base import SectionBase
-
-_SEV4 = [("Norm", "success"), ("Mild", "warning"), ("Mod", "error"), ("Sev", "error")]
 
 # (display label, data id, has detail entry?)
 _HYPO_ITEMS: list[tuple[str, str, bool]] = [
@@ -29,7 +27,7 @@ _HYPO_ITEMS: list[tuple[str, str, bool]] = [
 _HYPER_ITEMS: list[tuple[str, str, bool]] = [
     ("Static allodynia (monofilament)", "sn_static_allodynia", True),
     ("Dynamic allodynia (brush)", "sn_dynamic_allodynia", True),
-    ("2° hyperalgesia (algometer)", "sn_secondary_hyper", True),
+    ("Pressure Pain Threshold", "sn_secondary_hyper", True),
     ("Pin prick hyperalgesia", "sn_pin_prick", True),
     ("Cold hyperalgesia (ice 5 s)", "sn_cold", True),
     ("Heat hyperalgesia", "sn_heat", True),
@@ -66,22 +64,6 @@ class SensorySection(Gtk.Box, SectionBase):
         self.append(self.body_detail)
 
         self.append(make_subsection_header("Heightened Sensitivity / Central Sensitisation", "sn_hypersensitivity"))
-        ppt_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        ppt_row.add_css_class("grid-row")
-        ppt_lbl = Gtk.Label(label="PPT (algometer)")
-        ppt_lbl.set_halign(Gtk.Align.START)
-        ppt_lbl.set_size_request(180, -1)
-        ppt_row.append(ppt_lbl)
-        self.ppt = RadioGroup(_SEV4, "sn_ppt")
-        self.ppt.connect("changed", self._field_changed)
-        ppt_row.append(self.ppt)
-        ppt_detail = TouchEntry("sn_ppt_detail", placeholder="kPa / region / notes")
-        ppt_detail.set_hexpand(True)
-        ppt_detail.connect("changed", self._field_changed)
-        self._details["sn_ppt_detail"] = ppt_detail
-        ppt_row.append(ppt_detail)
-        self.append(ppt_row)
-
         for label, sid, has_detail in _HYPER_ITEMS:
             self.append(self._flag_row(label, sid, has_detail, detail_placeholder="region / value"))
 
@@ -119,7 +101,7 @@ class SensorySection(Gtk.Box, SectionBase):
         self._flags[_HYPO_ITEMS[0][1]].grab_focus()
 
     def collect(self) -> dict:
-        data: dict = {"sn_ppt": self.ppt.value}
+        data: dict = {}
         for sid, btn in self._flags.items():
             data[sid] = btn.value
         for did, entry in self._details.items():
@@ -131,7 +113,6 @@ class SensorySection(Gtk.Box, SectionBase):
     def load(self, data: dict) -> None:
         self._loading = True
         try:
-            self.ppt.set_value(data.get("sn_ppt"))
             for sid, btn in self._flags.items():
                 btn.set_value(data.get(sid))
             for did, entry in self._details.items():
@@ -142,4 +123,4 @@ class SensorySection(Gtk.Box, SectionBase):
             self._loading = False
 
     def is_complete(self) -> bool:
-        return self.ppt.value is not None
+        return self._flags[_HYPO_ITEMS[0][1]].value is not None
