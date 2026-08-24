@@ -1,11 +1,15 @@
 """Drag-gesture bulk-select for grading grids (RadioGroup columns).
 
-New feature (no TUI equivalent), scoped for this first phase to ONLY
-NeurologicalSection — confirmed with the user 2026-08-24 ("my test tab for
-this"). Written as its own shared mixin module, not inlined into
-neurological.py, so a later phase can mix it into Muscle Testing/Sensory the
-same way GridNav already generalizes across sections — see
-CONVERSION_PLAN.md's "Flagged for future work" section for the three UX
+New feature (no TUI equivalent). Built and live-tested 2026-08-23/24 first on
+NeurologicalSection alone (the user's chosen test tab), then ported the same
+day into GradeGroupWidget (objective/region_section.py) once confirmed
+working on real hardware — GradeGroupWidget is the one shared, YAML-driven
+widget every region's Muscle Testing tab uses for its RadioGroup grade grids
+(Muscle Length/Activation), so that one mixin covers all six regions
+(lumbar/cervical/shoulder/hip/knee/ankle) at once. Not yet mixed into
+Sensory. Written as its own shared mixin module from the start (not inlined
+into neurological.py) precisely so this port would be close to mechanical —
+see CONVERSION_PLAN.md's "Flagged for future work" section for the three UX
 decisions this implements, all confirmed with the user 2026-08-24:
   1. Same column-position replicated down every row the drag passes over —
      NOT raw spatial/pixel hit-testing. Dragging down the "3/5" chip in a

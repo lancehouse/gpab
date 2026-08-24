@@ -39,6 +39,7 @@ from gi.repository import Gtk, GObject  # noqa: E402
 
 from ..widgets import RadioGroup, CycleField, AutoTextView, TouchEntry, make_subsection_header
 from .grid_widgets import bilateral_header_row
+from .grid_drag_select import GridDragSelect
 from .rom_widgets import ROMRow
 from .sections.ankle_tables import AnkleMuscleTables, AnklePassiveTables
 from .sections.cervical_tables import CervicalMuscleTables, CervicalPassiveTables
@@ -164,12 +165,23 @@ class ROMGroupWidget(Gtk.Box):
 # Grade group widget (bilateral / unilateral RadioGroup rows)
 # ---------------------------------------------------------------------------
 
-class GradeGroupWidget(Gtk.Box):
+class GradeGroupWidget(Gtk.Box, GridDragSelect):
     """One group of RadioGroup rows - bilateral (L/R) or unilateral (single).
 
     Owns its own up/down arrow-key nav internally (the TUI never chains
     this into a cross-widget grid either — only the "active" ROM tab gets
     that treatment).
+
+    Drag-gesture bulk-select (grid_drag_select.py) mixed in 2026-08-24,
+    porting the mechanism built+confirmed on Neurological the day before —
+    this is the ONE shared, YAML-driven widget every region's Muscle Testing
+    tab uses for its RadioGroup grade grids (Muscle Length/Activation), so
+    fixing it here covers all six regions (lumbar/cervical/shoulder/hip/
+    knee/ankle) in one change; the per-region "Muscle" extras
+    (StrengthGridTable-based, or Lumbar's bespoke hip-strength+SIJ box) use
+    numeric entries/checkboxes, not RadioGroup, so there was nothing to port
+    there. Left/Right columns drag independently, same as Neurological;
+    unilateral groups get one column.
     """
 
     def __init__(self, group_def: dict) -> None:
@@ -180,11 +192,13 @@ class GradeGroupWidget(Gtk.Box):
         self._groups: dict[str, RadioGroup] = {}
         self._grid: list[list[str]] = []
         self._grid_pos: dict[str, tuple[int, int]] = {}
+        self._init_drag_select()
 
         _label = group_def.get("label", "")
         self.append(make_subsection_header(_label, _MUSCLE_GROUP_ANCHOR.get(_label)))
         if self._bilateral:
             self.append(bilateral_header_row())
+        drag_columns: list[list[RadioGroup]] = []
         for row in self._rows:
             hrow = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             hrow.add_css_class("grid-row")
@@ -197,18 +211,23 @@ class GradeGroupWidget(Gtk.Box):
             else:
                 ids = [row["id"]]
             row_ids = []
-            for fid in ids:
+            for col_idx, fid in enumerate(ids):
                 rg = RadioGroup(gang, fid)
                 rg.set_hexpand(True)
                 rg.connect("navigate", self._on_navigate)
                 self._groups[fid] = rg
                 hrow.append(rg)
                 row_ids.append(fid)
+                if col_idx >= len(drag_columns):
+                    drag_columns.append([])
+                drag_columns[col_idx].append(rg)
             row_idx = len(self._grid)
             self._grid.append(row_ids)
             for col_idx, fid in enumerate(row_ids):
                 self._grid_pos[fid] = (row_idx, col_idx)
             self.append(hrow)
+        for column in drag_columns:
+            self._register_drag_column(column)
 
     def connect_changed(self, callback) -> None:
         for rg in self._groups.values():

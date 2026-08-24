@@ -133,11 +133,13 @@ _NOTES_IDS = [
 
 
 class NeurologicalSection(Gtk.Box, GridNav, GridDragSelect, SectionBase):
-    """Drag-gesture bulk-select (grid_drag_select.py) is wired in HERE ONLY
-    for now — this is the user's chosen test tab for that feature
-    (2026-08-24), not yet generalized to Muscle Testing/Sensory. See
-    CONVERSION_PLAN.md's "Flagged for future work" section and
-    grid_drag_select.py's module docstring for the full design."""
+    """Drag-gesture bulk-select (grid_drag_select.py) was built and first
+    wired in HERE (2026-08-24) — the user's chosen test tab for that
+    feature — then ported the same day into GradeGroupWidget
+    (objective/region_section.py) so it covers Muscle Testing across all six
+    regions too. Not yet mixed into Sensory. See CONVERSION_PLAN.md's
+    "Flagged for future work" section and grid_drag_select.py's module
+    docstring for the full design."""
 
     def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
