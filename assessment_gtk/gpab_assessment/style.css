@@ -179,9 +179,20 @@ entry {
 
 /* Red-flag alert banner (medical.py) — urgent (cauda equina / cord
    compression) vs. general red-flag-positive, mirroring the TUI's
-   #med_rf_alert.rf_warning / .rf_urgent. */
-.rf-alert-warning { background: alpha(#f9a825, 0.25); color: #7a4a00; font-weight: bold; padding: 6px 10px; }
-.rf-alert-urgent  { background: alpha(#c62828, 0.25); color: #b71c1c; font-weight: bold; padding: 6px 10px; }
+   #med_rf_alert.rf_warning / .rf_urgent.
+
+   .rf-alert-slot's padding is applied UNCONDITIONALLY, whether or not a
+   flag is currently positive — the label stays visible at all times, with
+   .rf-alert-warning/.rf-alert-urgent only ever swapping background/text
+   colour, never the box's padding/size. Toggling visibility (or padding)
+   only when a flag went positive was the original design, but it made the
+   whole Red Flags section reflow every time — most jarringly while cycling
+   a single flag button through its Yes/No states, which visibly shifted
+   every button beneath it on each click. Reserving the slot's size
+   permanently removes that reflow entirely rather than just shrinking it. */
+.rf-alert-slot    { padding: 6px 10px; }
+.rf-alert-warning { background: alpha(#f9a825, 0.25); color: #7a4a00; font-weight: bold; }
+.rf-alert-urgent  { background: alpha(#c62828, 0.25); color: #b71c1c; font-weight: bold; }
 
 .section-title {
     font-weight: bold;
