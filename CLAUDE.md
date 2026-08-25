@@ -102,6 +102,28 @@ pab's own single-line `"assessment"`/`"assessments"` divergence in its `integrat
 5. Rebuilding `gpab-stable/bodychart` (`ninja -C gpab-stable/bodychart/build-stable`) is itself
    part of "touching main" — don't do it as a side effect of a dev-side rebuild habit.
 
+### Third tier — `merged-app/` (R&D spike, 2026-08-25)
+
+A **third git worktree**, same pattern as `gpab-stable/` but protecting `dev`/`gpabd` itself
+rather than `main`/`gpabs`: pinned to its own `merged-app` branch (cut from `dev`'s tested HEAD),
+own `bodychart/build-merged/`, own `assessment_gtk/.venv/`. Exists because embedding gpab's Python
+inside bodychart's own process (to fix Ctrl+B's window-raise — see git log around 2026-08-25 for
+the full "why") is a genuinely structural, iterative change that could leave things broken
+mid-way for a while. `gpabd` is itself relied on day-to-day to test *other*, unrelated work, so it
+needs to keep working throughout — not just `gpabs`/`main`.
+
+- **All embedding work happens in `merged-app/` only.** Never touch `dev`'s own
+  `bodychart/build/` or `assessment_gtk/.venv` for this — those must keep reflecting exactly
+  commit `f2e6c9a` (the last known-good `gpabd` state before this spike started) until the user
+  explicitly says to bring `merged-app` back into `dev`.
+- Same promotion discipline as `main`, one level down: merging `merged-app` → `dev` needs an
+  explicit instruction in that exact message, same as `main` needs for a promotion from `dev`.
+  Nothing here is a fast-forward or a given — the user has explicitly floated the idea that this
+  might end up needing its *own* internal dev/stable split once it's far enough along, rather
+  than merging straight into `dev`. Don't assume the answer; ask when it's actually relevant.
+- `gpab-stable`/`main` stay completely out of scope for this work — two levels of insulation
+  between this spike and daily clinical use, not one.
+
 ## Maintaining the kb link
 
 `clinical_kb.db` (Ctrl+K/Ctrl+D knowledge-base content — procedures, Sn/Sp, cluster membership,
