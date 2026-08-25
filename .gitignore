@@ -39,3 +39,9 @@ Thumbs.db
 # Private — must never reach GitHub
 workfiles/template.pdf
 workfiles/placepdf
+
+# gpab-stable/ is a git worktree (main branch) nested inside this checkout —
+# see CLAUDE.md's "Branch and deployment rules". It has its own .git file
+# (a gitlink, not a real subdirectory to track) and its own build/.venv
+# artifacts; nothing under it belongs in the dev tree's own status/diffs.
+/gpab-stable/
