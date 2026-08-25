@@ -1,0 +1,3 @@
+#!/bin/bash
+# gpab dev launcher — bodychart (GTK) dev build, launches gpab-assessment (dev branch)
+exec ~/Projects/gpab/bodychart/build/bodychart "$@"

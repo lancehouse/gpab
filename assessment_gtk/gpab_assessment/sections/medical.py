@@ -173,7 +173,7 @@ class MedicalSection(Gtk.Box, SectionBase):
         self.append(_header("Red Flags", "med_red_flags"))
         self.rf_alert = Gtk.Label(label="")
         self.rf_alert.set_halign(Gtk.Align.START)
-        self.rf_alert.set_visible(False)
+        self.rf_alert.add_css_class("rf-alert-slot")
         self.append(self.rf_alert)
 
         self.append(_subheader("Malignancy:"))
@@ -330,19 +330,18 @@ class MedicalSection(Gtk.Box, SectionBase):
             self.rf_alert.set_label("⚠ URGENT: Cauda equina symptoms — document action below")
             self.rf_alert.remove_css_class("rf-alert-warning")
             self.rf_alert.add_css_class("rf-alert-urgent")
-            self.rf_alert.set_visible(True)
         elif _any_true(_RF_URGENT_CORD):
             self.rf_alert.set_label("⚠ URGENT: Spinal cord compression signs — document action below")
             self.rf_alert.remove_css_class("rf-alert-warning")
             self.rf_alert.add_css_class("rf-alert-urgent")
-            self.rf_alert.set_visible(True)
         elif _any_true(_RF_GENERAL):
             self.rf_alert.set_label("⚠ Red flag(s) positive — clinical judgement required")
             self.rf_alert.remove_css_class("rf-alert-urgent")
             self.rf_alert.add_css_class("rf-alert-warning")
-            self.rf_alert.set_visible(True)
         else:
-            self.rf_alert.set_visible(False)
+            self.rf_alert.set_label("")
+            self.rf_alert.remove_css_class("rf-alert-warning")
+            self.rf_alert.remove_css_class("rf-alert-urgent")
 
     # ------------------------------------------------------------------
     # Change events
