@@ -46,7 +46,7 @@
  * a `dev`→`main` merge always surfaces it as a conflict to resolve, not a
  * silent overwrite of which checkout stable actually launches. */
 
-#define GPAB_LAUNCHER "gpab-assessment"
+#define GPAB_LAUNCHER "gpab-assessment-stable"
 
 /* Reap the gpab child when it exits (window closed by the user, crash, or
  * killed below to make way for a new session) so app->gpab_pid never goes
