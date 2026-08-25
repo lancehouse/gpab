@@ -253,7 +253,6 @@ _SUBSECTION_EXTRA: dict[tuple[str, str], str] = {
 _FIELD_LABELS: dict[str, tuple[str, str | None, str]] = {
     # 01 Consent
     "preferred_name":             ("01_consent", None, "Preferred name"),
-    "patient_expectations":       ("01_consent", None, "Patient expectations"),
     "reason_for_attending":       ("01_consent", None, "Reason for attending"),
     "cause_understanding_detail": ("01_consent", None, "Cause understanding"),
     "prognosis_expectations":     ("01_consent", None, "Prognosis expectations"),

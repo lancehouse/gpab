@@ -60,9 +60,6 @@ class ConsentSection(Gtk.Box, SectionBase):
         btn_row2.append(self.framing_education_treatment)
         self.append(btn_row2)
 
-        self.patient_expectations = AutoTextView("patient_expectations")
-        self.append(_field_row("Patient expectations of this session:", self.patient_expectations))
-
         # -- Patient Perspective (ICE+) -------------------------------------
         self.append(_header("Patient Perspective (ICE+)", "cs_ice"))
 
@@ -146,7 +143,7 @@ class ConsentSection(Gtk.Box, SectionBase):
         # nor the live mirror to Subjective/Functional (_sync_goals, only
         # ever ran off the OTHER sections' own edits) until fixed 2026-08-24.
         for ta in (
-            self.patient_expectations, self.reason_for_attending,
+            self.reason_for_attending,
             self.cause_understanding_detail, self.prognosis_expectations,
             self.treatment_preference, self.belief_notes,
             *self.consent_goals,
@@ -166,7 +163,7 @@ class ConsentSection(Gtk.Box, SectionBase):
             cb.connect("changed", self._below_framing_field_changed)
 
         for ta in (
-            self.patient_expectations, self.reason_for_attending,
+            self.reason_for_attending,
             self.cause_understanding_detail, self.prognosis_expectations,
             self.treatment_preference, self.belief_notes,
             *self.consent_goals,
@@ -205,7 +202,6 @@ class ConsentSection(Gtk.Box, SectionBase):
             "preferred_name": self.preferred_name.text,
             "pain_multifactorial_explained": self.framing_pain_multifactorial.value,
             "education_as_treatment_explained": self.framing_education_treatment.value,
-            "patient_expectations": self.patient_expectations.text,
             "reason_for_attending": self.reason_for_attending.text,
             "cause_understanding": self.cause_understanding.value,
             "cause_understanding_detail": self.cause_understanding_detail.text,
@@ -229,7 +225,6 @@ class ConsentSection(Gtk.Box, SectionBase):
             self.preferred_name.text = consent.get("preferred_name", "")
             self.framing_pain_multifactorial.set_value(consent.get("pain_multifactorial_explained"))
             self.framing_education_treatment.set_value(consent.get("education_as_treatment_explained"))
-            self.patient_expectations.text = consent.get("patient_expectations", "")
             self.reason_for_attending.text = consent.get("reason_for_attending", "")
             self.cause_understanding.set_value(consent.get("cause_understanding"))
             self.cause_understanding_detail.text = consent.get("cause_understanding_detail", "")
