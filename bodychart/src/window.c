@@ -24,7 +24,11 @@ static gboolean on_key_pressed(GtkEventControllerKey *ctrl,
 
     if ((mods & GDK_CONTROL_MASK) && (keyval == GDK_KEY_q || keyval == GDK_KEY_Q ||
                                        keyval == GDK_KEY_c || keyval == GDK_KEY_C)) {
-        gtk_window_destroy(GTK_WINDOW(app->window));
+        /* gtk_window_close() (not gtk_window_destroy()) — routes through the
+         * "close-request" signal on_main_window_close is connected to, so
+         * the autosave/PDF-export chain still runs. See that handler's
+         * docstring for why this distinction matters. */
+        gtk_window_close(GTK_WINDOW(app->window));
         return TRUE;
     }
 
@@ -1948,7 +1952,10 @@ static void on_close_clicked(GtkButton *btn, gpointer data)
 {
     (void)btn;
     AppState *app = data;
-    gtk_window_destroy(GTK_WINDOW(app->window));
+    /* gtk_window_close(), not gtk_window_destroy() — see on_main_window_close's
+     * docstring; this is the custom titlebar's own close button, the most
+     * common way this window actually gets closed day to day. */
+    gtk_window_close(GTK_WINDOW(app->window));
 }
 
 /* ── Build drag handle with window controls ────────────────────────────── */
@@ -2279,7 +2286,21 @@ void window_show_launch(AppState *app, GtkApplication *gapp)
 }
 
 /* ── Public: create main window ─────────────────────────────────────────── */
-static void on_main_window_close(GtkWidget *w, gpointer data)
+/* Connected to "close-request", not "destroy" (see window_create below) —
+ * this must run BEFORE any teardown starts. window_autosave() touches
+ * g_save_indicator (a sibling widget in the drag-handle titlebar), and
+ * "destroy" fires DURING widget-tree teardown, which had already begun
+ * disposing children by the time this ran from that signal: confirmed via
+ * a real coredump (2026-08-25, systemd-coredump on a live clinical session)
+ * with window_autosave crashing directly inside on_main_window_close — the
+ * gtk_label_set_text() call on g_save_indicator hit an already-disposed
+ * widget. That silently killed the process before it ever reached the
+ * session_export_combined_pdf/session_export_combined_focus_pdf calls
+ * below, which is why combined.pdf was going missing for real sessions
+ * despite combined.png exporting fine every time. Returning FALSE lets the
+ * window's default close-request handling (destroy) proceed normally
+ * afterward. */
+static gboolean on_main_window_close(GtkWidget *w, gpointer data)
 {
     (void)w;
     AppState *app = data;
@@ -2293,6 +2314,7 @@ static void on_main_window_close(GtkWidget *w, gpointer data)
     session_export_combined_focus_png(app);
     session_export_combined_pdf(app);
     session_export_combined_focus_pdf(app);
+    return FALSE;
 }
 
 /* Deferred fullscreen — waits 200 ms after the window appears before requesting
@@ -2320,7 +2342,7 @@ void window_create(AppState *app, GtkApplication *gtk_app)
     gtk_window_set_default_size(GTK_WINDOW(app->window), 900, 700);
     gtk_window_set_decorated(GTK_WINDOW(app->window), FALSE);
 
-    g_signal_connect(app->window, "destroy",
+    g_signal_connect(app->window, "close-request",
                      G_CALLBACK(on_main_window_close), app);
 
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
