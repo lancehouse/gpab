@@ -34,10 +34,19 @@
  * This file only exists modified in ~/Projects/gpab's own clone of
  * bodychart/ — see ../../CLAUDE.md's isolation guarantee. ~/Projects/pab is
  * never touched by this change; pabd/pabs keep building and running the
- * original integration.c unmodified. */
+ * original integration.c unmodified.
+ *
+ * DEV/STABLE SPLIT (2026-08-25) — mirrors pab's own "assessment" (pabd, dev
+ * branch) vs "assessments" (pabs, main branch) launcher split exactly, see
+ * ../../CLAUDE.md's "Branch and deployment rules". GPAB_LAUNCHER names a
+ * small wrapper script on $PATH (~/.local/bin/) rather than hardcoding an
+ * absolute venv path — this is the ONE line that's meant to differ between
+ * the `dev` and `main` copies of this file (a `gpab-stable/` git worktree
+ * checked out at `main` carries "gpab-assessment-stable" here instead), so
+ * a `dev`→`main` merge always surfaces it as a conflict to resolve, not a
+ * silent overwrite of which checkout stable actually launches. */
 
-#define GPAB_PYTHON  "/home/lance/Projects/gpab/assessment_gtk/.venv/bin/python"
-#define GPAB_WORKDIR "/home/lance/Projects/gpab/assessment_gtk"
+#define GPAB_LAUNCHER "gpab-assessment"
 
 /* Reap the gpab child when it exits (window closed by the user, crash, or
  * killed below to make way for a new session) so app->gpab_pid never goes
@@ -57,7 +66,7 @@ static void on_gpab_exited(GPid pid, gint status, gpointer user_data)
  * to be name-based rather than app->gpab_pid-based. */
 static void kill_existing_gpab(void)
 {
-    char *argv[] = { "pkill", "-f", "gpab_assessment\\.main", NULL };
+    char *argv[] = { "pkill", "-f", GPAB_LAUNCHER, NULL };
     g_spawn_sync(NULL, argv, NULL,
                  G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
                  NULL, NULL, NULL, NULL, NULL, NULL);
@@ -87,8 +96,13 @@ void integration_create_tui_window(AppState *app, GtkApplication *gapp)
     kill_existing_gpab();
     app->gpab_pid = 0;
 
+    /* GPAB_LAUNCHER is a bare command name, resolved via $PATH
+     * (G_SPAWN_SEARCH_PATH) to a small wrapper script in ~/.local/bin/ that
+     * cds into the right checkout and execs its own venv's python — see
+     * this file's header comment. cwd NULL: inherit, the wrapper does its
+     * own cd rather than this process needing to know the checkout path. */
     char *argv[] = {
-        (char *)GPAB_PYTHON, "-m", "gpab_assessment.main",
+        (char *)GPAB_LAUNCHER,
         "--session", app->session_file,
         NULL
     };
@@ -96,10 +110,10 @@ void integration_create_tui_window(AppState *app, GtkApplication *gapp)
     GError *error = NULL;
     GPid pid = 0;
     gboolean ok = g_spawn_async(
-        GPAB_WORKDIR,
+        NULL,
         argv,
         NULL,
-        G_SPAWN_DO_NOT_REAP_CHILD,
+        G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
         NULL, NULL,
         &pid,
         &error);
