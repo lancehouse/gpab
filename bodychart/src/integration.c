@@ -9,11 +9,14 @@
  * version of this file). gpab replaces that TUI with a standalone GTK4 app
  * that manages its own window entirely, so there is nothing left to embed —
  * this just launches it as an independent process against the same session
- * file and otherwise gets out of the way. Deliberately NOT supervised in the
- * sense that gpab exiting doesn't close bodychart and vice versa (see
- * on_main_window_close / this file's own no-op focus/destroy below) — the
- * two are meant to run side by side as separate programs now, not one
- * owning the other's lifecycle the way the embedded TUI window used to.
+ * file and otherwise gets out of the way — two separate windows/processes,
+ * not one owning the other's widget tree the way the embedded TUI window
+ * used to. Lifecycle coupling changed 2026-08-25 though (see
+ * integration_destroy_tui/integration_focus_tui below): closing either
+ * window now closes both, and a dedicated key in each raises the other's
+ * window — "feels like one program" without actually merging the two
+ * codebases, wired via D-Bus app activation/actions (`gapplication`)
+ * rather than any process-tree ownership.
  * The one thing that IS tracked here is gpab's PID (app->gpab_pid), purely
  * for bookkeeping/reaping — see on_gpab_exited below. Making way for a
  * newly-opened session is instead done by killing any running gpab process
@@ -131,16 +134,46 @@ void integration_create_tui_window(AppState *app, GtkApplication *gapp)
 
 void integration_focus_tui(AppState *app)
 {
-    (void)app;
     /* No embedded window to focus — gpab manages its own window/taskbar
-     * presence as an independent process. */
+     * presence as an independent process (unchanged from before). What
+     * changed 2026-08-25: raise gpab's actual window instead of doing
+     * nothing, via the same "feels like one program" D-Bus mechanism as
+     * the quit coupling above — `gapplication launch` on an app that's
+     * already running re-delivers "activate" to it rather than spawning a
+     * second instance, which for gpab now just presents its existing
+     * window (see app.py::build_app's on_activate — it used to
+     * unconditionally create a new TrialWindow every activate, fixed in
+     * the same pass as this, since re-activating a live one is now a real,
+     * intentional code path rather than something that only ever happened
+     * by accident). Best-effort: if gpab isn't running, this is a no-op
+     * rather than launching a fresh gpab with no session — the app id
+     * alone doesn't carry a --session argument, and guessing which session
+     * to open would be worse than doing nothing. */
+    if (!app->session_file[0]) return;
+
+    char *argv[] = { "gapplication", "launch", "com.gpab.assessment", NULL };
+    g_spawn_async(NULL, argv, NULL,
+                  G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+                  NULL, NULL, NULL, NULL);
 }
 
 void integration_destroy_tui(AppState *app)
 {
+    /* Superseded 2026-08-25 — this used to deliberately do nothing, on the
+     * grounds that "neither app owns the other's lifecycle" (see file
+     * header, written 2026-08-23). Direct user request since: the two
+     * should feel like one program, closing together either direction, not
+     * two independently-lived windows. Doesn't kill app->gpab_pid directly
+     * (SIGKILL/SIGTERM would skip gpab's own flush-then-report-regenerate
+     * close path entirely) — asks gpab to close itself the same way its
+     * own Ctrl+Q would, via the "quit" GAction app.py registers. Runs
+     * unconditionally on every bodychart close, not just ones that
+     * actually opened a gpab: harmless no-op via gapplication if gpab
+     * isn't running (no bus name to activate). See gpab's own
+     * app.py::_on_close_request for the matching other-direction call. */
     (void)app;
-    /* gpab's lifetime is independent of bodychart's now — see file header.
-     * Deliberately does NOT kill app->gpab_pid: bodychart's own window
-     * closing shouldn't reach out and close gpab's, matching the "neither
-     * owns the other's lifecycle" design stated above. */
+    char *argv[] = { "gapplication", "action", "com.gpab.assessment", "quit", NULL };
+    g_spawn_async(NULL, argv, NULL,
+                  G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
+                  NULL, NULL, NULL, NULL);
 }

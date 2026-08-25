@@ -32,8 +32,27 @@ static gboolean on_key_pressed(GtkEventControllerKey *ctrl,
         return TRUE;
     }
 
-    /* Ctrl+A — focus the assessment TUI terminal */
+    /* Ctrl+A — raise gpab's window (stale binding from the VTE-embedded-TUI
+     * era, "focus the assessment TUI terminal"; integration_focus_tui now
+     * does the real 2026-08-25 equivalent — see that function). Left bound
+     * as a second way in, alongside the new dedicated key below. */
     if ((mods & GDK_CONTROL_MASK) && (keyval == GDK_KEY_a || keyval == GDK_KEY_A)) {
+        integration_focus_tui(app);
+        return TRUE;
+    }
+
+    /* Ctrl+B — the dedicated "switch to gpab" key (2026-08-25). Two earlier
+     * attempts both got silently intercepted before reaching this handler
+     * at all — first Ctrl+` (backtick, the user's original preference from
+     * the old embedded-TUI toggle), then Ctrl+Tab — each reproducibly
+     * triggering the user's system app/window-switcher instead (checked
+     * gsettings/mutter/shell schemas thoroughly for both; no explicit
+     * binding for either found anywhere, so whatever's catching them is
+     * lower-level than anything inspectable there). Ctrl+B is a plain
+     * letter with no switcher-like semantics, confirmed free in both apps'
+     * own bindings. See integration_focus_tui and gpab's own
+     * app.py::_switch_to_bodychart for the matching other-direction key. */
+    if ((mods & GDK_CONTROL_MASK) && (keyval == GDK_KEY_b || keyval == GDK_KEY_B)) {
         integration_focus_tui(app);
         return TRUE;
     }

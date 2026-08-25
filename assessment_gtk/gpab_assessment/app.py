@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gtk, Gdk, GLib  # noqa: E402
+from gi.repository import Gtk, Gdk, GLib, Gio  # noqa: E402
 
 from .storage_bridge import (
     load_assessment_block, save_sections, SECTION_KEYS,
@@ -790,6 +790,9 @@ class TrialWindow(Gtk.ApplicationWindow):
         if ctrl_held and name.lower() == "q":
             self._flush_and_quit()
             return True
+        if ctrl_held and name.lower() == "b":
+            self._switch_to_bodychart()
+            return True
         if ctrl_held and name.lower() == "a":
             return self._select_all_focused()
         if ctrl_held and name.lower() == "r":
@@ -1225,6 +1228,37 @@ class TrialWindow(Gtk.ApplicationWindow):
             return True
         return False
 
+    def _switch_to_bodychart(self) -> None:
+        """Ctrl+B — raise bodychart's window instead of gpab's own, the
+        dedicated-key half of "feels like one program" (2026-08-25; see
+        bodychart/src/window.c's matching Ctrl+B handler, which raises
+        gpab). Landed on Ctrl+B (no particular mnemonic — "for all I care"
+        was the user's own bar) only after two failed attempts, both
+        live-tested the same day: Ctrl+` (the user's original preference,
+        from the old embedded-TUI setup) and then Ctrl+Tab both got
+        silently intercepted before reaching either app's key handler at
+        all — something below GNOME's own gsettings-visible keybindings
+        (checked thoroughly: wm/mutter/shell schemas, no explicit binding
+        for either combo found anywhere) reproducibly caught both as its
+        own app/window-switcher gesture instead. Ctrl+B is a plain letter
+        with no switcher-like semantics and wasn't already bound in either
+        app (unlike Ctrl+A, which gpab already uses for select-all).
+        `gapplication launch <app-id>` on an app that's already running
+        doesn't spawn a second instance — it re-delivers "activate" to the
+        existing one, which for bodychart just presents its window (single
+        window, nothing to dedupe there, unlike gpab's own on_activate —
+        see build_app's docstring on that). Best-effort: if bodychart isn't
+        running, this silently does nothing rather than launching a fresh
+        one with no session — matches how the reverse direction
+        (bodychart's Ctrl+B) is scoped too."""
+        try:
+            subprocess.Popen(
+                ["gapplication", "launch", "com.gpab.bodychart"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except OSError as e:
+            logger.warning("_switch_to_bodychart: gapplication launch failed: %s", e)
+
     def _flush_and_quit(self) -> None:
         """Ctrl+Q — just closes the window; _on_close_request does the actual
         flush-then-report work, uniformly for every close path (this, the
@@ -1265,6 +1299,22 @@ class TrialWindow(Gtk.ApplicationWindow):
         self._chart_watcher.stop()
         self._report_timer.stop()
         self.session_timer_widget.stop()
+
+        # "Close once" (2026-08-25): whichever of the two windows closes,
+        # the other should too — best-effort, fire-and-forget, never blocks
+        # this close. If bodychart isn't running this just fails silently
+        # (no bus name to activate); if bodychart is ALSO mid-close right
+        # now (the two closed each other within the same instant) this is
+        # a harmless duplicate that no-ops against an already-vanishing
+        # bus name, not a loop — bodychart's own quit action doesn't call
+        # back into this one, it only runs bodychart's own close path.
+        try:
+            subprocess.Popen(
+                ["gapplication", "action", "com.gpab.bodychart", "quit"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except OSError as e:
+            logger.warning("_on_close_request: gapplication action quit failed: %s", e)
 
         session_file = self.session_file
 
@@ -1465,9 +1515,44 @@ class TrialWindow(Gtk.ApplicationWindow):
 
 
 def build_app(session_file: str) -> Gtk.Application:
+    """Owns two 2026-08-25 additions on top of the plain single-window app,
+    both in service of "feels like one program with bodychart" — see
+    TrialWindow._switch_to_bodychart's docstring for the other half:
+
+    1. on_activate now reuses an existing window instead of creating a new
+       TrialWindow every time it fires. It used to always create one, which
+       was harmless as long as nothing ever re-activated a running
+       instance (the only real trigger was a second `gpab_assessment.main`
+       launch, and that always got pkilled first by bodychart's
+       kill_existing_gpab / ./gpab's own pkill, so on_activate only ever
+       ran once per process in practice). That stops being true now that
+       bodychart's Ctrl+B deliberately re-activates a still-running gpab on
+       purpose (via `gapplication launch`) to raise its window — without
+       this fix that would have popped a second, confusingly-blank
+       TrialWindow on top of the real one instead.
+    2. A "quit" GAction, activated remotely via
+       `gapplication action com.gpab.assessment quit` — the half of "close
+       once" that lets bodychart's own close handler ask gpab to close too.
+       Just closes the window, same as any other close path — routes
+       through TrialWindow._on_close_request as normal, no shortcuts on the
+       flush/report-regeneration work that path does.
+    """
     app = Gtk.Application(application_id="com.gpab.assessment")
+    state = {"win": None}
+
+    def on_quit_action(_action, _param) -> None:
+        if state["win"] is not None:
+            state["win"].close()
+
+    quit_action = Gio.SimpleAction.new("quit", None)
+    quit_action.connect("activate", on_quit_action)
+    app.add_action(quit_action)
 
     def on_activate(app):
+        if state["win"] is not None:
+            state["win"].present()
+            return
+
         display = Gdk.Display.get_default()
         provider = Gtk.CssProvider()
         provider.load_from_path(str(Path(__file__).with_name("style.css")))
@@ -1475,6 +1560,7 @@ def build_app(session_file: str) -> Gtk.Application:
             display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
         win = TrialWindow(app, session_file)
+        state["win"] = win
 
         # GTK CSS has no light/dark media query, so app.py detects the
         # system preference itself (via Gtk.Settings, which GNOME's
