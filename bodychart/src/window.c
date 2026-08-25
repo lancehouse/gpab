@@ -2318,10 +2318,25 @@ void window_show_launch(AppState *app, GtkApplication *gapp)
  * below, which is why combined.pdf was going missing for real sessions
  * despite combined.png exporting fine every time. Returning FALSE lets the
  * window's default close-request handling (destroy) proceed normally
- * afterward. */
+ * afterward.
+ *
+ * Re-entrancy guard (merged-app embedding spike, 2026-08-25): closing now
+ * calls integration_destroy_tui(), which (in embedded mode) directly and
+ * SYNCHRONOUSLY calls into gpab's Python to close ITS window — which,
+ * coupled the same way on the Python side, calls straight back into
+ * bodychart's own gtk_window_close(), re-entering this handler before the
+ * first call has returned. g_closing makes the second entry a no-op,
+ * mirroring app.py::TrialWindow._closing on the Python side of the same
+ * coupling. Static rather than an AppState field since there's only ever
+ * one bodychart main window in this process. */
+static gboolean g_closing = FALSE;
+
 static gboolean on_main_window_close(GtkWidget *w, gpointer data)
 {
     (void)w;
+    if (g_closing) return FALSE;
+    g_closing = TRUE;
+
     AppState *app = data;
     integration_destroy_tui(app);
     persistence_monitor_stop(app);
