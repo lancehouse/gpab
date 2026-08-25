@@ -1,8 +1,10 @@
-"""GTK4 trial app — full assessment conversion, touch-first, debounced autosave.
+"""GTK4 assessment app — full conversion of the assessment TUI, touch-first,
+debounced autosave.
 
 Operates against the exact session path passed on the command line —
-main.py accepts either a ~/PAB-gtktrial/<name>/ copy or (since the isolation
-relaxation of 2026-08-22) a real ~/PAB/<name>/ session directly.
+main.py accepts either a ~/PAB-assessment-gtk/<name>/ disposable dev copy or
+(since the isolation relaxation of 2026-08-22) a real ~/PAB/<name>/ session
+directly.
 """
 
 from __future__ import annotations
@@ -106,8 +108,8 @@ _NAME_TO_SECTION_ID.update(_OBJECTIVE_NAME_TO_SECTION_ID)
 
 # Default active region on a fresh/unsaved session — toggled live from
 # RegionTopbar thereafter, and overridden by whatever "active_regions" list
-# was last saved once a session is loaded. No live body-chart region sync in
-# this trial (same deferral as the KB panel) — toggling is manual only.
+# was last saved once a session is loaded. No live body-chart region sync
+# yet (same deferral as the KB panel) — toggling is manual only.
 _DEFAULT_ACTIVE_REGIONS = ["lumbar"]
 
 _SECTION_ID_TO_NAME = {v: k for k, v in _NAME_TO_SECTION_ID.items()}
@@ -693,7 +695,7 @@ class TrialWindow(Gtk.ApplicationWindow):
 
     # ------------------------------------------------------------------
     # Global hotkeys — mirrors main.py's PhysioAssessment.BINDINGS for the
-    # sections this trial implements:
+    # sections implemented here:
     #   F1/F2            section switch      (BINDINGS f1/f2)
     #   F4               → Objective mode    (BINDINGS f4 "section_objective" —
     #                      enters Objective mode, resuming whichever objective
@@ -1463,7 +1465,7 @@ class TrialWindow(Gtk.ApplicationWindow):
 
 
 def build_app(session_file: str) -> Gtk.Application:
-    app = Gtk.Application(application_id="com.gpab.trial")
+    app = Gtk.Application(application_id="com.gpab.assessment")
 
     def on_activate(app):
         display = Gdk.Display.get_default()

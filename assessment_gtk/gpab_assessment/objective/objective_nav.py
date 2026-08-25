@@ -19,7 +19,7 @@ from ..nav import SIDEBAR_WIDTH
 
 # (section_id, label) — order and labels match ObjectiveSidebar.SECTION_LABELS
 # exactly. section_id values are the TUI's own ids (01_general, 07_functional,
-# 02_active, ...), not gtk_trial's per-file names, so app.py's dispatch stays
+# 02_active, ...), not this app's per-file names, so app.py's dispatch stays
 # a direct 1:1 mirror of assessment_view.py's ids.
 SECTION_LABELS: list[tuple[str, str]] = [
     ("01_general", "01 General Obs"),
@@ -64,7 +64,7 @@ class ObjectiveNav(Gtk.Box):
             btn.add_css_class("nav-button")
             if section_id not in BUILT_SECTIONS:
                 btn.set_sensitive(False)
-                btn.set_tooltip_text("Not built in this trial yet")
+                btn.set_tooltip_text("Not yet built")
             else:
                 btn.connect("clicked", self._on_clicked, section_id)
             self._buttons[section_id] = btn

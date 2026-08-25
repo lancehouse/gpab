@@ -20,11 +20,16 @@ narrow, reversible trial and has now graduated to a full conversion effort.
 The user's explicit instruction at the outset: prove nothing here can break the working `pab`
 install. `~/Projects/gpab` is a full `git clone` of `~/Projects/pab` with its own `.git` and no
 remote — not a worktree, which would have shared refs with the real repo. All new code lives in
-`gtk_trial/`; the cloned `assessment/`/`bodychart/` trees are read-only reference material. Session
-data used for testing is copied into a new `~/PAB-gtktrial/` directory and the app refuses to
-launch against a path under the real `~/PAB/`. This has been checked repeatedly throughout (`git
-status --short` on `~/Projects/pab` and `~/Projects/kb` staying at a constant 11/5 files, unrelated
-to this work) and held at every check.
+`assessment_gtk/`; the cloned `assessment/` tree is a read-only reference copy, and `bodychart/` is
+a reference copy too except for the deliberate, locally-scoped changes described in `CLAUDE.md`'s
+Phase 6 note. Early on, session data used for testing was copied into a `~/PAB-gtktrial/` directory
+and the app refused to launch against a path under the real `~/PAB/`; that restriction was
+deliberately relaxed 2026-08-22 once the schema-compatibility work below was proven out — this app
+now reads/writes real `~/PAB/` sessions directly (disposable dev copies via
+`scripts/copy_dev_session.sh` into `~/PAB-assessment-gtk/` still work if wanted, just aren't
+required). Code-repo isolation from `pab`/`kb` was never relaxed and has been checked repeatedly
+throughout (`git status --short` on `~/Projects/pab` and `~/Projects/kb` staying at a constant
+baseline, unrelated to this work) and held at every check.
 
 ## What's been built and proven
 

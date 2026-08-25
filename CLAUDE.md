@@ -1,16 +1,23 @@
-# gpab — GTK4 conversion of PhysioChart's Textual TUI
+# gpab — the GTK4 successor to PhysioChart's Textual assessment TUI
 
-This repo is a **standalone, isolated R&D fork**, not the production PhysioChart codebase.
-Production lives at `~/Projects/pab` (bodychart GTK4/C + assessment Textual TUI, with its own
-`dev`/`main` branch rules, `pabd`/`pab` launchers — see that repo's own `CLAUDE.md`). Those rules
-do **not** apply here; this repo has no remote, its `dev` branch is just an artifact of being
-cloned from `pab`, and nothing done here can reach production.
+gpab is the real, ongoing conversion of PhysioChart's assessment app from a Textual TUI to a
+native GTK4 app (`assessment_gtk/`), launched directly by `bodychart` for every real session and
+in genuine clinical use — not a prototype, demo, or throwaway experiment. It started life as an
+isolated clone of `~/Projects/pab` (bodychart GTK4/C + assessment Textual TUI, its own separate
+project with its own `dev`/`main` branch rules and `pabd`/`pab` launchers — see that repo's own
+`CLAUDE.md`) specifically so early work here could never risk the working `pab` install; that
+provenance is still true and still matters (see the isolation guarantee below), but it's a
+technical fact about how this repo is set up, not a statement that this is somehow less real than
+`pab`. This repo has no remote, and its `dev` branch is just an artifact of being cloned from
+`pab` — nothing done here can reach production, and there is no plan to merge back (see
+"Permanent end state" below).
 
-**Why this repo exists:** the TUI works well with keyboard/mouse but is slow on the touchscreen
-of the Lenovo Yoga this runs on, especially in the Objective examination tabs. What started as a
-small touch-vs-terminal trial (Consent + Subjective only) proved out well enough that the plan is
-now a **full conversion of the assessment TUI to native GTK4**. See `PROJECT_BRIEF.md` for what's
-been proven so far and why, and `CONVERSION_PLAN.md` for the section-by-section plan going forward.
+**Why this project exists:** the TUI works well with keyboard/mouse but is slow on the
+touchscreen of the Lenovo Yoga this runs on, especially in the Objective examination tabs. An
+early, narrow touch-vs-terminal comparison (Consent + Subjective only) proved out well enough
+that the decision was made to do a **full conversion of the assessment TUI to native GTK4**. See
+`PROJECT_BRIEF.md` for what was proven and why, and `CONVERSION_PLAN.md` for the section-by-section
+plan going forward.
 
 **Permanent end state (decided 2026-08-23, see `CONVERSION_PLAN.md` Phase 6):** gpab is never
 merged back into `pab`, and `~/Projects/pab` itself is never modified by this project — `pab`
@@ -38,20 +45,38 @@ guarantee below for exactly what that does and doesn't change.
   is ever copied back. Build this clone's copy with `ninja -C build` only — **never `ninja install`
   / `meson install`** from here, since that would write over the binaries/desktop file the real
   install may use rather than staying confined to this clone's own `build/` directory.
-- All new conversion code lives in `gtk_trial/` (name is a holdover from the touch-trial phase;
-  not yet renamed since renaming mid-conversion would churn every import path for no benefit —
-  revisit once the conversion is far enough along that a rename is worth the diff).
+- All conversion code lives in `assessment_gtk/` (renamed 2026-08-25 from `gtk_trial/` — that name
+  was a holdover from the early touch-trial phase and no longer described what this is; every
+  import path, script, launcher, and the app id were updated in the same pass, see git history).
 - **Session data isolation was relaxed 2026-08-22**: this app may now read and write real sessions
   under `~/PAB/` directly — the user is not worried about data corruption there and wants saves to
-  actually land in `~/PAB` (needed for report generation and the eventual body-chart integration
-  work). `~/PAB-gtktrial/` (populated via `gtk_trial/scripts/copy_trial_session.sh`) still exists
-  and still works, but is no longer required. **What still never happens**: writing to
-  `~/Projects/pab` or `~/Projects/kb` — the code-repo isolation below is unconditional and
-  unaffected by this relaxation.
-- Before and after any substantial work session, confirm nothing has leaked:
-  `git -C ~/Projects/pab status --short | wc -l` and `git -C ~/Projects/kb status --short | wc -l`
-  should be unchanged from whatever they were at the start of this project (11 and 5 as of this
-  writing) — if either has grown, something wrote where it shouldn't have.
+  actually land in `~/PAB` (needed for report generation and the body-chart integration work).
+  `~/PAB-assessment-gtk/` (populated via `assessment_gtk/scripts/copy_dev_session.sh`) still works
+  if a disposable dev copy is wanted, but is no longer required. **What still never happens
+  without explicit, case-by-case user sign-off**: writing to `~/Projects/pab` (unconditional, no
+  exceptions) or `~/Projects/kb` (the source project behind `clinical_kb.db`, linked read-only by
+  default — see "Maintaining the kb link" below; it has been written to exactly once, 2026-08-24,
+  with explicit permission, to add CRPS KB content following kb's own authoring process).
+- Before and after any substantial work session, confirm nothing has leaked into `pab`:
+  `git -C ~/Projects/pab status --short | wc -l` should be unchanged from whatever it was at the
+  start of this project (11 as of this writing) — if it's grown, something wrote where it
+  shouldn't have. `kb` doesn't get the same fixed-baseline check any more, since legitimate,
+  user-authorized commits now land there (see "Maintaining the kb link" below) — check its `git
+  log` for anything unexpected instead of comparing a file count.
+
+## Maintaining the kb link
+
+`clinical_kb.db` (Ctrl+K/Ctrl+D knowledge-base content — procedures, Sn/Sp, cluster membership,
+the Budapest/Valencia CRPS criteria) is built by the separate `~/Projects/kb` project and consumed
+here read-only, via `~/.local/share/pab/clinical_kb.db` (symlinked into `~/Projects/kb/output/`) —
+see `assessment_gtk/gpab_assessment/objective/kb_db.py`. That link stays: gpab is not forking or
+vendoring the KB, and `kb`'s own authoring pipeline (source CSVs → `build/import_kb.py` →
+`output/clinical_kb.db`, see `~/Projects/kb/CLAUDE.md`) is still the only correct way to add or
+change KB content. Editing `kb` from here is normally out of scope (same as `pab`) — the one
+exception so far (CRPS content, 2026-08-24) required the user's explicit, case-by-case permission
+and followed `kb`'s own process exactly (new rows in `source/msk_clusters_pab.csv`, rebuilt via
+`import_kb.py`/`validate_kb.py`, committed in `~/Projects/kb` itself, not here). Don't treat that
+as a standing permission — ask again each time.
 
 ## What "full conversion" means, concretely
 
@@ -79,8 +104,8 @@ Regional Differential panel, live body-chart region sync, and the app-level Phas
    `storage.py`), separate debounced save timers per JSON file (`_assessment.json` vs
    `_objective.json`), matching the TUI's own `AssessmentView`/`ObjectiveAssessmentView` split.
 4. **Button width ≤ ¼ screen** — still a sane touch-UI rule; see `field_left_slot()` and the
-   `GRID_LABEL_COL_PX`/compact-toggle conventions in `gtk_trial/gpab_trial/` for how this is
-   enforced structurally rather than per-widget.
+   `GRID_LABEL_COL_PX`/compact-toggle conventions in `assessment_gtk/gpab_assessment/` for how this
+   is enforced structurally rather than per-widget.
 
 ## Rules established during this project (see `CONVERSION_PLAN.md` for the full list)
 
@@ -93,8 +118,8 @@ behaviour automatically, not by a human remembering to copy a pattern.
 ## Running it
 
 ```bash
-cd gtk_trial
+cd assessment_gtk
 bash scripts/setup_venv.sh                      # one-time: venv + deps
-bash scripts/copy_trial_session.sh <name>        # copy a real session into ~/PAB-gtktrial/
-bash scripts/run.sh <name>                       # launch against the copy
+bash scripts/copy_dev_session.sh <name>          # copy a real session into ~/PAB-assessment-gtk/
+bash scripts/run.sh <name>                       # launch against it (checks ~/PAB/<name>/ first)
 ```

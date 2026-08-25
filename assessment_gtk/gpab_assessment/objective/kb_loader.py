@@ -18,7 +18,7 @@ from . import kb_db
 
 logger = logging.getLogger(__name__)
 
-# Reads the read-only reference clone's kb/*.yaml directly — this trial has
+# Reads the read-only reference clone's kb/*.yaml directly — this app has
 # no copy of its own, same pattern as region_section.py's _YAML_DIR.
 _KB_DIR = (
     Path(__file__).resolve().parents[3]

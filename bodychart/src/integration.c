@@ -36,8 +36,8 @@
  * never touched by this change; pabd/pabs keep building and running the
  * original integration.c unmodified. */
 
-#define GPAB_PYTHON  "/home/lance/Projects/gpab/gtk_trial/.venv/bin/python"
-#define GPAB_WORKDIR "/home/lance/Projects/gpab/gtk_trial"
+#define GPAB_PYTHON  "/home/lance/Projects/gpab/assessment_gtk/.venv/bin/python"
+#define GPAB_WORKDIR "/home/lance/Projects/gpab/assessment_gtk"
 
 /* Reap the gpab child when it exits (window closed by the user, crash, or
  * killed below to make way for a new session) so app->gpab_pid never goes
@@ -57,7 +57,7 @@ static void on_gpab_exited(GPid pid, gint status, gpointer user_data)
  * to be name-based rather than app->gpab_pid-based. */
 static void kill_existing_gpab(void)
 {
-    char *argv[] = { "pkill", "-f", "gpab_trial\\.main", NULL };
+    char *argv[] = { "pkill", "-f", "gpab_assessment\\.main", NULL };
     g_spawn_sync(NULL, argv, NULL,
                  G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
                  NULL, NULL, NULL, NULL, NULL, NULL);
@@ -88,7 +88,7 @@ void integration_create_tui_window(AppState *app, GtkApplication *gapp)
     app->gpab_pid = 0;
 
     char *argv[] = {
-        (char *)GPAB_PYTHON, "-m", "gpab_trial.main",
+        (char *)GPAB_PYTHON, "-m", "gpab_assessment.main",
         "--session", app->session_file,
         NULL
     };

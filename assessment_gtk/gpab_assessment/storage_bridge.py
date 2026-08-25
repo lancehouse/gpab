@@ -83,7 +83,7 @@ def load_objective_block(session_file: str) -> dict:
 
     Separate file from _assessment.json (see pab CLAUDE.md's two-app data
     layout) — the TUI's ObjectiveAssessmentView saves/loads this
-    independently of AssessmentView, and this trial mirrors that split.
+    independently of AssessmentView, and this app mirrors that split.
     """
     data = load_objective(session_file)
     return data.get("assessment", {})

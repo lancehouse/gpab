@@ -687,7 +687,7 @@ class RegionContainer(Gtk.Box):
 
 class RegionTabContent(Gtk.Box):
     """Variable objective tab - shows one collapsible RegionContainer per
-    active region. This trial has no live body-chart region sync yet, so
+    active region. This app has no live body-chart region sync yet, so
     the active region list is fixed at construction time (see app.py)
     rather than driven by chart selection, same deferral as the KB panel."""
 

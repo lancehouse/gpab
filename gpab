@@ -1,7 +1,7 @@
 #!/bin/bash
-# Stable, always-fresh launcher for the gpab GTK conversion app.
+# Stable, always-fresh launcher for the gpab GTK4 assessment app.
 #
-# GtkApplication is single-instance per application_id (com.gpab.trial): a
+# GtkApplication is single-instance per application_id (com.gpab.assessment): a
 # second launch while one is already running just hands activation to the
 # existing process instead of loading new code. That silently showed stale
 # code once already (Pain Classification looked missing because the running
@@ -9,16 +9,16 @@
 # any running instance first so `gpab <name>` always reflects the latest code.
 #
 # Usage: gpab <session-name>   (same names scripts/run.sh accepts — checks
-#                                ~/PAB/<name>/ first, then ~/PAB-gtktrial/<name>/)
+#                                ~/PAB/<name>/ first, then ~/PAB-assessment-gtk/<name>/)
 #
-# No default-session fallback: now that bodychart launches gpab directly per
-# session (CONVERSION_PLAN.md Phase 6), this script's own daily-use role is
-# gone — it's a manual/dev entry point only, so a missing session name is a
-# usage error, not a convenience to paper over.
+# No default-session fallback: bodychart launches gpab directly per session
+# (CONVERSION_PLAN.md Phase 6), so this script's own daily-use role is gone —
+# it's a manual/dev entry point only, so a missing session name is a usage
+# error, not a convenience to paper over.
 set -euo pipefail
-cd "$(dirname "$(readlink -f "$0")")/gtk_trial"
+cd "$(dirname "$(readlink -f "$0")")/assessment_gtk"
 
-pkill -f "gpab_trial\.main" 2>/dev/null || true
+pkill -f "gpab_assessment\.main" 2>/dev/null || true
 sleep 0.3
 
 if [ $# -eq 0 ]; then

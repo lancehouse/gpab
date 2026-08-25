@@ -1,9 +1,8 @@
 """Left sidebar section nav — GTK4 port of assessment_view.py's SectionNav.
 
 Mirrors the TUI's structure: full-width stacked buttons in a fixed-width
-left sidebar, active section highlighted. Sections not yet built in this
-trial are shown as disabled placeholders so the sidebar reads the same as
-the real TUI's.
+left sidebar, active section highlighted. Sections not yet built are shown
+as disabled placeholders so the sidebar reads the same as the real TUI's.
 
 The TUI actually uses TWO separate sidebars — this one (assessment mode:
 Consent/Subjective/Medical/Objective-entry/Pain Class/Outcomes/Diagnosis/
@@ -40,7 +39,7 @@ SECTION_LABELS = [
     ("08_rx_plan", "09 Rx & Plan"),
 ]
 
-# Sections this trial actually implements — everything else renders disabled.
+# Sections actually implemented — everything else renders disabled.
 BUILT_SECTIONS = {
     "01_consent", "02_subjective", "03_medical", "04_objective",
     "04_pain_classification", "05_outcome_measures", "06_diagnosis", "07_barriers",
@@ -79,7 +78,7 @@ class SectionNav(Gtk.Box):
             # SectionNav.__init__).
             if section_id not in BUILT_SECTIONS:
                 btn.set_sensitive(False)
-                btn.set_tooltip_text("Not built in this trial — see gtk_trial/CLAUDE.md")
+                btn.set_tooltip_text("Not yet built — see assessment_gtk/CLAUDE.md")
             else:
                 btn.connect("clicked", self._on_clicked, section_id)
             self._buttons[section_id] = btn

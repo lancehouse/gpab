@@ -1,4 +1,4 @@
-"""Entry point: gpab_trial --session /path/to/<name>/<name>_session.json
+"""Entry point: python -m gpab_assessment.main --session /path/to/<name>/<name>_session.json
 
 Session data isolation was relaxed 2026-08-22: this app may now read/write
 real sessions under ~/PAB/ directly (the user is not worried about data

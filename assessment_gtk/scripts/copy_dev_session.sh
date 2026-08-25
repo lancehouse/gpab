@@ -1,6 +1,6 @@
 #!/bin/bash
-# Copy a real session out of ~/PAB/<name>/ into ~/PAB-gtktrial/<name>/ for safe trial use.
-# READS from ~/PAB/ only. NEVER writes back to it.
+# Copy a real session out of ~/PAB/<name>/ into ~/PAB-assessment-gtk/<name>/ for
+# disposable dev use. READS from ~/PAB/ only. NEVER writes back to it.
 set -euo pipefail
 
 if [ $# -ne 1 ]; then
@@ -12,7 +12,7 @@ fi
 
 NAME="$1"
 SRC="$HOME/PAB/$NAME"
-DST="$HOME/PAB-gtktrial/$NAME"
+DST="$HOME/PAB-assessment-gtk/$NAME"
 
 if [ ! -d "$SRC" ]; then
     echo "No such session: $SRC" >&2
@@ -20,11 +20,11 @@ if [ ! -d "$SRC" ]; then
 fi
 
 if [ -d "$DST" ]; then
-    echo "Trial copy already exists at $DST — remove it first if you want a fresh copy." >&2
+    echo "Dev copy already exists at $DST — remove it first if you want a fresh copy." >&2
     exit 1
 fi
 
-mkdir -p "$HOME/PAB-gtktrial"
+mkdir -p "$HOME/PAB-assessment-gtk"
 cp -r "$SRC" "$DST"
 
 echo "Copied $SRC -> $DST"

@@ -39,7 +39,7 @@ this only does one of them:
    .views_drawn — small icons in the TUI's top bar showing which symptom
    types/views have been drawn on). NOT PORTED: gpab has no equivalent
    widget built at all (grep confirms zero references to symptom_types_used
-   anywhere in gpab_trial/) — there's nothing to refresh.
+   anywhere in gpab_assessment/) — there's nothing to refresh.
 
 Also unlike the reference implementation, `active_regions` / RegionTabContent
 mounting is NOT touched here — re-read tui.py's own on_chart_update (lines
@@ -102,7 +102,7 @@ real bodychart app against a real gpab session, drawing a stroke and
 confirming a note slot appears with sane text is the real end-to-end check
 still outstanding. If anything looks wrong then, start by comparing a fresh
 stroke's on-disk shape against the `_OP_ROWS`-style fixtures used in this
-port's own test above, in gpab_trial's git history for this file's
+port's own test above, in gpab_assessment's git history for this file's
 introduction commit.
 """
 
