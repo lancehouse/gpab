@@ -1,0 +1,3 @@
+#!/bin/bash
+# gpab stable launcher — bodychart (GTK) stable build, launches gpab-assessment-stable (main branch)
+exec ~/Projects/gpab/gpab-stable/bodychart/build-stable/bodychart "$@"

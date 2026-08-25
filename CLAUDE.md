@@ -64,6 +64,44 @@ guarantee below for exactly what that does and doesn't change.
   user-authorized commits now land there (see "Maintaining the kb link" below) — check its `git
   log` for anything unexpected instead of comparing a file count.
 
+## Branch and deployment rules — ABSOLUTE
+
+Mirrors `pab`'s own dev/stable split (see its `CLAUDE.md`) exactly, adapted 1:1 — built
+2026-08-25 to close a real gap: before this, there was only one checkout and one build, so every
+rebuild took effect the moment the desktop icon was next clicked, with no tested/known-good copy
+protected from whatever was mid-change. These rules are non-negotiable and override any other
+instruction in this session.
+
+| Launcher | Bodychart binary | gpab assessment app | Git branch |
+|----------|-------------------|----------------------|------------|
+| `gpabd`  | `bodychart/build/bodychart` | `gpab-assessment` → this checkout's `assessment_gtk/.venv` | `dev` |
+| `gpabs`  | `gpab-stable/bodychart/build-stable/bodychart` | `gpab-assessment-stable` → `gpab-stable/assessment_gtk/.venv` | `main` |
+
+`gpab-stable/` is a **git worktree of this same repo**, nested inside it and pinned to `main` (`git
+worktree list` shows both). It has its own build directory, its own Python venv, and its own copy
+of every file — a bug in dev code cannot reach it just by existing on disk. The **desktop icon**
+(`com.gpab.bodychart.desktop`, `Exec=…/gpab-stable/bodychart/build-stable/bodychart`) points at
+`gpabs`'s stable binary — that's the one actually used for real patient sessions. `gpabd`/the
+dev binary are for testing changes before they're promoted, not daily clinical use.
+
+`bodychart/src/integration.c` differs from its `main`-branch copy in exactly one line — the
+`GPAB_LAUNCHER` macro (`"gpab-assessment"` on `dev`, `"gpab-assessment-stable"` on `main`) — by
+design, so a `dev`→`main` merge always surfaces it as a conflict to resolve by hand (keep `main`'s
+value), never a silent overwrite of which checkout stable launches. This is the same shape as
+pab's own single-line `"assessment"`/`"assessments"` divergence in its `integration.c`.
+
+1. **All development work goes to `dev` first.** Every code change, bug fix, or feature lands on
+   `dev`. No exceptions.
+2. **`gpabd` is where you test.** Confirm a change works there before considering a merge.
+3. **`main` is never touched during development.** Do not commit, merge, or push to `main` (or
+   make any change inside `gpab-stable/`) unless the user says explicitly — in that same message —
+   "merge to main", "promote to stable", or equivalent. Finishing a feature, fixing a bug, or
+   completing a task is NOT permission.
+4. **No mid-session merges.** Even if a fix is confirmed working via `gpabd`, it stays on `dev`
+   until the user explicitly requests the promotion in a separate, deliberate instruction.
+5. Rebuilding `gpab-stable/bodychart` (`ninja -C gpab-stable/bodychart/build-stable`) is itself
+   part of "touching main" — don't do it as a side effect of a dev-side rebuild habit.
+
 ## Maintaining the kb link
 
 `clinical_kb.db` (Ctrl+K/Ctrl+D knowledge-base content — procedures, Sn/Sp, cluster membership,
