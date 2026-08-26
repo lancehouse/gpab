@@ -8,6 +8,20 @@ recognise. A replacement is applied as a precise in-place edit of the
 field's own buffer/entry (spellcheck.replace_span), so it rides the
 section's existing autosave path exactly like a real keystroke — no
 report-side or storage-side changes needed anywhere.
+
+Two escape hatches beyond the numbered list, both because dictionary
+suggestions and typing on a touchscreen are both fallible: the top
+suggestion is rendered much larger (.spellcheck-top-suggestion) so it can
+be read at a glance while moving quickly through a pass, and an editable
+correction entry (pre-filled with the word as actually typed, not a
+suggestion — easier to spot-fix your own typo than to start from an
+unrelated dictionary guess) lets you hand-type a fix when nothing offered
+is right. Digit/S/D shortcuts are only ever reached while that entry does
+NOT have keyboard focus — GTK stops a key event's propagation the moment
+the focused Entry consumes it (typing 's' produces the letter, not the
+skip action), the same "focused text-input eats the keystroke first"
+behaviour search_widget.py's docstring already documents having to design
+around — so no extra bookkeeping is needed to keep the two from colliding.
 """
 
 from __future__ import annotations
@@ -19,17 +33,19 @@ from gi.repository import Gtk, Gdk, GLib  # noqa: E402
 
 from . import spellcheck
 
-_CONTEXT_RADIUS = 40  # chars of context shown either side of the flagged word
+_CONTEXT_RADIUS = 150  # chars of context shown either side of the flagged word
 
 
 class SpellcheckModal(Gtk.Window):
     """Escape ends the pass. 1-9 replace with that numbered suggestion.
     S skips this occurrence. Shift+S skips this word for the rest of the
-    pass. D whitelists the word permanently (spellcheck_personal_dict.json)."""
+    pass. D whitelists the word permanently (spellcheck_personal_dict.json).
+    Typing your own fix into the correction entry and pressing Enter there
+    applies it instead."""
 
     def __init__(self, parent: Gtk.Window, win) -> None:
         super().__init__(transient_for=parent, modal=True, title="Spell Check")
-        self.set_default_size(520, 320)
+        self.set_default_size(560, 460)
 
         self._fields = spellcheck.collect_fields(win)
         self._field_idx = 0
@@ -53,6 +69,15 @@ class SpellcheckModal(Gtk.Window):
         self.context_label.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         box.append(self.context_label)
 
+        self.correction_entry = Gtk.Entry()
+        self.correction_entry.add_css_class("spellcheck-correction-entry")
+        self.correction_entry.set_hexpand(True)
+        focus_ctrl = Gtk.EventControllerFocus()
+        focus_ctrl.connect("enter", lambda _c: self.correction_entry.select_region(0, -1))
+        self.correction_entry.add_controller(focus_ctrl)
+        self.correction_entry.connect("activate", self._on_correction_activate)
+        box.append(self.correction_entry)
+
         self.suggestions_box = Gtk.ListBox()
         self.suggestions_box.set_selection_mode(Gtk.SelectionMode.NONE)
         self.suggestions_box.connect("row-activated", self._on_row_activated)
@@ -65,7 +90,8 @@ class SpellcheckModal(Gtk.Window):
         hint = Gtk.Label(xalign=0.0)
         hint.set_markup(
             '<span size="small" alpha="70%">'
-            "1–9 replace · S skip · Shift+S skip word · D add to dictionary · Esc stop"
+            "1–9 replace · S skip · Shift+S skip word · D add to dictionary · "
+            "type your own fix above then Enter · Esc stop"
             "</span>"
         )
         box.append(hint)
@@ -117,13 +143,15 @@ class SpellcheckModal(Gtk.Window):
             f"{flagged}</span>{after}{ellipsis_r}"
         )
 
+        self.correction_entry.set_text(word)
+
         self._suggestions = spellcheck.suggest(word)
         row = self.suggestions_box.get_row_at_index(0)
         while row is not None:
             self.suggestions_box.remove(row)
             row = self.suggestions_box.get_row_at_index(0)
         if not self._suggestions:
-            lbl = Gtk.Label(label="(no suggestions)", xalign=0.0)
+            lbl = Gtk.Label(label="(no suggestions — try the correction field above)", xalign=0.0)
             lbl.add_css_class("dim-label")
             lbl.set_margin_top(4)
             lbl.set_margin_bottom(4)
@@ -134,11 +162,24 @@ class SpellcheckModal(Gtk.Window):
             lbl.set_margin_top(4)
             lbl.set_margin_bottom(4)
             lbl.set_margin_start(6)
+            if i == 1:
+                lbl.add_css_class("spellcheck-top-suggestion")
             self.suggestions_box.append(lbl)
+
+        # Default focus must NOT land on correction_entry — GTK auto-focuses
+        # the first focusable widget on present()/on any child rebuild, which
+        # would otherwise steal every digit/S/D keystroke as typed text (a
+        # focused Entry consumes a key event outright, so it never reaches
+        # _on_key; see module docstring). suggestions_box is a neutral
+        # parking spot: it doesn't consume plain letter/digit keys itself, so
+        # the shortcuts stay live by default and the user only "opts in" to
+        # typing by clicking or tapping into the correction field.
+        self.suggestions_box.grab_focus()
 
     def _show_done(self) -> None:
         self.field_label.set_label("")
         self.context_label.set_markup("<b>Spell check complete.</b> No more flagged words.")
+        self.correction_entry.set_text("")
         row = self.suggestions_box.get_row_at_index(0)
         while row is not None:
             self.suggestions_box.remove(row)
@@ -175,6 +216,13 @@ class SpellcheckModal(Gtk.Window):
     # ------------------------------------------------------------------
     # Input
     # ------------------------------------------------------------------
+
+    def _on_correction_activate(self, entry: Gtk.Entry) -> None:
+        if self._current is None:
+            return
+        text = entry.get_text().strip()
+        if text:
+            self._apply(text)
 
     def _on_row_activated(self, _box, row: Gtk.ListBoxRow) -> None:
         if self._current is None:
