@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <math.h>
 
 /* ── Forward decls ──────────────────────────────────────────────────────── */
 static void update_toolbar_state(AppState *app);
@@ -437,6 +438,7 @@ static GtkWidget *g_obj_mono_btn;
 static GtkWidget *g_obj_ts_btn;
 static GtkWidget *g_obj_tpd_btn;
 static GtkWidget *g_obj_erase_btn;
+static GtkWidget *g_obj_pencil_btn;
 static GtkWidget *g_sidebar_content_stack;
 
 /* Sidebar display grouping (2026-08-26) — a UI-only concern, deliberately
@@ -594,6 +596,10 @@ static void update_toolbar_state(AppState *app)
         gtk_widget_set_name(g_obj_erase_btn,
             (app->current_mode == APP_MODE_OBJECTIVE &&
              app->tool == TOOL_ERASE)
+            ? "tool-btn-active" : "tool-btn");
+    if (g_obj_pencil_btn)
+        gtk_widget_set_name(g_obj_pencil_btn,
+            (app->current_mode == APP_MODE_OBJECTIVE && obj_pencil_active(app))
             ? "tool-btn-active" : "tool-btn");
 
     /* ── Sidebar content stack: switch per mode ── */
@@ -800,6 +806,7 @@ static void apply_css(void)
         "#overlay-btn { background: #2a3040; color: #8ab; border: 1px solid #446; }"
         "#overlay-btn-active { background: #3a5080; color: #cef; border: 2px solid #68c; }"
         "#section-label { color: #888; font-size: 9px; margin-top: 4px; margin-bottom: 1px; }"
+        "#tick-row-label { color: #ddd; font-size: 12px; margin-left: 2px; }"
         "#overlay-name { color: #8ab; font-size: 10px; }"
         "window.bodychart-app separator { background: #444; min-width: 1px; margin: 1px 2px; }"
         "#col-header { background: #f0f0f0; border-bottom: 1px solid #ccc; min-height: 28px; }"
@@ -1642,9 +1649,193 @@ typedef struct {
     int          view;
     double       bx, by;
     ObjPointType type;
-    GtkWidget   *window;
-    GtkWidget   *entry;
+    GtkWidget   *window;      /* keypad UI (non-PPT types) — a real GtkWindow */
+    GtkWidget   *entry;       /* NULL when the VAS UI (PPT only) was built instead */
+    /* VAS (Visual Analog Scale) trial, PPT only (2026-08-26) — a non-linear
+     * slider replacing the numeric keypad, at the user's explicit request:
+     * "if it is terrible I will revert to the keypad entry." Kept as a
+     * self-contained alternate UI path in this same dialog/struct rather
+     * than a separate file, so reverting is a small, easy diff if needed.
+     * Built as a GtkPopover (pd->popover), NOT a GtkWindow like the keypad
+     * — a popover can be positioned exactly at the tap point via
+     * gtk_popover_set_pointing_to() (a plain toplevel can't be positioned
+     * at all on Wayland) and gets click-outside-to-dismiss for free via
+     * its own autohide, no manual focus-tracking needed. */
+    GtkWidget   *popover;
+    GtkWidget   *vas_area;
+    double       vas_value;
+    /* Guards on_ppt_confirm/on_ppt_cancel (shared with the keypad path)
+     * against firing twice, e.g. a rapid double-tap on OK before the
+     * window closes. */
+    gboolean     closing;
 } PPTEntryData;
+
+/* ── PPT VAS (Visual Analog Scale) — non-linear 0.0-8.0 kg/cm² ───────────────
+ * Three segments, each given a FIXED fraction of the widget's on-screen
+ * width (not value-per-pixel-uniform) so the dense, commonly-used 1-5
+ * range gets most of the physical space, with 0-1 and 5-8 compressed but
+ * still reachable for the rarer outlier reading — direct user spec:
+ * "0-1 gets 0.8cm, 1-5 gets 8cm, 5-8 gets 2.4cm roughly on my screen."
+ * Widths below are exactly those cm figures, used only as RATIOS (this
+ * trial doesn't query real monitor physical size/DPI — see PPTEntryData's
+ * comment on why keeping this simple was deliberate for a first trial). */
+#define VAS_PPT_MIN        0.0
+#define VAS_PPT_MID        1.0
+#define VAS_PPT_MID2       5.0
+#define VAS_PPT_MAX        8.0
+#define VAS_SEG1_CM        0.8
+#define VAS_SEG2_CM        8.0
+#define VAS_SEG3_CM        2.4
+#define VAS_TOTAL_CM       (VAS_SEG1_CM + VAS_SEG2_CM + VAS_SEG3_CM)
+#define VAS_FRAC1          (VAS_SEG1_CM / VAS_TOTAL_CM)
+#define VAS_FRAC2          (VAS_SEG2_CM / VAS_TOTAL_CM)
+#define VAS_FRAC3          (VAS_SEG3_CM / VAS_TOTAL_CM)
+
+/* value (0.0-8.0) -> fraction of track width (0.0-1.0) */
+static double vas_ppt_value_to_frac(double v)
+{
+    v = CLAMP(v, VAS_PPT_MIN, VAS_PPT_MAX);
+    if (v <= VAS_PPT_MID)
+        return (v / VAS_PPT_MID) * VAS_FRAC1;
+    if (v <= VAS_PPT_MID2)
+        return VAS_FRAC1 + ((v - VAS_PPT_MID) / (VAS_PPT_MID2 - VAS_PPT_MID)) * VAS_FRAC2;
+    return VAS_FRAC1 + VAS_FRAC2 +
+           ((v - VAS_PPT_MID2) / (VAS_PPT_MAX - VAS_PPT_MID2)) * VAS_FRAC3;
+}
+
+/* fraction of track width (0.0-1.0) -> value (0.0-8.0), rounded to the
+ * nearest 0.1 kg/cm² — direct user spec ("I want accuracy of 0.1kg to
+ * register on the VAS"), so dragging never lands on noisy values like
+ * 4.263 that a touch/mouse pixel position would otherwise produce. */
+static double vas_ppt_frac_to_value(double frac)
+{
+    frac = CLAMP(frac, 0.0, 1.0);
+    double v;
+    if (frac <= VAS_FRAC1) {
+        v = (frac / VAS_FRAC1) * VAS_PPT_MID;
+    } else if (frac <= VAS_FRAC1 + VAS_FRAC2) {
+        v = VAS_PPT_MID + ((frac - VAS_FRAC1) / VAS_FRAC2) * (VAS_PPT_MID2 - VAS_PPT_MID);
+    } else {
+        v = VAS_PPT_MID2 + ((frac - VAS_FRAC1 - VAS_FRAC2) / VAS_FRAC3) * (VAS_PPT_MAX - VAS_PPT_MID2);
+    }
+    v = round(v * 10.0) / 10.0;
+    return CLAMP(v, VAS_PPT_MIN, VAS_PPT_MAX);
+}
+
+#define VAS_TRACK_MARGIN 14.0  /* px each side, room for the end dots/labels */
+
+static void vas_ppt_draw(GtkDrawingArea *da, cairo_t *cr, int w, int h, gpointer data)
+{
+    (void)da;
+    PPTEntryData *pd = data;
+    double track_w = w - 2.0 * VAS_TRACK_MARGIN;
+    double track_y = h * 0.6;  /* leaves room above for the floating digital readout, below for number labels */
+
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+
+    /* Track */
+    cairo_set_source_rgba(cr, 0.45, 0.45, 0.55, 0.9);
+    cairo_set_line_width(cr, 3.0);
+    cairo_move_to(cr, VAS_TRACK_MARGIN, track_y);
+    cairo_line_to(cr, VAS_TRACK_MARGIN + track_w, track_y);
+    cairo_stroke(cr);
+
+    /* Every whole number 0-8 gets its own labeled major tick (not just the
+     * three segment boundaries) — direct user feedback that four sparse
+     * labels read as "out of alignment" on a non-linear scale, since the
+     * eye expects a number under every tick, not just some. Quarter-unit
+     * minor ticks (.25/.5/.75) fill the gap between each pair — also
+     * direct spec ("0.25, 0.5 and 0.75 ticks between each figure"). Both
+     * loops reuse the exact same vas_ppt_value_to_frac() the marker and
+     * the drag-to-value conversion use, so a tick's drawn position and
+     * its actual snap target can never drift apart. */
+    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, 20.0);  /* larger numbers, direct user request — track/segment ratios unchanged */
+    for (int iv = 0; iv <= (int)VAS_PPT_MAX; iv++) {
+        double x = VAS_TRACK_MARGIN + vas_ppt_value_to_frac((double)iv) * track_w;
+        cairo_set_source_rgba(cr, 0.75, 0.75, 0.85, 1.0);
+        cairo_set_line_width(cr, 2.0);
+        cairo_move_to(cr, x, track_y - 9.0);
+        cairo_line_to(cr, x, track_y + 9.0);
+        cairo_stroke(cr);
+
+        char buf[8];
+        if (iv == (int)VAS_PPT_MAX)
+            snprintf(buf, sizeof(buf), "%.1f+", VAS_PPT_MAX);  /* "8.0+" — outlier-catchall, direct user request */
+        else
+            snprintf(buf, sizeof(buf), "%d", iv);
+        cairo_text_extents_t ext;
+        cairo_text_extents(cr, buf, &ext);
+        cairo_move_to(cr, x - ext.width / 2.0 - ext.x_bearing, track_y + 32.0);
+        cairo_show_text(cr, buf);
+
+        if (iv == (int)VAS_PPT_MAX) break;
+        for (int q = 1; q <= 3; q++) {
+            double v = iv + q * 0.25;
+            double qx = VAS_TRACK_MARGIN + vas_ppt_value_to_frac(v) * track_w;
+            cairo_set_source_rgba(cr, 0.55, 0.55, 0.65, 0.8);
+            cairo_set_line_width(cr, 1.2);
+            cairo_move_to(cr, qx, track_y - (q == 2 ? 6.0 : 4.0));
+            cairo_line_to(cr, qx, track_y + (q == 2 ? 6.0 : 4.0));
+            cairo_stroke(cr);
+        }
+    }
+
+    /* Marker */
+    double mx = VAS_TRACK_MARGIN + vas_ppt_value_to_frac(pd->vas_value) * track_w;
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.9);
+    cairo_arc(cr, mx, track_y, 11.0, 0, 2 * G_PI);
+    cairo_fill(cr);
+    cairo_set_source_rgba(cr, 0.15, 0.40, 0.80, 0.95);
+    cairo_arc(cr, mx, track_y, 9.0, 0, 2 * G_PI);
+    cairo_fill(cr);
+
+    /* Floating digital readout — direct user request: "a borderless
+     * floating numeric display... using the same font as the clock (the
+     * segmented digital figures) which is green and hovers above the
+     * numberline, updating as I scroll." "DS-Digital" is the exact font
+     * gpab's own session-timer clock uses (assessment_gtk/style.css's
+     * .session-timer-clock) — it's a real installed font
+     * (~/.local/share/fonts/DS-DIGI*.TTF), not a generic fallback, so no
+     * risk of the tofu-box glyph issue the ✓/✗ markers hit earlier.
+     * Tracks the marker's x position, floating just above the track. */
+    char vbuf[16];
+    snprintf(vbuf, sizeof(vbuf), "%.1f", pd->vas_value);
+    cairo_select_font_face(cr, "DS-Digital", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, 34.0);
+    cairo_text_extents_t vext;
+    cairo_text_extents(cr, vbuf, &vext);
+    double vx = CLAMP(mx, VAS_TRACK_MARGIN + vext.width / 2.0,
+                       VAS_TRACK_MARGIN + track_w - vext.width / 2.0);
+    cairo_set_source_rgba(cr, 0.0, 1.0, 0.20, 1.0);
+    cairo_move_to(cr, vx - vext.width / 2.0 - vext.x_bearing, track_y - 40.0);
+    cairo_show_text(cr, vbuf);
+}
+
+static void vas_ppt_update_from_x(PPTEntryData *pd, double x, int widget_w)
+{
+    double track_w = widget_w - 2.0 * VAS_TRACK_MARGIN;
+    if (track_w <= 0.0) return;
+    double frac = (x - VAS_TRACK_MARGIN) / track_w;
+    pd->vas_value = vas_ppt_frac_to_value(frac);
+    gtk_widget_queue_draw(pd->vas_area);
+}
+
+static void on_vas_ppt_drag_begin(GtkGestureDrag *gd, double x, double y, gpointer data)
+{
+    (void)gd; (void)y;
+    PPTEntryData *pd = data;
+    vas_ppt_update_from_x(pd, x, gtk_widget_get_width(pd->vas_area));
+}
+
+static void on_vas_ppt_drag_update(GtkGestureDrag *gd, double dx, double dy, gpointer data)
+{
+    (void)dy;
+    PPTEntryData *pd = data;
+    double sx, sy;
+    gtk_gesture_drag_get_start_point(gd, &sx, &sy);
+    vas_ppt_update_from_x(pd, sx + dx, gtk_widget_get_width(pd->vas_area));
+}
 
 /* Called when the PPT window is destroyed (by OK, Cancel, or WM close).
  * Frees the PPTEntryData allocation exactly once. */
@@ -1686,12 +1877,28 @@ static void on_ppt_keypad_delete(GtkButton *btn, gpointer data)
     gtk_editable_set_text(GTK_EDITABLE(pd->entry), buf);
 }
 
+/* Closes either UI kind this struct can represent — a GtkPopover (VAS,
+ * PPT only) or a GtkWindow (keypad, every other point type). Each kind's
+ * own close signal ("closed" / "destroy") does the actual g_free(pd). */
+static void pd_close(PPTEntryData *pd)
+{
+    if (pd->popover)
+        gtk_popover_popdown(GTK_POPOVER(pd->popover));
+    else
+        gtk_window_destroy(GTK_WINDOW(pd->window));
+}
+
 static void on_ppt_confirm(GtkButton *btn, gpointer data)
 {
     (void)btn;
     PPTEntryData *pd = data;
-    const char *txt = gtk_editable_get_text(GTK_EDITABLE(pd->entry));
-    double val = g_strtod(txt, NULL);
+    if (pd->closing) return;
+    pd->closing = TRUE;
+    /* pd->entry is NULL when the VAS UI (PPT only) was built instead of
+     * the keypad — see show_ppt_entry(). */
+    double val = pd->entry
+        ? g_strtod(gtk_editable_get_text(GTK_EDITABLE(pd->entry)), NULL)
+        : pd->vas_value;
     AppState *app = pd->app;
     if (app->obj_point_count < MAX_OBJ_POINTS) {
         ObjPoint *p = &app->obj_points[app->obj_point_count];
@@ -1713,19 +1920,49 @@ static void on_ppt_confirm(GtkButton *btn, gpointer data)
             app->obj_undo_type_stack[app->obj_undo_type_top++] = 1;
         canvas_invalidate(app);
     }
-    /* g_free(pd) happens via on_ppt_destroy connected to "destroy" signal */
-    gtk_window_destroy(GTK_WINDOW(pd->window));
+    pd_close(pd);
 }
 
 static void on_ppt_cancel(GtkButton *btn, gpointer data)
 {
     (void)btn;
     PPTEntryData *pd = data;
-    /* g_free(pd) happens via on_ppt_destroy connected to "destroy" signal */
-    gtk_window_destroy(GTK_WINDOW(pd->window));
+    if (pd->closing) return;
+    pd->closing = TRUE;
+    pd_close(pd);
 }
 
-static void show_ppt_entry(AppState *app, int view, double bx, double by)
+/* VAS-only: the popup has no OK/Cancel — direct user request. The value
+ * commits the instant the stylus/finger/mouse is RELEASED from the track
+ * ("I can tap and drag to be closer to what I wanted"), via GtkGestureDrag's
+ * "drag-end" (fires for a plain tap too, not just an actual drag). */
+static void on_vas_ppt_drag_end(GtkGestureDrag *gd, double dx, double dy, gpointer data)
+{
+    PPTEntryData *pd = data;
+    double sx, sy;
+    gtk_gesture_drag_get_start_point(gd, &sx, &sy);
+    vas_ppt_update_from_x(pd, sx + dx, gtk_widget_get_width(pd->vas_area));
+    (void)dy;
+    on_ppt_confirm(NULL, pd);
+}
+
+/* VAS-only: fires when the popover closes for ANY reason — autohide
+ * (click outside — "if I want to cancel I just click outside of the box")
+ * or our own pd_close()/gtk_popover_popdown() after a commit. Either way
+ * this is where pd finally gets freed, mirroring on_ppt_destroy's role for
+ * the keypad's GtkWindow. Not guarded by pd->closing: pd_close() already
+ * set it before calling popdown(), and the autohide path only ever runs
+ * when pd->closing was still FALSE (nothing else closes the popover). */
+static void on_vas_popover_closed(GtkPopover *popover, gpointer data)
+{
+    PPTEntryData *pd = data;
+    g_ppt_dialog_open = FALSE;
+    gtk_widget_unparent(GTK_WIDGET(popover));
+    g_free(pd);
+}
+
+static void show_ppt_entry(AppState *app, GtkWidget *da, double screen_x, double screen_y,
+                            int view, double bx, double by)
 {
     if (g_ppt_dialog_open) return;
     g_ppt_dialog_open = TRUE;
@@ -1737,21 +1974,61 @@ static void show_ppt_entry(AppState *app, int view, double bx, double by)
     pd->by   = by;
     pd->type = app->obj_point_type;
 
-    pd->window = gtk_window_new();
-    gtk_widget_add_css_class(pd->window, "bodychart-app");
-    gtk_widget_set_name(pd->window, "wiz-window");
     const char *title = pd->type == OBJ_POINT_PPT         ? "PPT (kg/cm²)"        :
                         pd->type == OBJ_POINT_MONOFILAMENT ? "Monofilament (g)"    :
                         pd->type == OBJ_POINT_TWO_PD       ? "2-PD (mm)"           :
                                                              "Temporal Sum (0–10)";
-    gtk_window_set_title(GTK_WINDOW(pd->window), title);
+
+    if (pd->type == OBJ_POINT_PPT) {
+        /* ── VAS trial (PPT only) — see PPTEntryData's comment. A
+         * GtkPopover, not a GtkWindow: positioned exactly at the tap
+         * point via set_pointing_to (direct user request — a plain
+         * toplevel can't be positioned on Wayland at all), autohide gives
+         * "click outside to cancel" for free. Bare "touch a slider,
+         * release to commit" content: no titlebar, no heading text, no
+         * OK/Cancel — the track IS the whole popup. */
+        pd->popover = gtk_popover_new();
+        gtk_widget_add_css_class(pd->popover, "bodychart-app");
+        gtk_popover_set_autohide(GTK_POPOVER(pd->popover), TRUE);
+        gtk_popover_set_has_arrow(GTK_POPOVER(pd->popover), FALSE);
+        gtk_widget_set_parent(pd->popover, da);
+        GdkRectangle rect = { (int)screen_x, (int)screen_y, 1, 1 };
+        gtk_popover_set_pointing_to(GTK_POPOVER(pd->popover), &rect);
+        /* Bottom-centre of the popup at the tap point, not its top edge —
+         * more ergonomic (the popup opens upward above your finger/stylus
+         * instead of appearing underneath it), direct user request. */
+        gtk_popover_set_position(GTK_POPOVER(pd->popover), GTK_POS_TOP);
+        g_signal_connect(pd->popover, "closed", G_CALLBACK(on_vas_popover_closed), pd);
+
+        pd->vas_value = 0.0;
+
+        pd->vas_area = gtk_drawing_area_new();
+        gtk_widget_set_size_request(pd->vas_area, 630, 130);  /* 50% wider + room for the floating digital readout */
+        gtk_widget_set_hexpand(pd->vas_area, TRUE);
+        gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(pd->vas_area),
+                                        vas_ppt_draw, pd, NULL);
+        GtkGesture *drag = gtk_gesture_drag_new();
+        g_signal_connect(drag, "drag-begin",  G_CALLBACK(on_vas_ppt_drag_begin),  pd);
+        g_signal_connect(drag, "drag-update", G_CALLBACK(on_vas_ppt_drag_update), pd);
+        g_signal_connect(drag, "drag-end",    G_CALLBACK(on_vas_ppt_drag_end),    pd);
+        gtk_widget_add_controller(pd->vas_area, GTK_EVENT_CONTROLLER(drag));
+        gtk_popover_set_child(GTK_POPOVER(pd->popover), pd->vas_area);
+
+        gtk_popover_popup(GTK_POPOVER(pd->popover));
+        return;
+    }
+
+    pd->window = gtk_window_new();
+    gtk_widget_add_css_class(pd->window, "bodychart-app");
+    gtk_widget_set_name(pd->window, "wiz-window");
     gtk_window_set_transient_for(GTK_WINDOW(pd->window),
                                  GTK_WINDOW(app->window));
-    gtk_window_set_modal(GTK_WINDOW(pd->window), TRUE);
     gtk_window_set_resizable(GTK_WINDOW(pd->window), FALSE);
     gtk_window_set_default_size(GTK_WINDOW(pd->window), 260, -1);
-    /* Free pd exactly once on any close path (OK, Cancel, or WM close). */
+    /* Free pd exactly once on any close path. */
     g_signal_connect(pd->window, "destroy", G_CALLBACK(on_ppt_destroy), pd);
+    gtk_window_set_title(GTK_WINDOW(pd->window), title);
+    gtk_window_set_modal(GTK_WINDOW(pd->window), TRUE);
 
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     gtk_widget_set_margin_start(box, 12);
@@ -1763,41 +2040,42 @@ static void show_ppt_entry(AppState *app, int view, double bx, double by)
     gtk_widget_set_name(lbl, "section-label");
     gtk_box_append(GTK_BOX(box), lbl);
 
-    pd->entry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(pd->entry),
-        pd->type == OBJ_POINT_PPT         ? "e.g. 4.2"  :
-        pd->type == OBJ_POINT_MONOFILAMENT ? "e.g. 0.07" :
-        pd->type == OBJ_POINT_TWO_PD       ? "e.g. 6"    : "0–10");
-    gtk_widget_set_size_request(pd->entry, -1, 48);
-    gtk_box_append(GTK_BOX(box), pd->entry);
+    {
+        pd->entry = gtk_entry_new();
+        gtk_entry_set_placeholder_text(GTK_ENTRY(pd->entry),
+            pd->type == OBJ_POINT_MONOFILAMENT ? "e.g. 0.07" :
+            pd->type == OBJ_POINT_TWO_PD       ? "e.g. 6"    : "0–10");
+        gtk_widget_set_size_request(pd->entry, -1, 48);
+        gtk_box_append(GTK_BOX(box), pd->entry);
 
-    GtkWidget *keypad = gtk_grid_new();
-    gtk_grid_set_column_spacing(GTK_GRID(keypad), 2);
-    gtk_grid_set_row_spacing(GTK_GRID(keypad), 2);
-    gtk_widget_set_hexpand(keypad, TRUE);
+        GtkWidget *keypad = gtk_grid_new();
+        gtk_grid_set_column_spacing(GTK_GRID(keypad), 2);
+        gtk_grid_set_row_spacing(GTK_GRID(keypad), 2);
+        gtk_widget_set_hexpand(keypad, TRUE);
 
-    const char *keypad_layout[] = { "7", "8", "9",
-                                     "4", "5", "6",
-                                     "1", "2", "3",
-                                     ".", "0", "⌫" };
-    for (int i = 0; i < 12; i++) {
-        int row = i / 3, col = i % 3;
-        const char *label = keypad_layout[i];
-        if (!label || !label[0]) continue;
+        const char *keypad_layout[] = { "7", "8", "9",
+                                         "4", "5", "6",
+                                         "1", "2", "3",
+                                         ".", "0", "⌫" };
+        for (int i = 0; i < 12; i++) {
+            int row = i / 3, col = i % 3;
+            const char *label = keypad_layout[i];
+            if (!label || !label[0]) continue;
 
-        GtkWidget *btn = gtk_button_new_with_label(label);
-        gtk_widget_set_hexpand(btn, TRUE);
-        gtk_widget_set_vexpand(btn, TRUE);
-        gtk_widget_set_size_request(btn, 40, 40);
+            GtkWidget *btn = gtk_button_new_with_label(label);
+            gtk_widget_set_hexpand(btn, TRUE);
+            gtk_widget_set_vexpand(btn, TRUE);
+            gtk_widget_set_size_request(btn, 40, 40);
 
-        if (strcmp(label, "⌫") == 0) {
-            g_signal_connect(btn, "clicked", G_CALLBACK(on_ppt_keypad_delete), pd);
-        } else {
-            g_signal_connect(btn, "clicked", G_CALLBACK(on_ppt_keypad_digit), pd);
+            if (strcmp(label, "⌫") == 0) {
+                g_signal_connect(btn, "clicked", G_CALLBACK(on_ppt_keypad_delete), pd);
+            } else {
+                g_signal_connect(btn, "clicked", G_CALLBACK(on_ppt_keypad_digit), pd);
+            }
+            gtk_grid_attach(GTK_GRID(keypad), btn, col, row, 1, 1);
         }
-        gtk_grid_attach(GTK_GRID(keypad), btn, col, row, 1, 1);
+        gtk_box_append(GTK_BOX(box), keypad);
     }
-    gtk_box_append(GTK_BOX(box), keypad);
 
     GtkWidget *btn_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     GtkWidget *cancel_btn = gtk_button_new_with_label("Cancel");
@@ -1812,11 +2090,13 @@ static void show_ppt_entry(AppState *app, int view, double bx, double by)
 
     g_signal_connect(ok_btn,     "clicked",  G_CALLBACK(on_ppt_confirm), pd);
     g_signal_connect(cancel_btn, "clicked",  G_CALLBACK(on_ppt_cancel),  pd);
-    g_signal_connect(pd->entry,  "activate", G_CALLBACK(on_ppt_confirm), pd);
     gtk_window_set_default_widget(GTK_WINDOW(pd->window), ok_btn);
 
     gtk_window_set_child(GTK_WINDOW(pd->window), box);
-    gtk_widget_grab_focus(pd->entry);
+    if (pd->entry) {
+        g_signal_connect(pd->entry, "activate", G_CALLBACK(on_ppt_confirm), pd);
+        gtk_widget_grab_focus(pd->entry);
+    }
     gtk_window_present(GTK_WINDOW(pd->window));
 }
 
@@ -1830,6 +2110,7 @@ static void on_obj_zone_clicked(GtkButton *btn, gpointer data)
     app->obj_zone_type  = zt;
     app->obj_point_mode = FALSE;
     app->obj_tick_mode  = FALSE;
+    app->obj_pencil_mode = FALSE;
     app->tool = TOOL_DRAW;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
 }
@@ -1847,6 +2128,7 @@ static void on_obj_tick_clicked(GtkButton *btn, gpointer data)
     app->obj_tick_state = (ObjTickState)(gintptr)triple[2];
     app->obj_tick_mode  = TRUE;
     app->obj_point_mode = FALSE;
+    app->obj_pencil_mode = FALSE;
     app->tool = TOOL_DRAW;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
 }
@@ -1857,6 +2139,7 @@ static void on_obj_ppt_clicked(GtkButton *btn, gpointer data)
     AppState *app = data;
     app->obj_point_mode = TRUE;
     app->obj_tick_mode  = FALSE;
+    app->obj_pencil_mode = FALSE;
     app->obj_point_type = OBJ_POINT_PPT;
     app->tool = TOOL_DRAW;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
@@ -1868,6 +2151,7 @@ static void on_obj_ts_clicked(GtkButton *btn, gpointer data)
     AppState *app = data;
     app->obj_point_mode = TRUE;
     app->obj_tick_mode  = FALSE;
+    app->obj_pencil_mode = FALSE;
     app->obj_point_type = OBJ_POINT_TEMPORAL_SUM;
     app->tool = TOOL_DRAW;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
@@ -1879,6 +2163,7 @@ static void on_obj_mono_clicked(GtkButton *btn, gpointer data)
     AppState *app = data;
     app->obj_point_mode = TRUE;
     app->obj_tick_mode  = FALSE;
+    app->obj_pencil_mode = FALSE;
     app->obj_point_type = OBJ_POINT_MONOFILAMENT;
     app->tool = TOOL_DRAW;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
@@ -1890,6 +2175,7 @@ static void on_obj_tpd_clicked(GtkButton *btn, gpointer data)
     AppState *app = data;
     app->obj_point_mode = TRUE;
     app->obj_tick_mode  = FALSE;
+    app->obj_pencil_mode = FALSE;
     app->obj_point_type = OBJ_POINT_TWO_PD;
     app->tool = TOOL_DRAW;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
@@ -1900,6 +2186,24 @@ static void on_obj_erase_clicked(GtkButton *btn, gpointer data)
     (void)btn;
     AppState *app = data;
     app->tool = TOOL_ERASE;
+    if (app->toolbar_update_cb) app->toolbar_update_cb(app);
+}
+
+/* "Add a pencil tool to the objective fields, exactly the same as the
+ * subjective" (2026-08-26) — arms the exact same SYMPTOM_PENCIL freehand
+ * stroke Subjective's own Pencil button uses (see canvas.c's
+ * obj_pencil_active()), just reachable from the Obj sidebar too. Clears
+ * the zone/point/tick tool state so a stale armed tool doesn't fight with
+ * pencil drawing once canvas.c's mode checks step aside for it. */
+static void on_obj_pencil_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    AppState *app = data;
+    app->tool     = TOOL_DRAW;
+    app->symptom  = SYMPTOM_PENCIL;
+    app->obj_pencil_mode = TRUE;
+    app->obj_point_mode  = FALSE;
+    app->obj_tick_mode   = FALSE;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
 }
 
@@ -1929,6 +2233,25 @@ static void append_zone_group(GtkWidget *box, AppState *app,
     gtk_box_append(GTK_BOX(box), zone_box);
 }
 
+/* Obj-tab Sensory/CRPS sub-tab toggle (2026-08-26) — see build_obj_tab.
+ * Kept file-scope (not GtkStack's own visible-child tracking) purely so
+ * on_obj_subtab_clicked can flip both buttons' "active" styling itself;
+ * there's exactly one Obj tab per process so this doesn't need to be
+ * per-instance state. */
+static GtkWidget *g_obj_subtab_stack;
+static GtkWidget *g_obj_subtab_btns[2];
+
+static void on_obj_subtab_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    const char *name = data;
+    gtk_stack_set_visible_child_name(GTK_STACK(g_obj_subtab_stack), name);
+    gtk_widget_set_name(g_obj_subtab_btns[0],
+        strcmp(name, "sensory") == 0 ? "mode-btn-active" : "mode-btn");
+    gtk_widget_set_name(g_obj_subtab_btns[1],
+        strcmp(name, "crps") == 0 ? "mode-btn-active" : "mode-btn");
+}
+
 /* ── Build "Obj" tab content ─────────────────────────────────────────────── */
 static GtkWidget *build_obj_tab(AppState *app)
 {
@@ -1938,19 +2261,45 @@ static GtkWidget *build_obj_tab(AppState *app)
     gtk_widget_set_margin_end(box, 2);
     gtk_widget_set_margin_top(box, 2);
 
-    /* ── Sensory group (2026-08-26) — zones, tick/cross markers, and the
-     * numeric points all live here now: everything that maps onto the 05
-     * Sensory tab's own Hyposensitivity/Hypersensitivity items. CRPS's
-     * "weird" vasomotor/trophic findings get their own group below instead
-     * of being mixed in, per direct user feedback. ── */
-    GtkWidget *lbl_sensory = gtk_label_new("Sensory");
-    gtk_widget_set_name(lbl_sensory, "section-label");
-    gtk_box_append(GTK_BOX(box), lbl_sensory);
+    /* ── Sensory/CRPS sub-tab toggle (2026-08-26) — two separate pages
+     * instead of one long scrolling column mixing both, per direct user
+     * feedback ("add an additional top tab specifically for CRPS
+     * components, still on the Obj bodychart"). Still one AppMode
+     * (APP_MODE_OBJECTIVE) and one canvas — this only switches which
+     * sidebar buttons are shown, same drawing surface either way. ── */
+    GtkWidget *subtab_strip = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+    GtkWidget *sensory_tab_btn = gtk_button_new_with_label("Sensory");
+    GtkWidget *crps_tab_btn    = gtk_button_new_with_label("CRPS");
+    gtk_widget_set_name(sensory_tab_btn, "mode-btn-active");
+    gtk_widget_set_name(crps_tab_btn, "mode-btn");
+    gtk_widget_set_hexpand(sensory_tab_btn, TRUE);
+    gtk_widget_set_hexpand(crps_tab_btn, TRUE);
+    gtk_widget_set_size_request(sensory_tab_btn, -1, 30);
+    gtk_widget_set_size_request(crps_tab_btn, -1, 30);
+    g_obj_subtab_btns[0] = sensory_tab_btn;
+    g_obj_subtab_btns[1] = crps_tab_btn;
+    g_signal_connect(sensory_tab_btn, "clicked", G_CALLBACK(on_obj_subtab_clicked), (gpointer)"sensory");
+    g_signal_connect(crps_tab_btn,    "clicked", G_CALLBACK(on_obj_subtab_clicked), (gpointer)"crps");
+    gtk_box_append(GTK_BOX(subtab_strip), sensory_tab_btn);
+    gtk_box_append(GTK_BOX(subtab_strip), crps_tab_btn);
+    gtk_box_append(GTK_BOX(box), subtab_strip);
 
+    g_obj_subtab_stack = gtk_stack_new();
+    gtk_stack_set_transition_type(GTK_STACK(g_obj_subtab_stack), GTK_STACK_TRANSITION_TYPE_NONE);
+    gtk_box_append(GTK_BOX(box), g_obj_subtab_stack);
+
+    GtkWidget *sensory_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    GtkWidget *crps_page    = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    gtk_stack_add_named(GTK_STACK(g_obj_subtab_stack), sensory_page, "sensory");
+    gtk_stack_add_named(GTK_STACK(g_obj_subtab_stack), crps_page, "crps");
+
+    /* ── Sensory page (2026-08-26) — zones, tick/cross markers, and the
+     * numeric points all live here now: everything that maps onto the 05
+     * Sensory tab's own Hyposensitivity/Hypersensitivity items. ── */
     GtkWidget *lbl_z = gtk_label_new("Zone");
     gtk_widget_set_name(lbl_z, "section-label");
-    gtk_box_append(GTK_BOX(box), lbl_z);
-    append_zone_group(box, app, OBJ_ZONE_SENSORY_GROUP,
+    gtk_box_append(GTK_BOX(sensory_page), lbl_z);
+    append_zone_group(sensory_page, app, OBJ_ZONE_SENSORY_GROUP,
                        G_N_ELEMENTS(OBJ_ZONE_SENSORY_GROUP));
 
     /* ── Tick/cross section — one button pair per type, each pair sharing
@@ -1958,19 +2307,26 @@ static GtkWidget *build_obj_tab(AppState *app)
      * colour, distinguishes tick from cross. ── */
     GtkWidget *lbl_tick = gtk_label_new("Tick / Cross");
     gtk_widget_set_name(lbl_tick, "section-label");
-    gtk_box_append(GTK_BOX(box), lbl_tick);
+    gtk_box_append(GTK_BOX(sensory_page), lbl_tick);
 
+    /* One row per type: the type name as a plain (non-button) label that
+     * fills the leftover space, plus two small fixed-size icon buttons —
+     * NOT two full-label buttons side by side (that doubled the whole
+     * sidebar's width, since it forced every OTHER column's natural width
+     * up to match too; found live via screenshot, reverted here). */
     static gpointer tick_triples[OBJ_TICK_TYPE_COUNT][2][3];
     GtkWidget *tick_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
     for (int i = 0; i < OBJ_TICK_TYPE_COUNT; i++) {
         GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+        GtkWidget *name_lbl = gtk_label_new(OBJ_TICK_DEFS[i].name);
+        gtk_widget_set_name(name_lbl, "tick-row-label");
+        gtk_widget_set_halign(name_lbl, GTK_ALIGN_START);
+        gtk_widget_set_hexpand(name_lbl, TRUE);
+        gtk_label_set_wrap(GTK_LABEL(name_lbl), TRUE);
+        gtk_box_append(GTK_BOX(row), name_lbl);
         for (int s = 0; s < 2; s++) {
-            char label[40];
-            snprintf(label, sizeof(label), "%s %s",
-                     OBJ_TICK_DEFS[i].name,
-                     s == OBJ_TICK_STATE_TICK ? "\xe2\x9c\x93" : "\xe2\x9c\x97");
-            GtkWidget *btn = make_btn(label, -1, 36);
-            gtk_widget_set_hexpand(btn, TRUE);
+            const char *glyph = (s == OBJ_TICK_STATE_TICK) ? "\xe2\x9c\x93" : "\xe2\x9c\x97";
+            GtkWidget *btn = make_btn(glyph, 30, 30);
             tick_triples[i][s][0] = app;
             tick_triples[i][s][1] = (gpointer)(gintptr)i;
             tick_triples[i][s][2] = (gpointer)(gintptr)s;
@@ -1980,43 +2336,40 @@ static GtkWidget *build_obj_tab(AppState *app)
         }
         gtk_box_append(GTK_BOX(tick_box), row);
     }
-    gtk_box_append(GTK_BOX(box), tick_box);
+    gtk_box_append(GTK_BOX(sensory_page), tick_box);
 
-    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    gtk_box_append(GTK_BOX(sensory_page), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
     /* ── Point section — single column ── */
     GtkWidget *lbl_p = gtk_label_new("Point");
     gtk_widget_set_name(lbl_p, "section-label");
-    gtk_box_append(GTK_BOX(box), lbl_p);
+    gtk_box_append(GTK_BOX(sensory_page), lbl_p);
 
     g_obj_ppt_btn = make_btn("PPT kg/cm²", -1, 36);
     gtk_widget_set_hexpand(g_obj_ppt_btn, TRUE);
     g_signal_connect(g_obj_ppt_btn, "clicked", G_CALLBACK(on_obj_ppt_clicked), app);
-    gtk_box_append(GTK_BOX(box), g_obj_ppt_btn);
+    gtk_box_append(GTK_BOX(sensory_page), g_obj_ppt_btn);
 
     g_obj_ts_btn = make_btn("Temporal Sum", -1, 36);
     gtk_widget_set_hexpand(g_obj_ts_btn, TRUE);
     g_signal_connect(g_obj_ts_btn, "clicked", G_CALLBACK(on_obj_ts_clicked), app);
-    gtk_box_append(GTK_BOX(box), g_obj_ts_btn);
+    gtk_box_append(GTK_BOX(sensory_page), g_obj_ts_btn);
 
     g_obj_mono_btn = make_btn("Monofilament", -1, 36);
     gtk_widget_set_hexpand(g_obj_mono_btn, TRUE);
     g_signal_connect(g_obj_mono_btn, "clicked", G_CALLBACK(on_obj_mono_clicked), app);
-    gtk_box_append(GTK_BOX(box), g_obj_mono_btn);
+    gtk_box_append(GTK_BOX(sensory_page), g_obj_mono_btn);
 
     g_obj_tpd_btn = make_btn("2-PD mm", -1, 36);
     gtk_widget_set_hexpand(g_obj_tpd_btn, TRUE);
     g_signal_connect(g_obj_tpd_btn, "clicked", G_CALLBACK(on_obj_tpd_clicked), app);
-    gtk_box_append(GTK_BOX(box), g_obj_tpd_btn);
+    gtk_box_append(GTK_BOX(sensory_page), g_obj_tpd_btn);
 
-    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-
-    /* ── CRPS group (2026-08-26) — vasomotor/trophic/body-perception
-     * findings that don't belong on a general Sensory exam. ── */
-    GtkWidget *lbl_crps = gtk_label_new("CRPS");
-    gtk_widget_set_name(lbl_crps, "section-label");
-    gtk_box_append(GTK_BOX(box), lbl_crps);
-    append_zone_group(box, app, OBJ_ZONE_CRPS_GROUP,
+    /* ── CRPS page (2026-08-26) — vasomotor/trophic/body-perception
+     * findings that don't belong on a general Sensory exam. Its own
+     * sub-tab (not a "CRPS" heading mixed into the Sensory page) per
+     * direct user feedback. ── */
+    append_zone_group(crps_page, app, OBJ_ZONE_CRPS_GROUP,
                        G_N_ELEMENTS(OBJ_ZONE_CRPS_GROUP));
 
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
@@ -2025,6 +2378,11 @@ static GtkWidget *build_obj_tab(AppState *app)
     GtkWidget *lbl_t = gtk_label_new("Tools");
     gtk_widget_set_name(lbl_t, "section-label");
     gtk_box_append(GTK_BOX(box), lbl_t);
+
+    g_obj_pencil_btn = make_btn("Pencil", -1, 36);
+    gtk_widget_set_hexpand(g_obj_pencil_btn, TRUE);
+    g_signal_connect(g_obj_pencil_btn, "clicked", G_CALLBACK(on_obj_pencil_clicked), app);
+    gtk_box_append(GTK_BOX(box), g_obj_pencil_btn);
 
     g_obj_erase_btn = make_btn("Erase", -1, 36);
     gtk_widget_set_hexpand(g_obj_erase_btn, TRUE);

@@ -157,8 +157,20 @@ void input_end(AppState *app)
         if (keep) {
             app->active_stroke->id = app->next_stroke_id++;
             stroke_list_push(app->strokes, app->active_stroke);
-            if (app->undo_type_top < 64)
+            /* Pencil tool in Objective mode (2026-08-26, see obj_pencil_active()
+             * in canvas.c) reuses this exact same Stroke/undo mechanism — but
+             * canvas_undo() dispatches on current_mode BEFORE ever looking at
+             * app->undo_type_stack, so an entry pushed there while in
+             * Objective mode would sit unreachable until a Sx-mode undo
+             * happened to fall through to it. Record it on Objective's own
+             * obj_undo_type_stack instead (type 3 = pencil stroke), so the
+             * Obj sidebar's own Undo button can reach it immediately. */
+            if (app->current_mode == APP_MODE_OBJECTIVE) {
+                if (app->obj_undo_type_top < 64)
+                    app->obj_undo_type_stack[app->obj_undo_type_top++] = 3;
+            } else if (app->undo_type_top < 64) {
                 app->undo_type_stack[app->undo_type_top++] = 0;
+            }
             app->stroke_version++;  /* new committed stroke — invalidate cache */
         } else {
             stroke_free(app->active_stroke);

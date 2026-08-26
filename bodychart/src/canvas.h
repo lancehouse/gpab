@@ -208,13 +208,21 @@ struct _AppState {
                                       * priority over obj_point_mode/zone tool;
                                       * one click places+commits immediately,
                                       * no drag/dialog, see canvas.c */
+    gboolean  obj_pencil_mode;      /* TRUE = pencil tool selected in Objective
+                                      * mode — see canvas.c's obj_pencil_active().
+                                      * A dedicated flag, not just "app->symptom
+                                      * == SYMPTOM_PENCIL", so a stale leftover
+                                      * symptom value from Subjective mode can
+                                      * never make Objective's zone/point/tick
+                                      * tools misbehave as pencil drawing. */
     gboolean  obj_erase_mode;       /* TRUE = erase obj items */
     gboolean  obj_wide_mode;        /* wide-band zone drawing */
     /* Objective undo: 0=zone, 1=point, 2=tick */
     guint8    obj_undo_type_stack[64];
     int       obj_undo_type_top;
     /* Callback: show PPT value entry dialog; set by window.c */
-    void (*show_ppt_entry_cb)(AppState *, int view, double bx, double by);
+    void (*show_ppt_entry_cb)(AppState *, GtkWidget *da, double screen_x, double screen_y,
+                              int view, double bx, double by);
 
     /* Obj point drag state */
     int     obj_point_drag_idx;
@@ -248,3 +256,8 @@ void canvas_screen_to_body(AppState *app, double sx, double sy,
 void canvas_render_view(AppState *app, cairo_t *cr, BodyView view,
                         double w, double h,
                         double zoom, double pan_x, double pan_y);
+
+/* Pencil tool in Objective mode (2026-08-26) — see canvas.c's own comment
+ * on obj_pencil_active(). Exposed here so window.c's sidebar button-state
+ * update can check it too. */
+gboolean obj_pencil_active(const AppState *app);

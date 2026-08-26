@@ -140,27 +140,41 @@ void obj_chart_render_ticks_body(AppState *app, cairo_t *cr, int view)
         const ObjTickDef *d = &OBJ_TICK_DEFS[t->type];
 
         cairo_save(cr);
-        /* White halo behind the dot, same convention as obj point spots. */
+        /* Smaller than the original size (found too large live, see
+         * obj_point spots at radius 5.5–7 for comparison — ticks are a
+         * denser, simpler marker so shrunk further still). White halo
+         * behind the dot, same convention as obj point spots. */
         cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.90);
-        cairo_arc(cr, t->bx, t->by, 8.0, 0, 2 * G_PI);
+        cairo_arc(cr, t->bx, t->by, 5.5, 0, 2 * G_PI);
         cairo_fill(cr);
         cairo_set_source_rgba(cr, d->r, d->g, d->b, 0.95);
-        cairo_arc(cr, t->bx, t->by, 7.0, 0, 2 * G_PI);
+        cairo_arc(cr, t->bx, t->by, 4.7, 0, 2 * G_PI);
         cairo_fill(cr);
 
         /* Glyph distinguishes tick vs cross — colour is per-TYPE only, not
          * per-state (explicitly not a red=abnormal/green=normal semantic
-         * here, per direct user feedback). */
-        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
-                               CAIRO_FONT_WEIGHT_BOLD);
-        cairo_set_font_size(cr, 11.0);
-        const char *glyph = (t->state == OBJ_TICK_STATE_TICK) ? "\xe2\x9c\x93" : "\xe2\x9c\x97";
-        cairo_text_extents_t ext;
-        cairo_text_extents(cr, glyph, &ext);
+         * here, per direct user feedback). Hand-drawn as line segments,
+         * not cairo_show_text() — the toy text API has no font-fallback
+         * machinery the way Pango does, so "Sans" silently resolved to a
+         * face with no ✓/✗ glyph coverage on this machine and rendered
+         * tofu boxes instead (found live via screenshot). Vector strokes
+         * have no font dependency at all. */
         cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0);
-        cairo_move_to(cr, t->bx - ext.width / 2.0 - ext.x_bearing,
-                          t->by - ext.height / 2.0 - ext.y_bearing);
-        cairo_show_text(cr, glyph);
+        cairo_set_line_width(cr, 1.2);
+        cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+        cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+        if (t->state == OBJ_TICK_STATE_TICK) {
+            cairo_move_to(cr, t->bx - 2.1, t->by + 0.2);
+            cairo_line_to(cr, t->bx - 0.5, t->by + 2.0);
+            cairo_line_to(cr, t->bx + 2.3, t->by - 2.1);
+            cairo_stroke(cr);
+        } else {
+            cairo_move_to(cr, t->bx - 2.0, t->by - 2.0);
+            cairo_line_to(cr, t->bx + 2.0, t->by + 2.0);
+            cairo_move_to(cr, t->bx + 2.0, t->by - 2.0);
+            cairo_line_to(cr, t->bx - 2.0, t->by + 2.0);
+            cairo_stroke(cr);
+        }
         cairo_restore(cr);
     }
 }
