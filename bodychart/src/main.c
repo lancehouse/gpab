@@ -10,6 +10,8 @@
 #include "settings.h"
 #include "input.h"
 #include "persistence.h"
+#include "py_embed.h"
+#include "integration.h"
 
 /* Global session path if provided via --session argument */
 static char g_session_path[512] = "";
@@ -36,20 +38,24 @@ static void on_activate(GtkApplication *app, gpointer user_data)
 {
     AppState *state = user_data;
 
-    /* Re-activation of an already-running instance (2026-08-25) — most
-     * commonly `gapplication launch com.gpab.bodychart` from gpab's own
-     * Ctrl+B (see integration_focus_tui), but also just clicking the
-     * desktop icon again while bodychart's already open. Without this
-     * guard, "activate" fired a second time re-ran persistence_load +
+    /* Re-activation of an already-running instance (2026-08-25) — e.g.
+     * clicking the desktop icon again, or `gapplication launch
+     * com.gpab.bodychart` run by hand, while bodychart's already open.
+     * (gpab's own Ctrl+B no longer goes through this path as of the
+     * merged-app embedding spike — it calls straight into
+     * gtk_window_present() via py_embed's bodychart_bridge, bypassing
+     * GApplication activation entirely — but this guard is still needed
+     * for the other, still-live ways to re-trigger "activate".) Without
+     * this guard, "activate" fired a second time re-ran persistence_load +
      * window_create unconditionally, creating a SECOND window inside the
      * same process that clobbered window.c's static g_save_indicator (and
      * app->window itself) out from under the first, real window — found
-     * live via this exact Ctrl+B path: a GTK-CRITICAL assertion
-     * (gtk_label_set_text on a dangling GtkLabel) on the next close,
-     * same root cause as the earlier window_autosave coredump fix, just a
-     * different way to reach two live windows sharing one static pointer.
-     * The equivalent bug (and fix) is in gpab's own app.py::build_app's
-     * on_activate. */
+     * live via a since-retired D-Bus version of gpab's Ctrl+B: a
+     * GTK-CRITICAL assertion (gtk_label_set_text on a dangling GtkLabel)
+     * on the next close, same root cause as the earlier window_autosave
+     * coredump fix, just a different way to reach two live windows sharing
+     * one static pointer. The equivalent bug (and fix) is in gpab's own
+     * app.py::build_app's on_activate. */
     if (state->window) {
         gtk_window_present(GTK_WINDOW(state->window));
         return;
@@ -60,6 +66,13 @@ static void on_activate(GtkApplication *app, gpointer user_data)
         if (persistence_load(state, g_session_path)) {
             persistence_monitor_start(state);
             window_create(state, app);
+            /* merged-app spike only: the real desktop flow always goes
+             * through the launch dialog (launch_commit_new/_open), which
+             * already calls this — --session bypasses that dialog
+             * entirely, so nothing opened gpab. Added here purely to make
+             * --session a usable end-to-end test path for this spike
+             * without needing to drive the dialog's buttons. */
+            integration_create_tui_window(state, app);
         } else {
             /* Failed to load; show launch dialog as fallback */
             window_show_launch(state, app);
@@ -134,6 +147,14 @@ int main(int argc, char *argv[])
         "com.gpab.bodychart",
         G_APPLICATION_DEFAULT_FLAGS);
 
+    /* Embeds gpab's Python assessment app in this process (merged-app spike,
+     * 2026-08-25) — see py_embed.h/integration.c for why. Must run before
+     * anything calls into Python (the first real call is
+     * integration_create_tui_window, from the launch dialog), but doesn't
+     * need to happen before gtk_application_new above — Python and GTK's
+     * own init are independent of each other's ordering. */
+    py_embed_init(&state);
+
     g_signal_connect(gtk_app, "activate", G_CALLBACK(on_activate), &state);
 
     GSimpleAction *quit_action = g_simple_action_new("quit", NULL);
@@ -143,6 +164,7 @@ int main(int argc, char *argv[])
 
     int status = g_application_run(G_APPLICATION(gtk_app), argc, argv);
 
+    py_embed_shutdown();
     stroke_list_free(state.strokes);
     g_object_unref(gtk_app);
     return status;

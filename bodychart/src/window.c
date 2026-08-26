@@ -268,6 +268,7 @@ static void show_link_popup(AppState *app)
     pd->app = app;
 
     pd->window = gtk_window_new();
+    gtk_widget_add_css_class(pd->window, "bodychart-app");
     gtk_window_set_title(GTK_WINDOW(pd->window), "Link notes");
     gtk_window_set_transient_for(GTK_WINDOW(pd->window),
                                  GTK_WINDOW(app->window));
@@ -743,10 +744,24 @@ static GtkWidget *make_grid2col(void)
 static void apply_css(void)
 {
     GtkCssProvider *css = gtk_css_provider_new();
+    /* window.bodychart-app / .bodychart-app scoping (merged-app embedding
+     * spike, 2026-08-25): this provider is registered display-wide
+     * (add_provider_for_display below), and now that gpab's Python runs
+     * embedded in this same process, "display-wide" genuinely means BOTH
+     * apps' windows share it — bare type selectors here (window, button,
+     * separator) were matching gpab's widgets too, not just bodychart's
+     * own, silently overriding gpab's own button sizing/window background
+     * with bodychart's compact touchscreen-toolbar look. Every bodychart
+     * top-level window gets the "bodychart-app" CSS class at creation
+     * (gtk_widget_add_css_class, all 5 call sites) specifically so these
+     * three rules can be scoped to it; the many #id-scoped rules below
+     * this point are left as-is — bodychart's internal widget names
+     * (#toolbar, #sidebar, #mode-strip, etc.) don't collide with gpab's,
+     * confirmed by inspection, so only the bare-tag selectors needed this. */
     gtk_css_provider_load_from_string(css,
-        "window { background: #2b2b2b; }"
+        "window.bodychart-app { background: #2b2b2b; }"
         "#toolbar { background: #1e1e1e; padding: 2px; }"
-        "button { "
+        "window.bodychart-app button { "
         "  min-height: 34px; min-width: 28px; "
         "  border-radius: 6px; padding: 1px 3px; "
         "  font-size: 11px; "
@@ -759,7 +774,7 @@ static void apply_css(void)
         "#overlay-btn-active { background: #3a5080; color: #cef; border: 2px solid #68c; }"
         "#section-label { color: #888; font-size: 9px; margin-top: 4px; margin-bottom: 1px; }"
         "#overlay-name { color: #8ab; font-size: 10px; }"
-        "separator { background: #444; min-width: 1px; margin: 1px 2px; }"
+        "window.bodychart-app separator { background: #444; min-width: 1px; margin: 1px 2px; }"
         "#col-header { background: #f0f0f0; border-bottom: 1px solid #ccc; min-height: 28px; }"
         "#col-header label { font-size: 11px; font-weight: bold; color: #333; }"
         "#zoom-btn { min-height: 22px; min-width: 40px; padding: 0 6px; font-size: 10px;"
@@ -1358,6 +1373,7 @@ static void show_note_wizard(AppState *app, int view, double bx, double by)
         wd->n_q4[i] = (WizIntBtn){ wd, i };
 
     wd->window = gtk_window_new();
+    gtk_widget_add_css_class(wd->window, "bodychart-app");
     gtk_widget_set_name(wd->window, "wiz-window");
     gtk_window_set_title(GTK_WINDOW(wd->window), "Note");
     gtk_window_set_transient_for(GTK_WINDOW(wd->window),
@@ -1695,6 +1711,7 @@ static void show_ppt_entry(AppState *app, int view, double bx, double by)
     pd->type = app->obj_point_type;
 
     pd->window = gtk_window_new();
+    gtk_widget_add_css_class(pd->window, "bodychart-app");
     gtk_widget_set_name(pd->window, "wiz-window");
     const char *title = pd->type == OBJ_POINT_PPT         ? "PPT (kg/cm²)"        :
                         pd->type == OBJ_POINT_MONOFILAMENT ? "Monofilament (g)"    :
@@ -2162,6 +2179,7 @@ void window_show_launch(AppState *app, GtkApplication *gapp)
     ld->gapp = gapp;
 
     ld->window = gtk_application_window_new(gapp);
+    gtk_widget_add_css_class(ld->window, "bodychart-app");
     gtk_widget_set_name(ld->window, "launch-win");
     gtk_window_set_title(GTK_WINDOW(ld->window), "PhysioChart");
     gtk_window_set_default_size(GTK_WINDOW(ld->window), 460, 560);
@@ -2318,10 +2336,25 @@ void window_show_launch(AppState *app, GtkApplication *gapp)
  * below, which is why combined.pdf was going missing for real sessions
  * despite combined.png exporting fine every time. Returning FALSE lets the
  * window's default close-request handling (destroy) proceed normally
- * afterward. */
+ * afterward.
+ *
+ * Re-entrancy guard (merged-app embedding spike, 2026-08-25): closing now
+ * calls integration_destroy_tui(), which (in embedded mode) directly and
+ * SYNCHRONOUSLY calls into gpab's Python to close ITS window — which,
+ * coupled the same way on the Python side, calls straight back into
+ * bodychart's own gtk_window_close(), re-entering this handler before the
+ * first call has returned. g_closing makes the second entry a no-op,
+ * mirroring app.py::TrialWindow._closing on the Python side of the same
+ * coupling. Static rather than an AppState field since there's only ever
+ * one bodychart main window in this process. */
+static gboolean g_closing = FALSE;
+
 static gboolean on_main_window_close(GtkWidget *w, gpointer data)
 {
     (void)w;
+    if (g_closing) return FALSE;
+    g_closing = TRUE;
+
     AppState *app = data;
     integration_destroy_tui(app);
     persistence_monitor_stop(app);
@@ -2357,6 +2390,7 @@ void window_create(AppState *app, GtkApplication *gtk_app)
     apply_css();
 
     app->window = gtk_application_window_new(gtk_app);
+    gtk_widget_add_css_class(app->window, "bodychart-app");
     gtk_window_set_title(GTK_WINDOW(app->window), "PhysioChart");
     gtk_window_set_default_size(GTK_WINDOW(app->window), 900, 700);
     gtk_window_set_decorated(GTK_WINDOW(app->window), FALSE);

@@ -117,10 +117,33 @@ _OBJECTIVE_SECTION_IDS = set(_OBJECTIVE_NAME_TO_SECTION_ID.values())
 
 
 class TrialWindow(Gtk.ApplicationWindow):
-    def __init__(self, app: Gtk.Application, session_file: str) -> None:
+    def __init__(
+        self,
+        app: Gtk.Application,
+        session_file: str,
+        bodychart_present=None,
+        bodychart_close=None,
+    ) -> None:
+        """bodychart_present/bodychart_close (2026-08-25, merged-app spike only):
+        when this window is running embedded inside bodychart's own process
+        (see build_embedded below), these are direct Python-callable
+        functions — bodychart_bridge.present/close, a tiny C extension
+        module bodychart's main.c registers before Py_Initialize — that
+        call straight into bodychart's own gtk_window_present/close. Left
+        None in standalone mode (build_app, the normal `gpab-assessment`/
+        `./gpab` process), which falls back to the D-Bus `gapplication`
+        subprocess calls that ARE the current gpabd/main behaviour: they
+        work for the quit-coupling half but Ctrl+B's raise half doesn't
+        really work over D-Bus/Wayland (see this file's git history,
+        2026-08-25) — the whole reason this embedded mode exists. Same
+        underlying operation either way from TrialWindow's own point of
+        view: "make bodychart's window appear" / "close bodychart"."""
         super().__init__(application=app, title="PAB GTK Trial — Consent + Subjective")
         self.set_default_size(1100, 900)
         self.session_file = session_file
+        self._bodychart_present = bodychart_present
+        self._bodychart_close = bodychart_close
+        self._closing = False  # re-entrancy guard — see _on_close_request
         self._save_source_id: int | None = None       # debounce for _assessment.json
         self._save_source_id_obj: int | None = None    # debounce for _objective.json (separate file, separate timer — matches TUI's AssessmentView/ObjectiveAssessmentView split)
         self._is_fullscreen = False
@@ -1230,27 +1253,33 @@ class TrialWindow(Gtk.ApplicationWindow):
 
     def _switch_to_bodychart(self) -> None:
         """Ctrl+B — raise bodychart's window instead of gpab's own, the
-        dedicated-key half of "feels like one program" (2026-08-25; see
-        bodychart/src/window.c's matching Ctrl+B handler, which raises
-        gpab). Landed on Ctrl+B (no particular mnemonic — "for all I care"
-        was the user's own bar) only after two failed attempts, both
-        live-tested the same day: Ctrl+` (the user's original preference,
-        from the old embedded-TUI setup) and then Ctrl+Tab both got
-        silently intercepted before reaching either app's key handler at
-        all — something below GNOME's own gsettings-visible keybindings
-        (checked thoroughly: wm/mutter/shell schemas, no explicit binding
-        for either combo found anywhere) reproducibly caught both as its
-        own app/window-switcher gesture instead. Ctrl+B is a plain letter
-        with no switcher-like semantics and wasn't already bound in either
-        app (unlike Ctrl+A, which gpab already uses for select-all).
-        `gapplication launch <app-id>` on an app that's already running
-        doesn't spawn a second instance — it re-delivers "activate" to the
-        existing one, which for bodychart just presents its window (single
-        window, nothing to dedupe there, unlike gpab's own on_activate —
-        see build_app's docstring on that). Best-effort: if bodychart isn't
-        running, this silently does nothing rather than launching a fresh
-        one with no session — matches how the reverse direction
-        (bodychart's Ctrl+B) is scoped too."""
+        dedicated-key half of "feels like one program". Landed on Ctrl+B
+        (no particular mnemonic — "for all I care" was the user's own bar)
+        only after two failed attempts, both live-tested 2026-08-25:
+        Ctrl+` (the user's original preference, from the old embedded-TUI
+        setup) and then Ctrl+Tab both got silently intercepted before
+        reaching either app's key handler at all — something below
+        GNOME's own gsettings-visible keybindings (checked thoroughly:
+        wm/mutter/shell schemas, no explicit binding for either combo
+        found anywhere) reproducibly caught both as its own
+        app/window-switcher gesture instead.
+
+        The `gapplication launch com.gpab.bodychart` fallback below is the
+        ORIGINAL fix attempt — it correctly avoids spawning a duplicate
+        (re-delivers "activate" to the running instance) but, discovered
+        the same day, doesn't actually work either: Wayland blocks one
+        process from forcing focus onto a DIFFERENT process's window, so
+        this just produces a "ready" notification instead of a real raise.
+        That's the reason this merged-app spike exists — see
+        _bodychart_present's docstring on TrialWindow.__init__. This
+        fallback stays only for standalone mode (bodychart_present=None,
+        e.g. running via `gpab-assessment`/`./gpab` directly with no
+        bodychart involved at all), where there's no embedded C host to
+        call into and D-Bus is the only option available, however
+        imperfect."""
+        if self._bodychart_present is not None:
+            self._bodychart_present()
+            return
         try:
             subprocess.Popen(
                 ["gapplication", "launch", "com.gpab.bodychart"],
@@ -1286,7 +1315,22 @@ class TrialWindow(Gtk.ApplicationWindow):
         + docx — the one format the periodic timer deliberately skips) in a
         non-daemon background thread so it keeps completing (including the
         slower pandoc/docx step) even after the window itself has closed.
+
+        Re-entrancy guard (embedded mode only, added alongside
+        bodychart_close 2026-08-25): in embedded mode the "close both"
+        coupling below is a direct, SYNCHRONOUS function call into
+        bodychart's own gtk_window_close — unlike the standalone-mode
+        gapplication fallback, which is an async D-Bus round-trip to a
+        separate process and naturally can't recurse. A synchronous call
+        can: this closing → calls bodychart_close() → bodychart's own
+        close handler, coupled the same way, calls straight back into THIS
+        window's .close() → re-enters this method → infinite recursion.
+        self._closing makes the second entry a no-op.
         """
+        if self._closing:
+            return False
+        self._closing = True
+
         if self._save_source_id is not None:
             GLib.source_remove(self._save_source_id)
             self._save_source_id = None
@@ -1300,21 +1344,24 @@ class TrialWindow(Gtk.ApplicationWindow):
         self._report_timer.stop()
         self.session_timer_widget.stop()
 
-        # "Close once" (2026-08-25): whichever of the two windows closes,
-        # the other should too — best-effort, fire-and-forget, never blocks
-        # this close. If bodychart isn't running this just fails silently
-        # (no bus name to activate); if bodychart is ALSO mid-close right
-        # now (the two closed each other within the same instant) this is
-        # a harmless duplicate that no-ops against an already-vanishing
-        # bus name, not a loop — bodychart's own quit action doesn't call
-        # back into this one, it only runs bodychart's own close path.
-        try:
-            subprocess.Popen(
-                ["gapplication", "action", "com.gpab.bodychart", "quit"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-        except OSError as e:
-            logger.warning("_on_close_request: gapplication action quit failed: %s", e)
+        # "Close once": whichever of the two windows closes, the other
+        # should too. In embedded mode (self._bodychart_close set) this is
+        # a direct call into bodychart's own gtk_window_close — safe
+        # against recursion because of the self._closing guard above, not
+        # because the call itself is one-shot. In standalone mode, falls
+        # back to the async D-Bus gapplication call (best-effort,
+        # fire-and-forget, never blocks this close; harmless no-op if
+        # bodychart isn't running or already gone).
+        if self._bodychart_close is not None:
+            self._bodychart_close()
+        else:
+            try:
+                subprocess.Popen(
+                    ["gapplication", "action", "com.gpab.bodychart", "quit"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+            except OSError as e:
+                logger.warning("_on_close_request: gapplication action quit failed: %s", e)
 
         session_file = self.session_file
 
@@ -1552,52 +1599,104 @@ def build_app(session_file: str) -> Gtk.Application:
         if state["win"] is not None:
             state["win"].present()
             return
-
-        display = Gdk.Display.get_default()
-        provider = Gtk.CssProvider()
-        provider.load_from_path(str(Path(__file__).with_name("style.css")))
-        Gtk.StyleContext.add_provider_for_display(
-            display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
+        _load_css()
         win = TrialWindow(app, session_file)
         state["win"] = win
-
-        # GTK CSS has no light/dark media query, so app.py detects the
-        # system preference itself (via Gtk.Settings, which GNOME's
-        # appearance portal keeps in sync) and toggles a .theme-dark class
-        # the stylesheet keys off of — see style.css's focus-ring rules.
-        # Re-applied live on toggle (e.g. GNOME's dark-mode switch) as well
-        # as at startup, not just once.
-        settings = Gtk.Settings.get_default()
-
-        def _apply_theme_class(*_args) -> None:
-            is_dark = settings.get_property("gtk-application-prefer-dark-theme")
-            if is_dark:
-                win.add_css_class("theme-dark")
-            else:
-                win.remove_css_class("theme-dark")
-
-        settings.connect("notify::gtk-application-prefer-dark-theme", _apply_theme_class)
-        _apply_theme_class()
-
-        win.present()
-
-        # Default to fullscreen on startup — per direct user feedback
-        # 2026-08-23: "full attention, no distraction" was the whole point
-        # of this touch-first port, and opening windowed undercut that.
-        # Deferred 200ms, not called immediately after present() — same
-        # rationale, and the same proven fix, as bodychart's own
-        # deferred_fullscreen in window.c: requesting fullscreen before the
-        # compositor has finished the initial windowed configure round-trip
-        # is exactly the kind of thing that's already needed a workaround
-        # once on this machine's compositor. F11 (_toggle_fullscreen) still
-        # works normally afterward since _is_fullscreen is set to match.
-        def _start_fullscreen() -> bool:
-            win.fullscreen()
-            win._is_fullscreen = True
-            return GLib.SOURCE_REMOVE
-
-        GLib.timeout_add(200, _start_fullscreen)
+        _finish_window_setup(win)
 
     app.connect("activate", on_activate)
     return app
+
+
+def _load_css() -> None:
+    display = Gdk.Display.get_default()
+    provider = Gtk.CssProvider()
+    provider.load_from_path(str(Path(__file__).with_name("style.css")))
+    Gtk.StyleContext.add_provider_for_display(
+        display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+    )
+
+
+def _finish_window_setup(win: "TrialWindow") -> None:
+    """Shared tail of window construction — used by both build_app's
+    on_activate and build_embedded, so the two entry points can't drift
+    apart on theme/fullscreen behaviour.
+
+    GTK CSS has no light/dark media query, so app.py detects the system
+    preference itself (via Gtk.Settings, which GNOME's appearance portal
+    keeps in sync) and toggles a .theme-dark class the stylesheet keys off
+    of — see style.css's focus-ring rules. Re-applied live on toggle
+    (e.g. GNOME's dark-mode switch) as well as at startup, not just once.
+
+    Defaults to fullscreen on startup — per direct user feedback
+    2026-08-23: "full attention, no distraction" was the whole point of
+    this touch-first port, and opening windowed undercut that. Deferred
+    200ms, not called immediately after present() — same rationale, and
+    the same proven fix, as bodychart's own deferred_fullscreen in
+    window.c: requesting fullscreen before the compositor has finished the
+    initial windowed configure round-trip is exactly the kind of thing
+    that's already needed a workaround once on this machine's compositor.
+    F11 (_toggle_fullscreen) still works normally afterward since
+    _is_fullscreen is set to match.
+    """
+    settings = Gtk.Settings.get_default()
+
+    def _apply_theme_class(*_args) -> None:
+        is_dark = settings.get_property("gtk-application-prefer-dark-theme")
+        if is_dark:
+            win.add_css_class("theme-dark")
+        else:
+            win.remove_css_class("theme-dark")
+
+    settings.connect("notify::gtk-application-prefer-dark-theme", _apply_theme_class)
+    _apply_theme_class()
+
+    win.present()
+
+    def _start_fullscreen() -> bool:
+        win.fullscreen()
+        win._is_fullscreen = True
+        return GLib.SOURCE_REMOVE
+
+    GLib.timeout_add(200, _start_fullscreen)
+
+
+def build_embedded(session_file: str) -> "TrialWindow":
+    """Entry point for running gpab embedded inside bodychart's own
+    process (merged-app spike, 2026-08-25) — see TrialWindow.__init__'s
+    docstring on bodychart_present/bodychart_close for the full "why":
+    Ctrl+B's window-raise doesn't actually work over D-Bus/Wayland (a
+    process can't force focus onto a DIFFERENT process's window), and
+    same-process window raising isn't subject to that restriction. Called
+    from bodychart's C code (py_embed.c) via an embedded CPython
+    interpreter, after Py_Initialize and after the bodychart_bridge C
+    extension module (present()/close(), calling straight back into
+    bodychart's own gtk_window_present/close) has been registered.
+
+    Deliberately does NOT create a Gtk.Application that calls .run() —
+    bodychart's own g_application_run() already drives the one shared GLib
+    main loop for the whole process; a plain .register() only satisfies
+    Gtk.ApplicationWindow's constructor requirement. Confirmed via a
+    standalone C proof-of-concept (not committed — see this commit's log
+    message) that a Gtk.ApplicationWindow parented to a registered-but-
+    never-.run() Gtk.Application is serviced correctly by an external,
+    C-driven main loop: window creation, retitling, and closing all worked
+    from plain GLib timeout callbacks in C.
+
+    Returns the TrialWindow itself — the caller (py_embed.c) keeps a
+    reference alive and calls .present()/.close() on it later, for Ctrl+B
+    and close-coupling triggered from the bodychart side.
+    """
+    import bodychart_bridge  # only importable when actually embedded
+
+    app = Gtk.Application(application_id="com.gpab.assessment")
+    app.register()
+
+    _load_css()
+    win = TrialWindow(
+        app, session_file,
+        bodychart_present=bodychart_bridge.present,
+        bodychart_close=bodychart_bridge.close,
+    )
+    _finish_window_setup(win)
+    return win
