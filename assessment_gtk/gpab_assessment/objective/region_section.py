@@ -685,6 +685,23 @@ class RegionContainer(Gtk.Box):
 # RegionTabContent
 # ---------------------------------------------------------------------------
 
+# Fixed anatomical display order (2026-08-26) — regions used to append in
+# whatever order they were toggled active, so e.g. toggling Ankle before
+# Cervical put Ankle's block above Cervical's. Requested fix: always show
+# mounted regions top-to-bottom in this order regardless of activation
+# order, matching how a clinician would expect a chart read top-to-bottom
+# (head to foot; Thoracic isn't its own region tab — its content lives
+# inside Lumbar's container, see lumbar_tables.py).
+_REGION_DISPLAY_ORDER = ["cervical", "shoulder", "lumbar", "hip", "knee", "ankle"]
+
+
+def _region_order_index(region_id: str) -> int:
+    try:
+        return _REGION_DISPLAY_ORDER.index(region_id)
+    except ValueError:
+        return len(_REGION_DISPLAY_ORDER)
+
+
 class RegionTabContent(Gtk.Box):
     """Variable objective tab - shows one collapsible RegionContainer per
     active region. This app has no live body-chart region sync yet, so
@@ -715,7 +732,26 @@ class RegionTabContent(Gtk.Box):
         container = RegionContainer(region_id, self._section_key)
         container.connect("field-changed", lambda *_a: self.emit("field-changed"))
         self._containers[region_id] = container
-        self.append(container)
+
+        # Insert in fixed anatomical order (_REGION_DISPLAY_ORDER), not
+        # appended at the end — walk the box's ACTUAL current children
+        # (skipping the title label) rather than self._containers (a plain
+        # dict, whose iteration order doesn't necessarily match the box's
+        # child order once regions have been unmounted/remounted).
+        idx = _region_order_index(region_id)
+        insert_before = None
+        child = self.get_first_child()
+        if child is not None:
+            child = child.get_next_sibling()  # skip the title label
+        while child is not None:
+            if _region_order_index(child._region_id) > idx:
+                insert_before = child
+                break
+            child = child.get_next_sibling()
+        if insert_before is not None:
+            self.insert_child_after(container, insert_before.get_prev_sibling())
+        else:
+            self.append(container)
 
     def get_container(self, region_id: str) -> RegionContainer | None:
         return self._containers.get(region_id)

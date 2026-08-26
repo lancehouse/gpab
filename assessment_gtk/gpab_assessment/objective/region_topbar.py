@@ -23,9 +23,9 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, GObject  # noqa: E402
 
 ALL_REGIONS: list[tuple[str, str]] = [
-    ("lumbar", "Lumbar"),
     ("cervical", "Cervical"),
     ("shoulder", "Shoulder"),
+    ("lumbar", "Lumbar"),
     ("hip", "Hip"),
     ("knee", "Knee"),
     ("ankle", "Ankle"),

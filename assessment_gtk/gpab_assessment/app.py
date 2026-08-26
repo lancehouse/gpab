@@ -115,6 +115,37 @@ _DEFAULT_ACTIVE_REGIONS = ["lumbar"]
 _SECTION_ID_TO_NAME = {v: k for k, v in _NAME_TO_SECTION_ID.items()}
 _OBJECTIVE_SECTION_IDS = set(_OBJECTIVE_NAME_TO_SECTION_ID.values())
 
+# The four region-tab sections (RegionTabContent-backed — see
+# region_section.py) whose top-bar/Ctrl+T/Ctrl+F anchor_ids name a body
+# region to mount-and-jump-to, not a subsection header to scroll to — see
+# _jump_to_region_tab. Each prefix is deliberately its own namespace, not
+# reused from that tab's existing field-id prefixes (e.g. "am_"/"pm_"/"ml_",
+# still used unchanged by search.py's finer-grained subsection entries),
+# since e.g. "am_lumbar" already names Active Movement's "Lumbar ROM"
+# subsection anchor — reusing it for "open+jump to the Lumbar region" would
+# collide with that existing meaning for the one region whose name happens
+# to match an existing YAML group label. "st_" (Special Tests) predates this
+# generalisation and was left as-is rather than churned to match.
+_REGION_TAB_ANCHOR_PREFIX: dict[str, str] = {
+    "02_active": "amr_",
+    "03_passive": "pmr_",
+    "06_muscle": "mtr_",
+    "08_special": "st_",
+}
+
+# Top bar chip content per section (2026-08-26) — keyed off the exact same
+# SUBJ_GRID_DATA/OBJ_GRID_DATA rows Ctrl+T's grid overview uses, so the top
+# bar and Ctrl+T can never disagree about a tab's own subsection breakdown.
+# SUBJ_GRID_DATA's "04_objective" row is never looked up here — section_id
+# is always a concrete tab id by the time _show_section reaches the
+# set_headings() call, never the literal "04_objective" redirect key.
+_SUBJ_HEADINGS_BY_SECTION: dict[str, list[tuple[str, str]]] = {
+    sid: headings for sid, _, headings in SUBJ_GRID_DATA
+}
+_OBJ_HEADINGS_BY_SECTION: dict[str, list[tuple[str, str]]] = {
+    sid: headings for sid, _, headings in OBJ_GRID_DATA
+}
+
 
 class TrialWindow(Gtk.ApplicationWindow):
     def __init__(
@@ -183,22 +214,35 @@ class TrialWindow(Gtk.ApplicationWindow):
         # -- top bar: the ONE persistent bar, shown on every sidebar tab
         # (there is no separate app-title bar — that wasted a second row of
         # vertical space duplicating the OS window title; removed per
-        # feedback). It swaps content depending on the active tab: the
-        # Subjective mnemonic row everywhere, or the body-region toggle
-        # chips across every Objective tab (mirrors the TUI's RegionTopbar
-        # being shown for the whole Objective mode, not just the
-        # region-variable tabs) — see _show_section.
+        # feedback). Two parts sharing one row, not a Gtk.Stack swap between
+        # them (2026-08-26 — see _show_section):
+        #  - subsection_nav (left, hexpand) — the current section's own
+        #    subsection chips, content rebuilt on every tab change.
+        #  - region_topbar (right, non-expanding) — the body-region toggle
+        #    chips, visible only in Objective mode (mirrors the TUI's
+        #    RegionTopbar being shown for the whole Objective mode, not just
+        #    the region-variable tabs).
+        # Previously these were two full-width alternatives in a Gtk.Stack
+        # (Subjective's chips OR the region chips, never both) — that meant
+        # Objective mode showed region chips only, no subsection nav at all,
+        # and every OTHER tab showed Subjective's own chips regardless of
+        # which was actually active (a real bug, not intentional — see
+        # topbar.py's module docstring).
         self._active_regions: list[str] = []
         self.subsection_nav = SubsectionNavBar()
-        self.subsection_nav.connect("jump", self._on_subsection_jump)
+        self.subsection_nav.set_hexpand(True)
+        self.subsection_nav.set_halign(Gtk.Align.START)
+        self.subsection_nav.connect("jump", self._on_topbar_jump)
         self.region_topbar = RegionTopbar(_DEFAULT_ACTIVE_REGIONS)
+        self.region_topbar.set_hexpand(False)
+        self.region_topbar.set_halign(Gtk.Align.END)
+        self.region_topbar.set_visible(False)
         self.region_topbar.connect("region-toggled", self._on_region_toggled)
 
-        self.topbar_stack = Gtk.Stack()
-        self.topbar_stack.set_transition_type(Gtk.StackTransitionType.NONE)
-        self.topbar_stack.add_named(self.subsection_nav, "subjective")
-        self.topbar_stack.add_named(self.region_topbar, "region")
-        outer.append(self.topbar_stack)
+        topbar_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        topbar_row.append(self.subsection_nav)
+        topbar_row.append(self.region_topbar)
+        outer.append(topbar_row)
 
         main_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         main_row.set_vexpand(True)
@@ -445,9 +489,31 @@ class TrialWindow(Gtk.ApplicationWindow):
     def _on_objective_back(self, _nav) -> None:
         self._show_section(self._last_assessment_section_id or "01_consent")
 
-    def _on_subsection_jump(self, _bar, key: str) -> None:
-        self._show_section("02_subjective")
-        self.subjective.jump_to(key)
+    def _on_topbar_jump(self, _bar, anchor_id: str) -> None:
+        """A top-bar chip click — jump within whichever section is
+        CURRENTLY active (the bar's own content always matches the active
+        section, see _show_section's set_headings call), never a
+        hardcoded target the way this used to always jump into Subjective
+        regardless of the active tab."""
+        self._jump_within_current_section(anchor_id)
+
+    def _jump_within_current_section(self, anchor_id: str) -> None:
+        """Shared by the top bar, Ctrl+F search-jump, and Ctrl+T's grid
+        overview — jump to anchor_id inside whichever section is passed
+        implicitly via _current_section_id(). The four region-tab sections
+        (Active Movement, Passive/OP, Muscle Testing, Special Tests) name a
+        body region ("<prefix><region>", see _REGION_TAB_ANCHOR_PREFIX), not
+        a subsection header — see _jump_to_region_tab's own docstring for
+        why that needs different handling (the region may not be mounted
+        yet)."""
+        section_id = self._current_section_id()
+        prefix = _REGION_TAB_ANCHOR_PREFIX.get(section_id)
+        if prefix is not None and anchor_id.startswith(prefix):
+            self._jump_to_region_tab(section_id, anchor_id.removeprefix(prefix))
+        else:
+            name = _SECTION_ID_TO_NAME.get(section_id)
+            if name is not None:
+                self._scroll_section_to_anchor(name, anchor_id)
 
     def _enter_objective_mode(self) -> None:
         self._show_section("04_objective")
@@ -468,20 +534,26 @@ class TrialWindow(Gtk.ApplicationWindow):
                 self._last_assessment_section_id = self.nav.active_section
             self._in_objective_mode = True
             self.sidebar_stack.set_visible_child_name("objective")
-            self.topbar_stack.set_visible_child_name("region")
+            self.region_topbar.set_visible(True)
             section_id = self.objective_nav.active_section
         elif section_id in _OBJECTIVE_SECTION_IDS:
             if not self._in_objective_mode:
                 self._last_assessment_section_id = self.nav.active_section
             self._in_objective_mode = True
             self.sidebar_stack.set_visible_child_name("objective")
-            self.topbar_stack.set_visible_child_name("region")
+            self.region_topbar.set_visible(True)
         else:
             if self._in_objective_mode:
                 self._in_objective_mode = False
                 self.sidebar_stack.set_visible_child_name("assessment")
-                self.topbar_stack.set_visible_child_name("subjective")
+                self.region_topbar.set_visible(False)
             self._last_assessment_section_id = section_id
+
+        headings = (
+            _OBJ_HEADINGS_BY_SECTION if section_id in _OBJECTIVE_SECTION_IDS
+            else _SUBJ_HEADINGS_BY_SECTION
+        ).get(section_id, [])
+        self.subsection_nav.set_headings(headings)
 
         name = _SECTION_ID_TO_NAME.get(section_id)
         if name is None:
@@ -1043,15 +1115,7 @@ class TrialWindow(Gtk.ApplicationWindow):
             if widget is not None:
                 widget.grab_focus()
         elif entry.anchor_id:
-            if section_id == "08_special" and entry.anchor_id.startswith("st_"):
-                # Same as the grid overview's Special Tests row: these
-                # anchor_ids name a body region, not a subsection header,
-                # and the region may not be mounted yet.
-                self._jump_to_special_region(entry.anchor_id)
-            else:
-                name = _SECTION_ID_TO_NAME.get(section_id)
-                if name is not None:
-                    self._scroll_section_to_anchor(name, entry.anchor_id)
+            self._jump_within_current_section(entry.anchor_id)
 
     def _collect_grid_has_data(self, grid_data) -> dict[str, bool]:
         has_data: dict[str, bool] = {}
@@ -1096,19 +1160,9 @@ class TrialWindow(Gtk.ApplicationWindow):
             # current mode, so no special-casing needed here.
             if section_id == "04_objective":
                 self._show_section(anchor_id)
-            elif section_id == "08_special":
-                # OBJ_GRID_DATA's Special Tests row lists body regions, not
-                # subsection anchors (Special Tests has no fixed layout of
-                # its own — see grid_overview.py) — anchor_id is "st_<region>";
-                # the region may not currently be mounted, unlike every other
-                # row's target, so activate it first.
-                self._show_section(section_id)
-                self._jump_to_special_region(anchor_id)
             else:
                 self._show_section(section_id)
-                name = _SECTION_ID_TO_NAME.get(section_id)
-                if name is not None:
-                    self._scroll_section_to_anchor(name, anchor_id)
+                self._jump_within_current_section(anchor_id)
 
         self.grid_overview.open(grid_data, has_data, cursor, on_selected)
         self.stack.set_visible_child_name("grid_overview")
@@ -1155,21 +1209,27 @@ class TrialWindow(Gtk.ApplicationWindow):
 
         GLib.timeout_add(50, do_scroll)
 
-    def _jump_to_special_region(self, anchor_id: str) -> None:
-        """Special Tests row click: anchor_id is "st_<region>" — mount that
-        region if it isn't already active, then scroll straight to its
-        RegionContainer (the container itself is the target, no header
-        text-matching needed — unlike every other row)."""
-        region_id = anchor_id.removeprefix("st_")
+    def _jump_to_region_tab(self, section_id: str, region_id: str) -> None:
+        """Region-tab row click (Active Movement / Passive-OP / Muscle
+        Testing / Special Tests): mount that region if it isn't already
+        active, then scroll straight to its RegionContainer (the container
+        itself is the target, no header text-matching needed — unlike every
+        other row). Originally Special-Tests-only (_jump_to_special_region);
+        generalised 2026-08-26 once the user asked for the other three
+        region-tab sections to behave identically — all four share the same
+        RegionTabContent/get_container() plumbing (see region_section.py),
+        so only the section_id → stack-name/tab lookup differs per tab."""
         if region_id not in self._active_regions:
             self._sync_active_regions(self._active_regions + [region_id])
 
-        scroll = self.stack.get_child_by_name("special_tests")
-        if scroll is None:
+        name = _SECTION_ID_TO_NAME.get(section_id)
+        tab = self._sections_by_name.get(name) if name else None
+        scroll = self.stack.get_child_by_name(name) if name else None
+        if scroll is None or tab is None:
             return
 
         def do_scroll() -> bool:
-            container = self.special_tests.get_container(region_id)
+            container = tab.get_container(region_id)
             if container is None:
                 return False
             ok, bounds = container.compute_bounds(scroll)
@@ -1656,9 +1716,24 @@ def _finish_window_setup(win: "TrialWindow") -> None:
     def _start_fullscreen() -> bool:
         win.fullscreen()
         win._is_fullscreen = True
+        # Re-present after fullscreening (2026-08-26): in embedded mode,
+        # bodychart's own window_create() does the identical present() +
+        # 200ms-deferred-fullscreen dance for ITS window, synchronously
+        # just before this one is even built (see integration_create_tui_
+        # window / py_embed_open_session) — so on load, both windows race
+        # to fullscreen/raise themselves within the same ~200ms window, and
+        # bodychart's timer (registered first) was winning, leaving
+        # bodychart in front instead of the assessment screen the user
+        # actually wants to land on. This callback's own 350ms delay (vs
+        # bodychart's 200ms, see window.c's window_create) plus this
+        # explicit re-present after fullscreen() makes gpab's raise
+        # unambiguously the LAST thing that happens during load, so it wins
+        # regardless of exact compositor timing. No effect in standalone
+        # mode (build_app) — there's no second window competing for focus.
+        win.present()
         return GLib.SOURCE_REMOVE
 
-    GLib.timeout_add(200, _start_fullscreen)
+    GLib.timeout_add(350, _start_fullscreen)
 
 
 def build_embedded(session_file: str) -> "TrialWindow":

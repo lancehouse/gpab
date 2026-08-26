@@ -135,13 +135,31 @@ OBJ_GRID_DATA: list[tuple[str, str, list[tuple[str, str]]]] = [
         ("Balance",        "fn_balance"),
         ("Timed",          "fn_timed"),
     ]),
+    # Active/Passive/Muscle were fixed-group subsection lists (e.g.
+    # "Lumbar ROM"/"Thoracic ROM") until 2026-08-26, when the user asked for
+    # them to behave like Special Tests' own region-list row below: chips
+    # name a body region, not a subsection, and clicking one mounts that
+    # region (if not already active) then jumps straight to it — see
+    # app.py's _jump_to_region_tab/_REGION_TAB_ANCHOR_PREFIX. The old
+    # fixed-group anchors (am_lumbar, am_thoracic, pm_overpressure,
+    # pm_paivms, ml_length, etc.) still exist as real widget anchors and are
+    # still reachable via Ctrl+F search (search.py) — only Ctrl+T/the top
+    # bar's OWN view of these three tabs changed, to match Special Tests.
     ("02_active", "03 Active Mvt", [
-        ("Lumbar",   "am_lumbar"),
-        ("Thoracic", "am_thoracic"),
+        ("Cervical", "amr_cervical"),
+        ("Shoulder", "amr_shoulder"),
+        ("Lumbar",   "amr_lumbar"),
+        ("Hip",      "amr_hip"),
+        ("Knee",     "amr_knee"),
+        ("Ankle",    "amr_ankle"),
     ]),
     ("03_passive", "04 Passive/OP", [
-        ("Overpressure", "pm_overpressure"),
-        ("PAIVMs",       "pm_paivms"),
+        ("Cervical", "pmr_cervical"),
+        ("Shoulder", "pmr_shoulder"),
+        ("Lumbar",   "pmr_lumbar"),
+        ("Hip",      "pmr_hip"),
+        ("Knee",     "pmr_knee"),
+        ("Ankle",    "pmr_ankle"),
     ]),
     ("04_neurological", "05 Neurology", [
         ("UL Reflex",       "nr_ul_reflexes"),
@@ -159,10 +177,12 @@ OBJ_GRID_DATA: list[tuple[str, str, list[tuple[str, str]]]] = [
         ("Hypersensitivity", "sn_hypersensitivity"),
     ]),
     ("06_muscle", "07 Muscle", [
-        ("Length",       "ml_length"),
-        ("Activation",   "ml_activation"),
-        ("Trunk Str",    "ml_strength_trunk"),
-        ("Hip Str",      "ml_strength_hip"),
+        ("Cervical", "mtr_cervical"),
+        ("Shoulder", "mtr_shoulder"),
+        ("Lumbar",   "mtr_lumbar"),
+        ("Hip",      "mtr_hip"),
+        ("Knee",     "mtr_knee"),
+        ("Ankle",    "mtr_ankle"),
         # SIJ Provocation Signs moved to Special Tests 2026-08-24 (was
         # misfiled under Muscle here and in the reference TUI — see
         # lumbar_tables.py's module docstring). No longer listed here.
@@ -179,9 +199,9 @@ OBJ_GRID_DATA: list[tuple[str, str, list[tuple[str, str]]]] = [
     # active via RegionTopbar, so "headings" here are the region choices
     # themselves rather than subsection anchors within one fixed layout.
     ("08_special", "08 Special Tests", [
-        ("Lumbar",   "st_lumbar"),
         ("Cervical", "st_cervical"),
         ("Shoulder", "st_shoulder"),
+        ("Lumbar",   "st_lumbar"),
         ("Hip",      "st_hip"),
         ("Knee",     "st_knee"),
         ("Ankle",    "st_ankle"),
