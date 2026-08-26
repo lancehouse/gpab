@@ -56,6 +56,7 @@ from .nav import SectionNav
 from .topbar import SubsectionNavBar
 from .footer import FooterBar
 from .report_modal import ReportModal
+from .spellcheck_modal import SpellcheckModal
 from .notes_overlay import NotesOverlay
 from .chart_watcher import ChartFileWatcher
 from .report_timer import ReportTimer
@@ -810,6 +811,7 @@ class TrialWindow(Gtk.ApplicationWindow):
     #   Alt+<letter>     subjective jump     (BINDINGS alt+s/h/b/m/a/w/e/4/p/g/r)
     #   Ctrl+Q           quit, flushing any pending debounced save first
     #   Ctrl+A           select-all in the focused text field
+    #   Ctrl+S           spell-check pass over every free-text field
     # ------------------------------------------------------------------
 
     _ALT_KEY_MAP = {
@@ -899,6 +901,9 @@ class TrialWindow(Gtk.ApplicationWindow):
         if ctrl_held and name.lower() == "r":
             self._show_report()
             return True
+        if ctrl_held and name.lower() == "s":
+            self._open_spellcheck()
+            return True
         if ctrl_held and name.lower() == "k":
             self._toggle_kb_panel()
             return True
@@ -933,6 +938,13 @@ class TrialWindow(Gtk.ApplicationWindow):
             self._save_source_id_obj = None
             self._do_save_obj()
         ReportModal(self, self.session_file).present()
+
+    def _open_spellcheck(self) -> None:
+        """Ctrl+S — walk every free-text field currently in the widget tree
+        (see spellcheck.collect_fields) and step through flagged words one
+        at a time. Corrections edit each field's buffer in place, so they
+        ride the normal autosave path exactly like typed edits."""
+        SpellcheckModal(self, self).present()
 
     def _open_gonio_import(self) -> None:
         """Ctrl+G — import goniometer ROM measurements for the open patient
