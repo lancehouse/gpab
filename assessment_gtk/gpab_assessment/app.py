@@ -580,6 +580,8 @@ class TrialWindow(Gtk.ApplicationWindow):
                 "outcome_measures": self.outcome_measures.collect(),
                 "diagnosis": self.diagnosis.collect(),
             })
+        elif name == "crps":
+            self.crps.update_cross_refs({"sensory": self.sensory.collect()})
 
     # ------------------------------------------------------------------
     # Region toggling — mirrors objective_view.py's _mount_region /
@@ -787,6 +789,10 @@ class TrialWindow(Gtk.ApplicationWindow):
             self.subjective.refresh_from_chart(data)
         except Exception as e:
             logger.error("chart update handler failed: %s", e)
+        try:
+            self.sensory.refresh_from_chart(data)
+        except Exception as e:
+            logger.error("sensory chart-link refresh failed: %s", e)
 
     # ------------------------------------------------------------------
     # Global hotkeys — mirrors main.py's PhysioAssessment.BINDINGS for the

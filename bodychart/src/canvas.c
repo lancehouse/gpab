@@ -1066,6 +1066,7 @@ void canvas_render_view(AppState *app, cairo_t *cr, BodyView view,
 
     if (app->current_mode == APP_MODE_OBJECTIVE) {
         obj_chart_render_body(app, cr, (int)view);
+        obj_chart_render_ticks_body(app, cr, (int)view);
     } else {
         for (int i = 0; i < app->strokes->n; i++) {
             Stroke *sk = app->strokes->strokes[i];
@@ -1280,6 +1281,7 @@ static void on_col_draw(GtkDrawingArea *da, cairo_t *cr,
     } else if (app->current_mode == APP_MODE_OBJECTIVE) {
         obj_chart_render_body(app, cr, (int)cd->view);
         obj_chart_render_active_body(app, cr, (int)cd->view);
+        obj_chart_render_ticks_body(app, cr, (int)cd->view);
     }
 
     cairo_restore(cr);
@@ -1345,6 +1347,36 @@ static int obj_point_hit_body(AppState *app, int view, double bx, double by)
     return -1;
 }
 
+static int obj_tick_hit_body(AppState *app, int view, double bx, double by)
+{
+    for (int i = app->obj_tick_count - 1; i >= 0; i--) {
+        ObjTick *t = &app->obj_ticks[i];
+        if (t->view != view) continue;
+        double dx = t->bx - bx, dy = t->by - by;
+        if (dx*dx + dy*dy < 12.0 * 12.0) return i;
+    }
+    return -1;
+}
+
+/* Places a tick/cross immediately at (bx,by) using the currently-armed
+ * obj_tick_type/obj_tick_state — no drag phase, no dialog, unlike zones
+ * (drag-to-draw) and numeric points (click opens a value-entry dialog).
+ * Direct user request: "I just want to select the purple tick and put it
+ * in" — one click per marker. */
+static void obj_place_tick(AppState *app, int view, double bx, double by, GtkWidget *da)
+{
+    if (app->obj_tick_count >= MAX_OBJ_TICKS) return;
+    ObjTick *t = &app->obj_ticks[app->obj_tick_count++];
+    t->bx    = bx;
+    t->by    = by;
+    t->view  = view;
+    t->type  = app->obj_tick_type;
+    t->state = app->obj_tick_state;
+    if (app->obj_undo_type_top < 64)
+        app->obj_undo_type_stack[app->obj_undo_type_top++] = 2;
+    if (da) gtk_widget_queue_draw(da);
+}
+
 static void obj_commit_active_zone(AppState *app, GtkWidget *da)
 {
     ObjZone *z = app->obj_active_zone;
@@ -1383,6 +1415,17 @@ static gboolean obj_handle_erase(AppState *app, int view,
         app->obj_point_count--;
         if (app->obj_undo_type_top > 0 &&
             app->obj_undo_type_stack[app->obj_undo_type_top - 1] == 1)
+            app->obj_undo_type_top--;
+        gtk_widget_queue_draw(da);
+        return TRUE;
+    }
+    int it = obj_tick_hit_body(app, view, bx, by);
+    if (it >= 0) {
+        for (int k = it; k < app->obj_tick_count - 1; k++)
+            app->obj_ticks[k] = app->obj_ticks[k + 1];
+        app->obj_tick_count--;
+        if (app->obj_undo_type_top > 0 &&
+            app->obj_undo_type_stack[app->obj_undo_type_top - 1] == 2)
             app->obj_undo_type_top--;
         gtk_widget_queue_draw(da);
         return TRUE;
@@ -1544,6 +1587,10 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
             screen_to_body(cd, x, y, &bx, &by);
             if (app->tool == TOOL_ERASE) {
                 obj_handle_erase(app, (int)cd->view, bx, by, cd->da);
+                return TRUE;
+            }
+            if (app->obj_tick_mode) {
+                obj_place_tick(app, (int)cd->view, bx, by, cd->da);
                 return TRUE;
             }
             if (app->obj_point_mode) {
@@ -1830,6 +1877,10 @@ static void on_drag_begin(GtkGestureDrag *gd, double x, double y, gpointer d)
     if (app->current_mode == APP_MODE_OBJECTIVE) {
         if (app->tool == TOOL_ERASE) {
             obj_handle_erase(app, (int)cd->view, bx, by, cd->da);
+            return;
+        }
+        if (app->obj_tick_mode) {
+            obj_place_tick(app, (int)cd->view, bx, by, cd->da);
             return;
         }
         if (!app->obj_point_mode) {
@@ -2356,6 +2407,7 @@ void canvas_clear(AppState *app)
     }
     app->obj_zone_count = 0;
     app->obj_point_count = 0;
+    app->obj_tick_count = 0;
     app->obj_undo_type_top = 0;
     if (app->obj_active_zone) {
         obj_zone_free(app->obj_active_zone);
@@ -2372,6 +2424,8 @@ void canvas_undo(AppState *app)
             guint8 type = app->obj_undo_type_stack[--app->obj_undo_type_top];
             if (type == 1) {
                 if (app->obj_point_count > 0) app->obj_point_count--;
+            } else if (type == 2) {
+                if (app->obj_tick_count > 0) app->obj_tick_count--;
             } else {
                 if (app->obj_zone_count > 0) {
                     obj_zone_free(app->obj_zones[--app->obj_zone_count]);

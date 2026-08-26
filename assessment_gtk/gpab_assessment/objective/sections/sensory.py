@@ -5,6 +5,13 @@ Dermatomes live in 04 Neurological; this section covers reduced acuity
 (hyposensitivity) and heightened sensitivity (central sensitisation)
 findings. Field ids and collect()/load() keys are 1:1 with the TUI (JSON
 key "sensory" in _objective.json).
+
+Vibration sense, Proprioception, and the bodychart cross-link indicator
+were added 2026-08-26 as part of aligning the Objective bodychart's zone/
+tick vocabulary with this tab — see objective_chart_link.py and
+CONVERSION_PLAN.md. "Body perception impaired" deliberately stays here
+(not a Budapest-criteria CRPS item, a 5th ad-hoc finding per direct user
+feedback) but also cross-links into the CRPS tab — see crps.py.
 """
 
 from __future__ import annotations
@@ -16,12 +23,15 @@ from gi.repository import Gtk  # noqa: E402
 
 from ...widgets import FlagButton, TouchEntry, AutoTextView, make_subsection_header
 from ...section_base import SectionBase
+from ..objective_chart_link import CHART_LINKED_FIELDS, build_chart_links
 
 # (display label, data id, has detail entry?)
 _HYPO_ITEMS: list[tuple[str, str, bool]] = [
     ("Sharp/blunt (Neuropen)", "sn_sharp_blunt", True),
     ("Two-point discrimination", "sn_tpd", True),
     ("Light touch (hypoaesthesia)", "sn_lt", True),
+    ("Vibration sense", "sn_vibration", True),
+    ("Proprioception", "sn_proprioception", True),
     ("Body perception impaired", "sn_body", False),
 ]
 _HYPER_ITEMS: list[tuple[str, str, bool]] = [
@@ -49,6 +59,12 @@ class SensorySection(Gtk.Box, SectionBase):
 
         self._flags: dict[str, FlagButton] = {}
         self._details: dict[str, TouchEntry] = {}
+        # sid -> detail widget (TouchEntry or, for sn_body, the AutoTextView
+        # below) and sid -> its "See Bodychart" link indicator label — both
+        # only populated for fields in CHART_LINKED_FIELDS. Used by
+        # refresh_from_chart() (chart_watcher.py's on_chart_update).
+        self._detail_by_sid: dict[str, object] = {}
+        self._link_indicators: dict[str, Gtk.Widget] = {}
 
         title = Gtk.Label(label="05 Sensory")
         title.add_css_class("section-title")
@@ -62,6 +78,9 @@ class SensorySection(Gtk.Box, SectionBase):
         self.body_detail = AutoTextView("sn_body_detail", min_lines=2)
         self.body_detail.textview.get_buffer().connect("changed", self._field_changed)
         self.append(self.body_detail)
+        # sn_body has no per-row TouchEntry (has_detail=False above) — its
+        # cross-link target is this AutoTextView instead.
+        self._detail_by_sid["sn_body"] = self.body_detail
 
         self.append(make_subsection_header("Heightened Sensitivity / Central Sensitisation", "sn_hypersensitivity"))
         for label, sid, has_detail in _HYPER_ITEMS:
@@ -86,6 +105,14 @@ class SensorySection(Gtk.Box, SectionBase):
             entry.connect("changed", self._field_changed)
             self._details[did] = entry
             row.append(entry)
+            if sid in CHART_LINKED_FIELDS:
+                self._detail_by_sid[sid] = entry
+        if sid in CHART_LINKED_FIELDS:
+            link = Gtk.Label(label="\U0001f517")  # link emoji
+            link.set_tooltip_text("See objective bodychart")
+            link.set_visible(False)
+            self._link_indicators[sid] = link
+            row.append(link)
         return row
 
     def _field_changed(self, *_args) -> None:
@@ -124,3 +151,29 @@ class SensorySection(Gtk.Box, SectionBase):
 
     def is_complete(self) -> bool:
         return self._flags[_HYPO_ITEMS[0][1]].value is not None
+
+    def refresh_from_chart(self, session_json: dict) -> None:
+        """ChartFileWatcher callback (via app.py's _on_chart_update) — see
+        objective_chart_link.py's module docstring. Only ever PREFILLS an
+        empty detail field from the bodychart's own drawn/marked findings;
+        never overwrites text the clinician has already typed there, same
+        data-safety policy as Subjective's own refresh_from_chart. The link
+        indicator (the 🔗 emoji next to a mapped row) always reflects the
+        chart's current state, even once the text has been hand-edited."""
+        links = build_chart_links(session_json)
+        for sid in CHART_LINKED_FIELDS:
+            text = links.get(sid)
+            indicator = self._link_indicators.get(sid)
+            if indicator is not None:
+                indicator.set_visible(text is not None)
+                if text is not None:
+                    indicator.set_tooltip_text(text)
+            if text is None:
+                continue
+            detail = self._detail_by_sid.get(sid)
+            if detail is not None and not detail.text.strip():
+                self._loading = True
+                try:
+                    detail.text = text
+                finally:
+                    self._loading = False

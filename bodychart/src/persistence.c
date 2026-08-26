@@ -130,6 +130,24 @@ static json_object *link_matrix_to_json(AppState *app)
     return rows;
 }
 
+/* Spatial association for Objective items (2026-08-26) — same
+ * svg_regions_hit() lookup already used for Subjective strokes/notes
+ * (see compute_clusters/notes_to_json above), extended here so Objective
+ * zones/points/ticks also carry a region_label. This is the foundation for
+ * gpab's cross-linking of bodychart findings into the Sensory/CRPS tabs
+ * (an Objective-side counterpart to mapping.py's Subjective prefill) —
+ * see CONVERSION_PLAN.md. Returns "" (never NULL) if regions aren't loaded
+ * or nothing hits. */
+static const char *obj_region_label(AppState *app, int view, double bx, double by)
+{
+    if (app->svg_regions.loaded) {
+        const SvgRegionLayer *ly = svg_regions_hit(
+            &app->svg_regions, view, (float)bx, (float)by);
+        if (ly) return ly->name;
+    }
+    return "";
+}
+
 static json_object *obj_zones_to_json(AppState *app)
 {
     json_object *arr = json_object_new_array();
@@ -140,13 +158,21 @@ static json_object *obj_zones_to_json(AppState *app)
         json_object_object_add(o, "type", json_object_new_int((int)z->type));
         json_object_object_add(o, "view", json_object_new_int(z->view));
         json_object *pts = json_object_new_array();
+        double cbx = 0.0, cby = 0.0;
         for (int j = 0; j < z->n; j++) {
             json_object *pt = json_object_new_array();
             json_object_array_add(pt, json_object_new_double(z->bx[j]));
             json_object_array_add(pt, json_object_new_double(z->by[j]));
             json_object_array_add(pts, pt);
+            cbx += z->bx[j];
+            cby += z->by[j];
         }
         json_object_object_add(o, "pts", pts);
+        if (z->n > 0) {
+            cbx /= z->n; cby /= z->n;
+            json_object_object_add(o, "region_label",
+                json_object_new_string(obj_region_label(app, z->view, cbx, cby)));
+        }
         json_object_array_add(arr, o);
     }
     return arr;
@@ -164,10 +190,30 @@ static json_object *obj_points_to_json(AppState *app)
         json_object_object_add(o, "by",    json_object_new_double(p->by));
         json_object_object_add(o, "value", json_object_new_double(p->value));
         json_object_object_add(o, "label", json_object_new_string(p->label));
+        json_object_object_add(o, "region_label",
+            json_object_new_string(obj_region_label(app, p->view, p->bx, p->by)));
         if (p->anchor.placed) {
             json_object_object_add(o, "lx", json_object_new_double(p->anchor.lx));
             json_object_object_add(o, "ly", json_object_new_double(p->anchor.ly));
         }
+        json_object_array_add(arr, o);
+    }
+    return arr;
+}
+
+static json_object *obj_ticks_to_json(AppState *app)
+{
+    json_object *arr = json_object_new_array();
+    for (int i = 0; i < app->obj_tick_count; i++) {
+        const ObjTick *t = &app->obj_ticks[i];
+        json_object *o = json_object_new_object();
+        json_object_object_add(o, "type",  json_object_new_int((int)t->type));
+        json_object_object_add(o, "state", json_object_new_int((int)t->state));
+        json_object_object_add(o, "view",  json_object_new_int(t->view));
+        json_object_object_add(o, "bx",    json_object_new_double(t->bx));
+        json_object_object_add(o, "by",    json_object_new_double(t->by));
+        json_object_object_add(o, "region_label",
+            json_object_new_string(obj_region_label(app, t->view, t->bx, t->by)));
         json_object_array_add(arr, o);
     }
     return arr;
@@ -526,6 +572,7 @@ gboolean persistence_save(AppState *app)
     json_object *obj = json_object_new_object();
     json_object_object_add(obj, "zones",  obj_zones_to_json(app));
     json_object_object_add(obj, "points", obj_points_to_json(app));
+    json_object_object_add(obj, "ticks",  obj_ticks_to_json(app));
     json_object_object_add(root, "objective", obj);
     json_object_object_add(root, "neuro", json_object_new_object());
 
@@ -682,6 +729,7 @@ static void load_obj_data(AppState *app, json_object *obj_j)
     }
     app->obj_zone_count    = 0;
     app->obj_point_count   = 0;
+    app->obj_tick_count    = 0;
     app->obj_undo_type_top = 0;
 
     json_object *zones_arr;
@@ -733,6 +781,23 @@ static void load_obj_data(AppState *app, json_object *obj_j)
             } else {
                 p->anchor.placed = 0;
             }
+        }
+    }
+
+    json_object *ticks_arr;
+    if (json_object_object_get_ex(obj_j, "ticks", &ticks_arr)) {
+        int n = (int)json_object_array_length(ticks_arr);
+        for (int i = 0; i < n && app->obj_tick_count < MAX_OBJ_TICKS; i++) {
+            json_object *o = json_object_array_get_idx(ticks_arr, i);
+            int type = ji(o, "type", 0);
+            if (type < 0 || type >= OBJ_TICK_TYPE_COUNT) continue;
+            int state = ji(o, "state", 0);
+            ObjTick *t = &app->obj_ticks[app->obj_tick_count++];
+            t->type  = (ObjTickType)type;
+            t->state = (state == OBJ_TICK_STATE_CROSS) ? OBJ_TICK_STATE_CROSS : OBJ_TICK_STATE_TICK;
+            t->view  = ji(o, "view", 0);
+            t->bx    = jd(o, "bx", 100.0);
+            t->by    = jd(o, "by", 200.0);
         }
     }
 }

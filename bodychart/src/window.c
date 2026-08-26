@@ -431,12 +431,27 @@ static AppState  *g_app_ref;
 
 /* ── Obj mode sidebar widget refs ────────────────────────────────────────── */
 static GtkWidget *g_obj_zone_btns[OBJ_ZONE_COUNT];
+static GtkWidget *g_obj_tick_btns[OBJ_TICK_TYPE_COUNT][2];  /* [type][0]=tick ✓ [1]=cross ✗ */
 static GtkWidget *g_obj_ppt_btn;
 static GtkWidget *g_obj_mono_btn;
 static GtkWidget *g_obj_ts_btn;
 static GtkWidget *g_obj_tpd_btn;
 static GtkWidget *g_obj_erase_btn;
 static GtkWidget *g_sidebar_content_stack;
+
+/* Sidebar display grouping (2026-08-26) — a UI-only concern, deliberately
+ * decoupled from ObjZoneType's declaration order (see obj_chart.h): that
+ * enum's numeric values are load-bearing for existing session files and
+ * must never be renumbered, but the sidebar groups Sensory- and
+ * CRPS-relevant zones together regardless of their underlying index. */
+static const ObjZoneType OBJ_ZONE_SENSORY_GROUP[] = {
+    OBJ_ZONE_ALLODYNIA, OBJ_ZONE_ALLODYNIA_DYNAMIC, OBJ_ZONE_HYPERALGESIA,
+    OBJ_ZONE_NUMB, OBJ_ZONE_HEAT_HYPERALGESIA, OBJ_ZONE_COLD_HYPERALGESIA,
+};
+static const ObjZoneType OBJ_ZONE_CRPS_GROUP[] = {
+    OBJ_ZONE_ERYTHEMA, OBJ_ZONE_TEMP_COOL, OBJ_ZONE_TEMP_WARM,
+    OBJ_ZONE_OEDEMA, OBJ_ZONE_TROPHIC, OBJ_ZONE_BODY_PERCEPTION,
+};
 
 static void update_toolbar_state(AppState *app)
 {
@@ -534,10 +549,22 @@ static void update_toolbar_state(AppState *app)
         if (!g_obj_zone_btns[i]) continue;
         gboolean active = (app->current_mode == APP_MODE_OBJECTIVE &&
                            !app->obj_point_mode &&
+                           !app->obj_tick_mode &&
                            app->tool != TOOL_ERASE &&
                            app->obj_zone_type == (ObjZoneType)i);
         gtk_widget_set_name(g_obj_zone_btns[i],
                             active ? "tool-btn-active" : "tool-btn");
+    }
+    for (int i = 0; i < OBJ_TICK_TYPE_COUNT; i++) {
+        for (int s = 0; s < 2; s++) {
+            if (!g_obj_tick_btns[i][s]) continue;
+            gboolean active = (app->current_mode == APP_MODE_OBJECTIVE &&
+                               app->obj_tick_mode &&
+                               app->obj_tick_type == (ObjTickType)i &&
+                               (int)app->obj_tick_state == s);
+            gtk_widget_set_name(g_obj_tick_btns[i][s],
+                                active ? "tool-btn-active" : "tool-btn");
+        }
     }
     if (g_obj_ppt_btn)
         gtk_widget_set_name(g_obj_ppt_btn,
@@ -1802,6 +1829,24 @@ static void on_obj_zone_clicked(GtkButton *btn, gpointer data)
     ObjZoneType zt  = (ObjZoneType)(gintptr)pair[1];
     app->obj_zone_type  = zt;
     app->obj_point_mode = FALSE;
+    app->obj_tick_mode  = FALSE;
+    app->tool = TOOL_DRAW;
+    if (app->toolbar_update_cb) app->toolbar_update_cb(app);
+}
+
+/* Tick/cross tool (new 2026-08-26) — one dedicated button per (type, state)
+ * pair, arming the tool so the NEXT canvas click places that exact marker
+ * immediately (see canvas.c's obj_place_tick) — no intermediate dialog,
+ * unlike the numeric point tools below. */
+static void on_obj_tick_clicked(GtkButton *btn, gpointer data)
+{
+    (void)btn;
+    gpointer *triple = data;
+    AppState *app    = triple[0];
+    app->obj_tick_type  = (ObjTickType)(gintptr)triple[1];
+    app->obj_tick_state = (ObjTickState)(gintptr)triple[2];
+    app->obj_tick_mode  = TRUE;
+    app->obj_point_mode = FALSE;
     app->tool = TOOL_DRAW;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
 }
@@ -1811,6 +1856,7 @@ static void on_obj_ppt_clicked(GtkButton *btn, gpointer data)
     (void)btn;
     AppState *app = data;
     app->obj_point_mode = TRUE;
+    app->obj_tick_mode  = FALSE;
     app->obj_point_type = OBJ_POINT_PPT;
     app->tool = TOOL_DRAW;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
@@ -1821,6 +1867,7 @@ static void on_obj_ts_clicked(GtkButton *btn, gpointer data)
     (void)btn;
     AppState *app = data;
     app->obj_point_mode = TRUE;
+    app->obj_tick_mode  = FALSE;
     app->obj_point_type = OBJ_POINT_TEMPORAL_SUM;
     app->tool = TOOL_DRAW;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
@@ -1831,6 +1878,7 @@ static void on_obj_mono_clicked(GtkButton *btn, gpointer data)
     (void)btn;
     AppState *app = data;
     app->obj_point_mode = TRUE;
+    app->obj_tick_mode  = FALSE;
     app->obj_point_type = OBJ_POINT_MONOFILAMENT;
     app->tool = TOOL_DRAW;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
@@ -1841,6 +1889,7 @@ static void on_obj_tpd_clicked(GtkButton *btn, gpointer data)
     (void)btn;
     AppState *app = data;
     app->obj_point_mode = TRUE;
+    app->obj_tick_mode  = FALSE;
     app->obj_point_type = OBJ_POINT_TWO_PD;
     app->tool = TOOL_DRAW;
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
@@ -1860,23 +1909,15 @@ static void on_obj_undo_clicked(GtkButton *btn, gpointer data)
     canvas_undo((AppState *)data);
 }
 
-/* ── Build "Obj" tab content ─────────────────────────────────────────────── */
-static GtkWidget *build_obj_tab(AppState *app)
+/* Appends one zone-button column for the given group array into box —
+ * shared by the Sensory and CRPS zone groups below (2026-08-26). */
+static void append_zone_group(GtkWidget *box, AppState *app,
+                               const ObjZoneType *group, int n)
 {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
-    gtk_widget_set_name(box, "toolbar");
-    gtk_widget_set_margin_start(box, 2);
-    gtk_widget_set_margin_end(box, 2);
-    gtk_widget_set_margin_top(box, 2);
-
-    /* ── Zone section — single column, full names ── */
-    GtkWidget *lbl_z = gtk_label_new("Zone");
-    gtk_widget_set_name(lbl_z, "section-label");
-    gtk_box_append(GTK_BOX(box), lbl_z);
-
     static gpointer zone_pairs[OBJ_ZONE_COUNT][2];
     GtkWidget *zone_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
-    for (int i = 0; i < OBJ_ZONE_COUNT; i++) {
+    for (int k = 0; k < n; k++) {
+        ObjZoneType i = group[k];
         GtkWidget *btn = make_btn(OBJ_ZONE_DEFS[i].name, -1, 36);
         gtk_widget_set_hexpand(btn, TRUE);
         zone_pairs[i][0] = app;
@@ -1886,6 +1927,60 @@ static GtkWidget *build_obj_tab(AppState *app)
         gtk_box_append(GTK_BOX(zone_box), btn);
     }
     gtk_box_append(GTK_BOX(box), zone_box);
+}
+
+/* ── Build "Obj" tab content ─────────────────────────────────────────────── */
+static GtkWidget *build_obj_tab(AppState *app)
+{
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    gtk_widget_set_name(box, "toolbar");
+    gtk_widget_set_margin_start(box, 2);
+    gtk_widget_set_margin_end(box, 2);
+    gtk_widget_set_margin_top(box, 2);
+
+    /* ── Sensory group (2026-08-26) — zones, tick/cross markers, and the
+     * numeric points all live here now: everything that maps onto the 05
+     * Sensory tab's own Hyposensitivity/Hypersensitivity items. CRPS's
+     * "weird" vasomotor/trophic findings get their own group below instead
+     * of being mixed in, per direct user feedback. ── */
+    GtkWidget *lbl_sensory = gtk_label_new("Sensory");
+    gtk_widget_set_name(lbl_sensory, "section-label");
+    gtk_box_append(GTK_BOX(box), lbl_sensory);
+
+    GtkWidget *lbl_z = gtk_label_new("Zone");
+    gtk_widget_set_name(lbl_z, "section-label");
+    gtk_box_append(GTK_BOX(box), lbl_z);
+    append_zone_group(box, app, OBJ_ZONE_SENSORY_GROUP,
+                       G_N_ELEMENTS(OBJ_ZONE_SENSORY_GROUP));
+
+    /* ── Tick/cross section — one button pair per type, each pair sharing
+     * that type's colour (see obj_chart.c's OBJ_TICK_DEFS); glyph, not
+     * colour, distinguishes tick from cross. ── */
+    GtkWidget *lbl_tick = gtk_label_new("Tick / Cross");
+    gtk_widget_set_name(lbl_tick, "section-label");
+    gtk_box_append(GTK_BOX(box), lbl_tick);
+
+    static gpointer tick_triples[OBJ_TICK_TYPE_COUNT][2][3];
+    GtkWidget *tick_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    for (int i = 0; i < OBJ_TICK_TYPE_COUNT; i++) {
+        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+        for (int s = 0; s < 2; s++) {
+            char label[40];
+            snprintf(label, sizeof(label), "%s %s",
+                     OBJ_TICK_DEFS[i].name,
+                     s == OBJ_TICK_STATE_TICK ? "\xe2\x9c\x93" : "\xe2\x9c\x97");
+            GtkWidget *btn = make_btn(label, -1, 36);
+            gtk_widget_set_hexpand(btn, TRUE);
+            tick_triples[i][s][0] = app;
+            tick_triples[i][s][1] = (gpointer)(gintptr)i;
+            tick_triples[i][s][2] = (gpointer)(gintptr)s;
+            g_signal_connect(btn, "clicked", G_CALLBACK(on_obj_tick_clicked), tick_triples[i][s]);
+            g_obj_tick_btns[i][s] = btn;
+            gtk_box_append(GTK_BOX(row), btn);
+        }
+        gtk_box_append(GTK_BOX(tick_box), row);
+    }
+    gtk_box_append(GTK_BOX(box), tick_box);
 
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
@@ -1913,6 +2008,16 @@ static GtkWidget *build_obj_tab(AppState *app)
     gtk_widget_set_hexpand(g_obj_tpd_btn, TRUE);
     g_signal_connect(g_obj_tpd_btn, "clicked", G_CALLBACK(on_obj_tpd_clicked), app);
     gtk_box_append(GTK_BOX(box), g_obj_tpd_btn);
+
+    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
+    /* ── CRPS group (2026-08-26) — vasomotor/trophic/body-perception
+     * findings that don't belong on a general Sensory exam. ── */
+    GtkWidget *lbl_crps = gtk_label_new("CRPS");
+    gtk_widget_set_name(lbl_crps, "section-label");
+    gtk_box_append(GTK_BOX(box), lbl_crps);
+    append_zone_group(box, app, OBJ_ZONE_CRPS_GROUP,
+                       G_N_ELEMENTS(OBJ_ZONE_CRPS_GROUP));
 
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 

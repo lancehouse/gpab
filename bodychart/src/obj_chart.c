@@ -7,14 +7,21 @@
 
 /* ── Appearance tables ───────────────────────────────────────────────────── */
 const ObjZoneDef OBJ_ZONE_DEFS[OBJ_ZONE_COUNT] = {
-    { 0.96f, 0.82f, 0.00f, "Allodynia",    "Allodynia"    },
-    { 0.94f, 0.47f, 0.13f, "Hyperalgesia", "Hyperalgesia" },
-    { 0.91f, 0.38f, 0.48f, "Erythema",     "Erythema"     },
-    { 0.25f, 0.63f, 0.88f, "Temp Cool",    "Temp Cool"    },
-    { 0.75f, 0.19f, 0.19f, "Temp Warm",    "Temp Warm"    },
-    { 0.69f, 0.69f, 0.75f, "Numb",         "Numb"         },
-    { 0.60f, 0.31f, 0.75f, "Oedema",       "Oedema"       },
-    { 0.70f, 0.44f, 0.19f, "Trophic",      "Trophic"      },
+    { 0.96f, 0.82f, 0.00f, "Static Allodynia",   "Static Allodynia"   },
+    { 0.94f, 0.47f, 0.13f, "Hyperalgesia",       "Hyperalgesia"       },
+    { 0.91f, 0.38f, 0.48f, "Erythema",           "Erythema"           },
+    { 0.25f, 0.63f, 0.88f, "Temp Cool",          "Temp Cool"          },
+    { 0.75f, 0.19f, 0.19f, "Temp Warm",          "Temp Warm"          },
+    { 0.69f, 0.69f, 0.75f, "Reduced Sensation",  "Reduced Sensation"  },
+    { 0.60f, 0.31f, 0.75f, "Oedema",             "Oedema"             },
+    { 0.70f, 0.44f, 0.19f, "Trophic",            "Trophic"            },
+    /* Appended 2026-08-26 — see obj_chart.h's ObjZoneType comment on why
+     * these are appended, not interleaved with the renumbering-sensitive
+     * block above. */
+    { 0.20f, 0.70f, 0.65f, "Dynamic Allodynia",  "Dynamic Allodynia"  },
+    { 0.90f, 0.25f, 0.15f, "Heat Hyperalgesia",  "Heat Hyperalgesia"  },
+    { 0.30f, 0.35f, 0.85f, "Cold Hyperalgesia",  "Cold Hyperalgesia"  },
+    { 0.35f, 0.55f, 0.55f, "Body Perception",    "Body Perception"    },
 };
 
 const ObjPointDef OBJ_POINT_DEFS[OBJ_POINT_COUNT] = {
@@ -22,6 +29,12 @@ const ObjPointDef OBJ_POINT_DEFS[OBJ_POINT_COUNT] = {
     { 0.55f, 0.15f, 0.65f, "Temporal Sum"  },   /* OBJ_POINT_TEMPORAL_SUM   */
     { 0.20f, 0.65f, 0.45f, "Monofilament"  },   /* OBJ_POINT_MONOFILAMENT   */
     { 0.85f, 0.55f, 0.10f, "2-PD"          },   /* OBJ_POINT_TWO_PD         */
+};
+
+const ObjTickDef OBJ_TICK_DEFS[OBJ_TICK_TYPE_COUNT] = {
+    { 0.55f, 0.20f, 0.90f, "Vibration"              },  /* OBJ_TICK_VIBRATION             */
+    { 0.15f, 0.65f, 0.55f, "Proprioception"         },  /* OBJ_TICK_PROPRIOCEPTION        */
+    { 0.80f, 0.55f, 0.05f, "Nerve Trunk Palpation"  },  /* OBJ_TICK_NERVE_TRUNK_PALPATION */
 };
 
 /* ── ObjZone lifecycle ───────────────────────────────────────────────────── */
@@ -115,6 +128,41 @@ void obj_chart_render_active_body(AppState *app, cairo_t *cr, int view)
     cairo_set_line_width(cr, 1.5);
     cairo_stroke(cr);
     cairo_restore(cr);
+}
+
+/* ── Tick/cross marker rendering — body space ────────────────────────────── */
+
+void obj_chart_render_ticks_body(AppState *app, cairo_t *cr, int view)
+{
+    for (int i = 0; i < app->obj_tick_count; i++) {
+        const ObjTick *t = &app->obj_ticks[i];
+        if (t->view != view) continue;
+        const ObjTickDef *d = &OBJ_TICK_DEFS[t->type];
+
+        cairo_save(cr);
+        /* White halo behind the dot, same convention as obj point spots. */
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.90);
+        cairo_arc(cr, t->bx, t->by, 8.0, 0, 2 * G_PI);
+        cairo_fill(cr);
+        cairo_set_source_rgba(cr, d->r, d->g, d->b, 0.95);
+        cairo_arc(cr, t->bx, t->by, 7.0, 0, 2 * G_PI);
+        cairo_fill(cr);
+
+        /* Glyph distinguishes tick vs cross — colour is per-TYPE only, not
+         * per-state (explicitly not a red=abnormal/green=normal semantic
+         * here, per direct user feedback). */
+        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
+                               CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, 11.0);
+        const char *glyph = (t->state == OBJ_TICK_STATE_TICK) ? "\xe2\x9c\x93" : "\xe2\x9c\x97";
+        cairo_text_extents_t ext;
+        cairo_text_extents(cr, glyph, &ext);
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0);
+        cairo_move_to(cr, t->bx - ext.width / 2.0 - ext.x_bearing,
+                          t->by - ext.height / 2.0 - ext.y_bearing);
+        cairo_show_text(cr, glyph);
+        cairo_restore(cr);
+    }
 }
 
 /* ── Label anchor resolver ───────────────────────────────────────────────── */

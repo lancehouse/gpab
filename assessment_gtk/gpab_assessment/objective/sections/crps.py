@@ -163,6 +163,22 @@ class CRPSSection(Gtk.Box, SectionBase):
         self.append(Gtk.Label(label="General Notes:", halign=Gtk.Align.START))
         self._notes["crps_notes"] = self._add_notes("crps_notes")
 
+        # ── Body Perception Impairment — cross-linked from Sensory ──────────
+        # Not a Budapest-criteria domain item (direct user feedback,
+        # 2026-08-26: "the body perception is not a budapest criteria item,
+        # it is a 5th adhoc item separate from that scale... it should stay
+        # in 'sensory' AND cross link to CRPS") — the real field lives on
+        # the Sensory tab (sn_body / sn_body_detail); this is a read-only
+        # mirror, refreshed via update_cross_refs() the same way
+        # Pain Classification/Barriers already cross-reference sibling
+        # sections (see app.py's _show_section).
+        self.append(make_subsection_header("Body Perception Impairment (see Sensory tab)", "crps_body_perception"))
+        self.body_perception_label = Gtk.Label(label="–")
+        self.body_perception_label.set_halign(Gtk.Align.START)
+        self.body_perception_label.set_wrap(True)
+        self.body_perception_label.add_css_class("region-container")
+        self.append(self.body_perception_label)
+
         # ── 5 · Two-Point Discrimination ─────────────────────────────────────
         self.append(make_subsection_header("5 · Two-Point Discrimination", "crps_tpd"))
         self._notes["crps_tpd_notes"] = self._add_notes("crps_tpd_notes")
@@ -330,6 +346,22 @@ class CRPSSection(Gtk.Box, SectionBase):
 
     def focus_first_field(self) -> None:
         self._flags["crps_disp_pain"].grab_focus()
+
+    def update_cross_refs(self, cross: dict) -> None:
+        """cross = {"sensory": SensorySection.collect()}. Mirrors sn_body /
+        sn_body_detail read-only here — see this method's call site in
+        app.py's _show_section (same pattern as pain_classification's and
+        barriers' own cross-referencing)."""
+        sensory = cross.get("sensory", {})
+        value = sensory.get("sn_body")
+        detail = str(sensory.get("sn_body_detail", "")).strip()
+        if value is None:
+            text = "– not yet assessed on Sensory tab –"
+        else:
+            text = f"{'Yes' if value else 'No'}"
+            if detail:
+                text += f" — {detail}"
+        self.body_perception_label.set_label(text)
 
     # ------------------------------------------------------------------
     # Data

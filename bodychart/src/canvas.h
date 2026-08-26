@@ -197,12 +197,20 @@ struct _AppState {
     ObjZone  *obj_active_zone;      /* in-progress zone being drawn */
     ObjPoint  obj_points[MAX_OBJ_POINTS];
     int       obj_point_count;
+    ObjTick   obj_ticks[MAX_OBJ_TICKS];
+    int       obj_tick_count;
     ObjZoneType   obj_zone_type;    /* currently selected zone type */
     ObjPointType  obj_point_type;   /* currently selected point type */
+    ObjTickType   obj_tick_type;    /* currently armed tick/cross type */
+    ObjTickState  obj_tick_state;   /* currently armed tick/cross state */
     gboolean  obj_point_mode;       /* TRUE = point tool, FALSE = zone tool */
+    gboolean  obj_tick_mode;        /* TRUE = tick/cross tool armed — takes
+                                      * priority over obj_point_mode/zone tool;
+                                      * one click places+commits immediately,
+                                      * no drag/dialog, see canvas.c */
     gboolean  obj_erase_mode;       /* TRUE = erase obj items */
     gboolean  obj_wide_mode;        /* wide-band zone drawing */
-    /* Objective undo: 0=zone, 1=point */
+    /* Objective undo: 0=zone, 1=point, 2=tick */
     guint8    obj_undo_type_stack[64];
     int       obj_undo_type_top;
     /* Callback: show PPT value entry dialog; set by window.c */
