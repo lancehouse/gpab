@@ -197,6 +197,16 @@ struct _AppState {
     ObjZone  *obj_active_zone;      /* in-progress zone being drawn */
     ObjPoint  obj_points[MAX_OBJ_POINTS];
     int       obj_point_count;
+    /* Pencil tool in Objective mode (2026-08-26) — same Stroke mechanism
+     * and drawing UX as Subjective's own Pencil (see canvas.c's
+     * obj_pencil_active()/input.c's input_end()), but its OWN storage:
+     * a mark made while looking at the Objective chart is a different
+     * annotation from one made on the Subjective chart, even though nothing
+     * distinguishes them visually or in how they're drawn. Sharing
+     * app->strokes made an Objective pencil mark show up (and be erasable/
+     * undoable) from the Subjective tab too, which is NOT what "use the
+     * same pencil tool" meant — fixed same day it was found live. */
+    StrokeList *obj_pencil_strokes;
     ObjTick   obj_ticks[MAX_OBJ_TICKS];
     int       obj_tick_count;
     ObjZoneType   obj_zone_type;    /* currently selected zone type */

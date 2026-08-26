@@ -573,6 +573,7 @@ gboolean persistence_save(AppState *app)
     json_object_object_add(obj, "zones",  obj_zones_to_json(app));
     json_object_object_add(obj, "points", obj_points_to_json(app));
     json_object_object_add(obj, "ticks",  obj_ticks_to_json(app));
+    json_object_object_add(obj, "pencil_strokes", strokes_to_json(app->obj_pencil_strokes));
     json_object_object_add(root, "objective", obj);
     json_object_object_add(root, "neuro", json_object_new_object());
 
@@ -798,6 +799,49 @@ static void load_obj_data(AppState *app, json_object *obj_j)
             t->view  = ji(o, "view", 0);
             t->bx    = jd(o, "bx", 100.0);
             t->by    = jd(o, "by", 200.0);
+        }
+    }
+
+    /* Pencil tool in Objective mode (2026-08-26) — its own stroke list,
+     * NOT app->strokes (see canvas.h's field comment). Same shape
+     * strokes_to_json()/the Subjective stroke loader use. */
+    stroke_list_clear(app->obj_pencil_strokes);
+    json_object *pencil_arr;
+    if (json_object_object_get_ex(obj_j, "pencil_strokes", &pencil_arr)) {
+        int n = (int)json_object_array_length(pencil_arr);
+        for (int i = 0; i < n; i++) {
+            json_object *s = json_object_array_get_idx(pencil_arr, i);
+            int type = ji(s, "type", SYMPTOM_PENCIL);
+            int view = ji(s, "view", 0);
+            int wide = jb(s, "wide", FALSE);
+            double draw_zoom_val = jd(s, "draw_zoom", 0.0);
+            int sid  = ji(s, "id", -1);
+            if (type < 0 || type >= SYMPTOM_COUNT) continue;
+            Stroke *sk = stroke_new((SymptomType)type, view);
+            sk->wide_mode = wide;
+            sk->draw_zoom = draw_zoom_val;
+            if (sid >= 0) {
+                sk->id = sid;
+                if (sid >= app->next_stroke_id) app->next_stroke_id = sid + 1;
+            } else {
+                sk->id = app->next_stroke_id++;
+            }
+            json_object *pts;
+            if (json_object_object_get_ex(s, "pts", &pts)) {
+                int np = (int)json_object_array_length(pts);
+                for (int j = 0; j < np; j++) {
+                    json_object *pt = json_object_array_get_idx(pts, j);
+                    if (json_object_array_length(pt) < 3) continue;
+                    float x = (float)json_object_get_double(json_object_array_get_idx(pt, 0));
+                    float y = (float)json_object_get_double(json_object_array_get_idx(pt, 1));
+                    float p = (float)json_object_get_double(json_object_array_get_idx(pt, 2));
+                    stroke_add_point(sk, x, y, p);
+                }
+            }
+            if (sk->n_pts > 0)
+                stroke_list_push(app->obj_pencil_strokes, sk);
+            else
+                stroke_free(sk);
         }
     }
 }

@@ -105,6 +105,7 @@ int main(int argc, char *argv[])
     AppState state;
     memset(&state, 0, sizeof(state));
     state.strokes          = stroke_list_new();
+    state.obj_pencil_strokes = stroke_list_new();
     state.current_view     = VIEW_ANTERIOR;
     state.layout_mode      = LAYOUT_QUAD;
     state.tool             = TOOL_DRAW;
@@ -168,6 +169,7 @@ int main(int argc, char *argv[])
 
     py_embed_shutdown();
     stroke_list_free(state.strokes);
+    stroke_list_free(state.obj_pencil_strokes);
     g_object_unref(gtk_app);
     return status;
 }

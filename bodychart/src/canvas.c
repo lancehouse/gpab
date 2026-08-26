@@ -1073,14 +1073,23 @@ static void draw_arrow_body_space(cairo_t *cr,
     cairo_set_line_width(cr, 0.8);
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
 
-    /* Quadratic bezier shaft (converted to cubic for Cairo).
-     * Shaft ends at head base, not tip, so the head sits clean. */
-    double c1x = x1  + (2.0/3.0) * (cx - x1);
-    double c1y = y1  + (2.0/3.0) * (cy - y1);
-    double c2x = hbx + (2.0/3.0) * (cx - hbx);
-    double c2y = hby + (2.0/3.0) * (cy - hby);
+    /* Full quadratic bezier (P0=x1,y1  P1=cx,cy  P2=x2,y2), converted to
+     * cubic via standard exact degree elevation, drawn all the way to the
+     * TRUE tip — not truncated at the head base. The previous version
+     * truncated the shaft at hbx,hby but reused the same control point
+     * cx,cy (computed for the full-length curve) as if it were valid for
+     * that much shorter segment — it isn't a real subdivision of the
+     * curve, just a different, wrong curve, and it showed up as a very
+     * tight, exaggerated bend right at the tip (direct user report). The
+     * opaque, filled arrowhead below simply sits on top of the last
+     * head_len of shaft, same as any arrowhead covering the tail of its
+     * own line — no truncation needed. */
+    double c1x = x1 + (2.0/3.0) * (cx - x1);
+    double c1y = y1 + (2.0/3.0) * (cy - y1);
+    double c2x = x2 + (2.0/3.0) * (cx - x2);
+    double c2y = y2 + (2.0/3.0) * (cy - y2);
     cairo_move_to(cr, x1, y1);
-    cairo_curve_to(cr, c1x, c1y, c2x, c2y, hbx, hby);
+    cairo_curve_to(cr, c1x, c1y, c2x, c2y, x2, y2);
     cairo_stroke(cr);
 
     /* Filled triangular arrowhead */
@@ -1483,19 +1492,18 @@ static gboolean obj_handle_erase(AppState *app, int view,
     }
     /* Pencil strokes drawn while in Objective mode (2026-08-26) — same
      * proximity hit-test input_begin()'s own TOOL_ERASE case uses for
-     * Subjective strokes, just filtered to SYMPTOM_PENCIL and to this
-     * view, since Objective's erase tool shouldn't reach into Subjective's
-     * clinical symptom strokes even though they share one list. */
-    for (int i = app->strokes->n - 1; i >= 0; i--) {
-        Stroke *s = app->strokes->strokes[i];
-        if ((int)s->view != view || s->type != SYMPTOM_PENCIL) continue;
+     * Subjective strokes, against app->obj_pencil_strokes (Objective's own
+     * pencil layer, NOT app->strokes — see canvas.h's field comment). */
+    for (int i = app->obj_pencil_strokes->n - 1; i >= 0; i--) {
+        Stroke *s = app->obj_pencil_strokes->strokes[i];
+        if ((int)s->view != view) continue;
         for (size_t j = 0; j < s->n_pts; j++) {
             double dx = s->pts[j].x - bx, dy = s->pts[j].y - by;
             if (sqrt(dx*dx + dy*dy) < 8.0) {
                 stroke_free(s);
-                for (int k = i; k < app->strokes->n - 1; k++)
-                    app->strokes->strokes[k] = app->strokes->strokes[k + 1];
-                app->strokes->n--;
+                for (int k = i; k < app->obj_pencil_strokes->n - 1; k++)
+                    app->obj_pencil_strokes->strokes[k] = app->obj_pencil_strokes->strokes[k + 1];
+                app->obj_pencil_strokes->n--;
                 app->stroke_version++;
                 if (app->obj_undo_type_top > 0 &&
                     app->obj_undo_type_stack[app->obj_undo_type_top - 1] == 3)
@@ -1528,9 +1536,12 @@ gboolean obj_pencil_active(const AppState *app)
 
 static void draw_pencil_strokes_body(AppState *app, cairo_t *cr, int view, double zoom)
 {
-    for (int i = 0; i < app->strokes->n; i++) {
-        Stroke *sk = app->strokes->strokes[i];
-        if (sk->view != view || sk->type != SYMPTOM_PENCIL) continue;
+    /* app->obj_pencil_strokes, NOT app->strokes — Objective's own pencil
+     * marks are a separate annotation layer from Subjective's, even though
+     * they share the same tool/drawing code. See canvas.h's field comment. */
+    for (int i = 0; i < app->obj_pencil_strokes->n; i++) {
+        Stroke *sk = app->obj_pencil_strokes->strokes[i];
+        if (sk->view != view) continue;
         draw_stroke(cr, sk, &SYMPTOM_DEFS[sk->type], app, zoom);
     }
 }
@@ -2520,6 +2531,7 @@ void canvas_clear(AppState *app)
     app->obj_point_count = 0;
     app->obj_tick_count = 0;
     app->obj_undo_type_top = 0;
+    stroke_list_clear(app->obj_pencil_strokes);
     if (app->obj_active_zone) {
         obj_zone_free(app->obj_active_zone);
         app->obj_active_zone = NULL;
@@ -2539,9 +2551,9 @@ void canvas_undo(AppState *app)
                 if (app->obj_tick_count > 0) app->obj_tick_count--;
             } else if (type == 3) {
                 /* Pencil stroke committed while in Objective mode — see
-                 * input_end()'s comment. Same shared app->strokes list
-                 * Subjective mode's own undo pops from. */
-                stroke_free(stroke_list_pop(app->strokes));
+                 * input_end()'s comment. Its own list (obj_pencil_strokes),
+                 * NOT Subjective's app->strokes. */
+                stroke_free(stroke_list_pop(app->obj_pencil_strokes));
                 app->stroke_version++;
             } else {
                 if (app->obj_zone_count > 0) {
