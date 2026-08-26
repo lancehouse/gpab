@@ -139,8 +139,8 @@ class SpellcheckModal(Gtk.Window):
         ellipsis_l = "…" if lo > 0 else ""
         ellipsis_r = "…" if hi < len(text) else ""
         self.context_label.set_markup(
-            f'{ellipsis_l}{before}<span underline="error" underline_color="#e53935">'
-            f"{flagged}</span>{after}{ellipsis_r}"
+            f'{ellipsis_l}{before}<b><span underline="error" underline_color="#e53935">'
+            f"{flagged}</span></b>{after}{ellipsis_r}"
         )
 
         self.correction_entry.set_text(word)

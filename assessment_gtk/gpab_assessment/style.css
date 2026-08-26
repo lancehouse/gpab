@@ -497,13 +497,14 @@ entry {
 /* Ctrl+S spell-check modal (spellcheck_modal.py). .spellcheck-top-suggestion
    is deliberately much larger than the rest of the numbered list — meant to
    be readable at a glance while moving quickly through a pass, not read
-   carefully like the others. .spellcheck-correction-entry matches it so the
-   editable "type your own fix" field doesn't look like a demotion from the
-   suggestion it sits beside. */
+   carefully like the others. .spellcheck-correction-entry is kept modest —
+   it's a hand-typed fallback for when the suggestions are no good, not the
+   primary glance target the top suggestion is, so it doesn't need to compete
+   with it for size. */
 .spellcheck-top-suggestion {
     font-size: 1.6rem;
     font-weight: bold;
 }
 .spellcheck-correction-entry {
-    font-size: 1.6rem;
+    font-size: 1.05rem;
 }
