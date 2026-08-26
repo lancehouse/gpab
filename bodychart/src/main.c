@@ -66,12 +66,14 @@ static void on_activate(GtkApplication *app, gpointer user_data)
         if (persistence_load(state, g_session_path)) {
             persistence_monitor_start(state);
             window_create(state, app);
-            /* merged-app spike only: the real desktop flow always goes
-             * through the launch dialog (launch_commit_new/_open), which
-             * already calls this — --session bypasses that dialog
-             * entirely, so nothing opened gpab. Added here purely to make
-             * --session a usable end-to-end test path for this spike
-             * without needing to drive the dialog's buttons. */
+            /* The real desktop flow always goes through the launch dialog
+             * (launch_commit_new/_open), which already calls this —
+             * --session bypasses that dialog entirely, so without this
+             * call nothing would open gpab. Added originally to make
+             * --session a usable end-to-end test path without needing to
+             * drive the dialog's buttons; kept on promotion to dev since
+             * a --session launch reasonably should still open gpab too,
+             * same as the dialog does. */
             integration_create_tui_window(state, app);
         } else {
             /* Failed to load; show launch dialog as fallback */

@@ -3,7 +3,7 @@
 #include "py_embed.h"
 #include <gtk/gtk.h>
 
-/* GPAB INTEGRATION — MERGED-APP EMBEDDING SPIKE (2026-08-25) ────────────────
+/* GPAB INTEGRATION — EMBEDDED (promoted to dev/gpabd 2026-08-26) ───────────
  *
  * Supersedes the separate-process design this file had from 2026-08-23
  * through 2026-08-25 (spawn `gpab-assessment` as an independent process,
@@ -25,9 +25,17 @@
  * windows (this isn't a widget-embedding trick, GTK4 has no mechanism for
  * that — see py_embed.h) — just one process now instead of two.
  *
- * This is a THIRD-TIER experiment (see ../../CLAUDE.md's "Branch and
- * deployment rules" — the merged-app branch/worktree), deliberately kept
- * out of dev/gpabd and main/gpabs until proven and explicitly promoted.
+ * Developed and proven on a third-tier `merged-app` worktree (see
+ * CLAUDE.md's "Branch and deployment rules" for that history) before being
+ * explicitly promoted here by the user on 2026-08-26, once live-tested:
+ * embedding itself, Ctrl+B raise (both directions), close-coupling (both
+ * directions), a real CSS-bleed bug found and fixed (bodychart's own
+ * bare-tag CSS rules were leaking onto gpab's widgets once both windows
+ * shared one GdkDisplay — see window.c's apply_css()), and the
+ * cross-app file-sync layer (chart_watcher.py's polling, unaffected by
+ * any of this) all confirmed working. main/gpabs has NOT received this
+ * yet — stays on the old separate-process design until a further,
+ * separate, explicit promotion.
  *
  * This file only exists modified in ~/Projects/gpab's own clone of
  * bodychart/ — see ../../CLAUDE.md's isolation guarantee. ~/Projects/pab is

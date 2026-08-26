@@ -9,11 +9,13 @@
  * is direct in-process linkage, not a spawned subprocess, so there's no
  * "just change one $PATH-resolved command name" lever — the interpreter
  * and its sys.path have to be correct before Py_Initialize() even runs.
- * This file only exists in the merged-app worktree; if/when this spike
- * gets promoted, this needs the same per-worktree treatment
- * GPAB_LAUNCHER got (see CLAUDE.md's "Branch and deployment rules"). */
-#define GPAB_SITE_PACKAGES "/home/lance/Projects/gpab/merged-app/assessment_gtk/.venv/lib/python3.14/site-packages"
-#define GPAB_APP_ROOT      "/home/lance/Projects/gpab/merged-app/assessment_gtk"
+ * These two paths are meant to differ per worktree, same shape as
+ * integration.c's GPAB_LAUNCHER divergence between dev and main — when
+ * this is ever promoted to gpab-stable/main, that copy of this file needs
+ * s/\/Projects\/gpab\//\/Projects\/gpab\/gpab-stable\// on both lines (see
+ * CLAUDE.md's "Branch and deployment rules"). */
+#define GPAB_SITE_PACKAGES "/home/lance/Projects/gpab/assessment_gtk/.venv/lib/python3.14/site-packages"
+#define GPAB_APP_ROOT      "/home/lance/Projects/gpab/assessment_gtk"
 
 static AppState *g_app = NULL;
 static PyObject *g_gpab_window = NULL;  /* strong ref to the TrialWindow instance */

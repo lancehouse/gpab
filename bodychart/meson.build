@@ -7,9 +7,10 @@ cairo_dep   = dependency('cairo')
 rsvg_dep    = dependency('librsvg-2.0')
 jsonc_dep   = dependency('json-c')
 m_dep       = meson.get_compiler('c').find_library('m', required : false)
-# merged-app embedding spike (2026-08-25) — embeds gpab's Python app in this
-# process via CPython; see src/py_embed.c/.h and CLAUDE.md's third-tier note.
-# NOT part of dev/gpabd or main/gpabs's build.
+# Embeds gpab's Python assessment app in this process via CPython — see
+# src/py_embed.c/.h. Developed and proven on a third-tier `merged-app`
+# worktree (see CLAUDE.md's "Branch and deployment rules"), promoted to
+# dev/gpabd's own build 2026-08-26. main/gpabs has NOT received this yet.
 python_dep  = dependency('python3-embed')
 
 sources = files(
