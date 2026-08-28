@@ -36,7 +36,7 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Gdk, Pango  # noqa: E402
+from gi.repository import Gtk, Gdk, GLib, Pango  # noqa: E402
 
 from . import spellcheck
 
@@ -52,7 +52,7 @@ class SpellcheckModal(Gtk.Window):
 
     def __init__(self, parent: Gtk.Window, win) -> None:
         super().__init__(transient_for=parent, modal=True, title="Spell Check")
-        self.set_default_size(560, 460)
+        self.set_default_size(560, 520)
 
         self._fields = spellcheck.collect_fields(win)
         self._field_idx = 0
@@ -86,11 +86,11 @@ class SpellcheckModal(Gtk.Window):
         context_key_ctrl = Gtk.EventControllerKey()
         context_key_ctrl.connect("key-pressed", self._on_context_key)
         self.context_view.add_controller(context_key_ctrl)
-        context_scroll = Gtk.ScrolledWindow()
-        context_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        context_scroll.set_min_content_height(90)
-        context_scroll.set_child(self.context_view)
-        box.append(context_scroll)
+        self.context_scroll = Gtk.ScrolledWindow()
+        self.context_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.context_scroll.set_min_content_height(160)
+        self.context_scroll.set_child(self.context_view)
+        box.append(self.context_scroll)
 
         self.suggestions_box = Gtk.ListBox()
         self.suggestions_box.set_selection_mode(Gtk.SelectionMode.NONE)
@@ -161,6 +161,21 @@ class SpellcheckModal(Gtk.Window):
         self._word_start_mark = buf.create_mark(None, it_s, left_gravity=True)
         self._word_end_mark = buf.create_mark(None, it_e, left_gravity=False)
         buf.apply_tag(self._flag_tag, it_s, it_e)
+        # scroll_to_iter needs a laid-out view to compute a position against
+        # — right after set_text() the TextView hasn't relaid-out yet (same
+        # "measure after GTK gets a chance to relayout" issue AutoTextView's
+        # own height recompute works around), so defer one idle tick. Center
+        # (yalign=0.5) rather than just "on screen" — a flagged word near
+        # either edge of the ±150-char window was otherwise landing right at
+        # the top/bottom edge of the scroll view, forcing a manual scroll to
+        # actually read it.
+        mark = self._word_start_mark
+        GLib.idle_add(lambda: self._center_on_mark(mark))
+
+    def _center_on_mark(self, mark: Gtk.TextMark) -> bool:
+        buf = self.context_view.get_buffer()
+        self.context_view.scroll_to_iter(buf.get_iter_at_mark(mark), 0.0, True, 0.5, 0.5)
+        return GLib.SOURCE_REMOVE
 
         self._suggestions = spellcheck.suggest(word)
         row = self.suggestions_box.get_row_at_index(0)
