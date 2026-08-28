@@ -52,7 +52,7 @@ class SpellcheckModal(Gtk.Window):
 
     def __init__(self, parent: Gtk.Window, win) -> None:
         super().__init__(transient_for=parent, modal=True, title="Spell Check")
-        self.set_default_size(560, 460)
+        self.set_default_size(560, 560)
 
         self._fields = spellcheck.collect_fields(win)
         self._field_idx = 0
@@ -88,7 +88,7 @@ class SpellcheckModal(Gtk.Window):
         self.context_view.add_controller(context_key_ctrl)
         context_scroll = Gtk.ScrolledWindow()
         context_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        context_scroll.set_min_content_height(90)
+        context_scroll.set_min_content_height(200)
         context_scroll.set_child(self.context_view)
         box.append(context_scroll)
 
