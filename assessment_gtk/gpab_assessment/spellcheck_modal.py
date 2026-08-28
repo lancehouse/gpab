@@ -9,19 +9,26 @@ field's own buffer/entry (spellcheck.replace_span), so it rides the
 section's existing autosave path exactly like a real keystroke — no
 report-side or storage-side changes needed anywhere.
 
-Two escape hatches beyond the numbered list, both because dictionary
-suggestions and typing on a touchscreen are both fallible: the top
-suggestion is rendered much larger (.spellcheck-top-suggestion) so it can
-be read at a glance while moving quickly through a pass, and an editable
-correction entry (pre-filled with the word as actually typed, not a
-suggestion — easier to spot-fix your own typo than to start from an
-unrelated dictionary guess) lets you hand-type a fix when nothing offered
-is right. Digit/S/D shortcuts are only ever reached while that entry does
-NOT have keyboard focus — GTK stops a key event's propagation the moment
-the focused Entry consumes it (typing 's' produces the letter, not the
-skip action), the same "focused text-input eats the keystroke first"
-behaviour search_widget.py's docstring already documents having to design
-around — so no extra bookkeeping is needed to keep the two from colliding.
+The context preview (context_view) is itself an editable Gtk.TextView, not
+a read-only Label with a separate correction box — real notes sometimes
+have two words jumbled together (a missing/misplaced space) that a
+single-word dictionary suggestion can't fix at all, so the fastest real
+fix is often just hand-editing the snippet directly and moving on. The
+flagged word is marked bold + red-underlined via a Gtk.TextTag anchored
+with Gtk.TextMarks (not fixed character offsets), so the highlight and
+the suggestion-apply actions both stay correct even after the user has
+already typed elsewhere in the box. Return commits whatever's currently in
+the box (which may be untouched, hand-edited, or suggestion-substituted)
+back into the field in place of the whole context window and advances —
+see _commit_and_advance.
+
+Digit/S/D shortcuts are only reached while context_view does NOT have
+keyboard focus — GTK stops a key event's propagation the moment the
+focused TextView consumes it (typing 's' inserts the letter, not the skip
+action), the same "focused text-input eats the keystroke first" behaviour
+search_widget.py's docstring already documents having to design around —
+so default focus is deliberately kept off context_view (see _show_word)
+and the user "opts in" to hand-editing by clicking/tapping into it.
 """
 
 from __future__ import annotations
@@ -29,7 +36,7 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Gdk, GLib  # noqa: E402
+from gi.repository import Gtk, Gdk, Pango  # noqa: E402
 
 from . import spellcheck
 
@@ -40,8 +47,8 @@ class SpellcheckModal(Gtk.Window):
     """Escape ends the pass. 1-9 replace with that numbered suggestion.
     S skips this occurrence. Shift+S skips this word for the rest of the
     pass. D whitelists the word permanently (spellcheck_personal_dict.json).
-    Typing your own fix into the correction entry and pressing Enter there
-    applies it instead."""
+    Editing the context text directly and pressing Enter there commits
+    whatever's in the box instead."""
 
     def __init__(self, parent: Gtk.Window, win) -> None:
         super().__init__(transient_for=parent, modal=True, title="Spell Check")
@@ -51,8 +58,10 @@ class SpellcheckModal(Gtk.Window):
         self._field_idx = 0
         self._scan_pos = 0
         self._skip_words: set[str] = set()
-        self._current: tuple | None = None  # (widget, start, end, word, label)
+        self._current: dict | None = None
         self._suggestions: list[str] = []
+        self._word_start_mark: Gtk.TextMark | None = None
+        self._word_end_mark: Gtk.TextMark | None = None
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_margin_top(14)
@@ -64,19 +73,24 @@ class SpellcheckModal(Gtk.Window):
         self.field_label.add_css_class("dim-label")
         box.append(self.field_label)
 
-        self.context_label = Gtk.Label(xalign=0.0)
-        self.context_label.set_wrap(True)
-        self.context_label.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        box.append(self.context_label)
-
-        self.correction_entry = Gtk.Entry()
-        self.correction_entry.add_css_class("spellcheck-correction-entry")
-        self.correction_entry.set_hexpand(True)
-        focus_ctrl = Gtk.EventControllerFocus()
-        focus_ctrl.connect("enter", lambda _c: self.correction_entry.select_region(0, -1))
-        self.correction_entry.add_controller(focus_ctrl)
-        self.correction_entry.connect("activate", self._on_correction_activate)
-        box.append(self.correction_entry)
+        self.context_view = Gtk.TextView()
+        self.context_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.context_view.set_accepts_tab(False)
+        self.context_view.add_css_class("spellcheck-context-view")
+        self._flag_tag = self.context_view.get_buffer().create_tag(
+            "flagged", weight=Pango.Weight.BOLD, underline=Pango.Underline.ERROR
+        )
+        rgba = Gdk.RGBA()
+        rgba.parse("#e53935")
+        self._flag_tag.set_property("underline-rgba", rgba)
+        context_key_ctrl = Gtk.EventControllerKey()
+        context_key_ctrl.connect("key-pressed", self._on_context_key)
+        self.context_view.add_controller(context_key_ctrl)
+        context_scroll = Gtk.ScrolledWindow()
+        context_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        context_scroll.set_min_content_height(90)
+        context_scroll.set_child(self.context_view)
+        box.append(context_scroll)
 
         self.suggestions_box = Gtk.ListBox()
         self.suggestions_box.set_selection_mode(Gtk.SelectionMode.NONE)
@@ -91,7 +105,7 @@ class SpellcheckModal(Gtk.Window):
         hint.set_markup(
             '<span size="small" alpha="70%">'
             "1–9 replace · S skip · Shift+S skip word · D add to dictionary · "
-            "type your own fix above then Enter · Esc stop"
+            "edit the text above directly, then Enter · Esc stop"
             "</span>"
         )
         box.append(hint)
@@ -123,27 +137,30 @@ class SpellcheckModal(Gtk.Window):
                 self._scan_pos = 0
                 continue
             start, end, word = hit
-            self._current = (widget, start, end, word, label)
-            self._show_word(text, start, end, word, label)
+            self._show_word(widget, text, start, end, word, label)
             return
         self._show_done()
 
-    def _show_word(self, text: str, start: int, end: int, word: str, label: str) -> None:
+    def _show_word(self, widget, text: str, start: int, end: int, word: str, label: str) -> None:
         self.field_label.set_label(label)
 
         lo = max(0, start - _CONTEXT_RADIUS)
         hi = min(len(text), end + _CONTEXT_RADIUS)
-        before = GLib.markup_escape_text(text[lo:start])
-        flagged = GLib.markup_escape_text(word)
-        after = GLib.markup_escape_text(text[end:hi])
-        ellipsis_l = "…" if lo > 0 else ""
-        ellipsis_r = "…" if hi < len(text) else ""
-        self.context_label.set_markup(
-            f'{ellipsis_l}{before}<b><span underline="error" underline_color="#e53935">'
-            f"{flagged}</span></b>{after}{ellipsis_r}"
-        )
+        self._current = {
+            "widget": widget, "lo": lo, "hi": hi,
+            "word_end": end, "word": word, "label": label,
+        }
 
-        self.correction_entry.set_text(word)
+        buf = self.context_view.get_buffer()
+        buf.set_text(text[lo:hi])
+        it_s = buf.get_iter_at_offset(start - lo)
+        it_e = buf.get_iter_at_offset(end - lo)
+        if self._word_start_mark is not None:
+            buf.delete_mark(self._word_start_mark)
+            buf.delete_mark(self._word_end_mark)
+        self._word_start_mark = buf.create_mark(None, it_s, left_gravity=True)
+        self._word_end_mark = buf.create_mark(None, it_e, left_gravity=False)
+        buf.apply_tag(self._flag_tag, it_s, it_e)
 
         self._suggestions = spellcheck.suggest(word)
         row = self.suggestions_box.get_row_at_index(0)
@@ -151,7 +168,7 @@ class SpellcheckModal(Gtk.Window):
             self.suggestions_box.remove(row)
             row = self.suggestions_box.get_row_at_index(0)
         if not self._suggestions:
-            lbl = Gtk.Label(label="(no suggestions — try the correction field above)", xalign=0.0)
+            lbl = Gtk.Label(label="(no suggestions — edit the text above directly)", xalign=0.0)
             lbl.add_css_class("dim-label")
             lbl.set_margin_top(4)
             lbl.set_margin_bottom(4)
@@ -166,20 +183,23 @@ class SpellcheckModal(Gtk.Window):
                 lbl.add_css_class("spellcheck-top-suggestion")
             self.suggestions_box.append(lbl)
 
-        # Default focus must NOT land on correction_entry — GTK auto-focuses
-        # the first focusable widget on present()/on any child rebuild, which
+        # Default focus must NOT land on context_view — GTK auto-focuses the
+        # first focusable widget on present()/on any child rebuild, which
         # would otherwise steal every digit/S/D keystroke as typed text (a
-        # focused Entry consumes a key event outright, so it never reaches
-        # _on_key; see module docstring). suggestions_box is a neutral
-        # parking spot: it doesn't consume plain letter/digit keys itself, so
-        # the shortcuts stay live by default and the user only "opts in" to
-        # typing by clicking or tapping into the correction field.
+        # focused TextView consumes a key event outright, so it never
+        # reaches _on_key; see module docstring). suggestions_box is a
+        # neutral parking spot: it doesn't consume plain letter/digit keys
+        # itself, so the shortcuts stay live by default and the user only
+        # "opts in" to hand-editing by clicking or tapping into the context
+        # box.
         self.suggestions_box.grab_focus()
 
     def _show_done(self) -> None:
         self.field_label.set_label("")
-        self.context_label.set_markup("<b>Spell check complete.</b> No more flagged words.")
-        self.correction_entry.set_text("")
+        buf = self.context_view.get_buffer()
+        buf.set_text("Spell check complete. No more flagged words.")
+        self._word_start_mark = None
+        self._word_end_mark = None
         row = self.suggestions_box.get_row_at_index(0)
         while row is not None:
             self.suggestions_box.remove(row)
@@ -190,46 +210,66 @@ class SpellcheckModal(Gtk.Window):
     # Actions
     # ------------------------------------------------------------------
 
-    def _apply(self, replacement: str) -> None:
-        widget, start, end, _word, _label = self._current
-        spellcheck.replace_span(widget, start, end, replacement)
-        self._scan_pos = start + len(replacement)
+    def _commit_and_advance(self) -> None:
+        """Splice the (possibly hand-edited) context box back into the field
+        at [lo, hi) and resume scanning from `lo`, not from the end of the
+        edited text — a free-form edit can touch anything in that window,
+        including text after the originally-flagged word, so re-scanning the
+        whole window is what actually catches a second problem in it rather
+        than silently skipping past it. The just-fixed word itself is simply
+        no longer unknown, so find_next_misspelling passes over it on its
+        own; if it wasn't actually fixed, it's shown again — correct, since
+        unfixed means unfixed, not an infinite loop (nothing here recurses
+        without new user input each time)."""
+        cur = self._current
+        buf = self.context_view.get_buffer()
+        s, e = buf.get_bounds()
+        edited = buf.get_text(s, e, False)
+        spellcheck.replace_span(cur["widget"], cur["lo"], cur["hi"], edited)
+        self._scan_pos = cur["lo"]
         self._advance()
 
+    def _apply_suggestion(self, replacement: str) -> None:
+        buf = self.context_view.get_buffer()
+        it_s = buf.get_iter_at_mark(self._word_start_mark)
+        it_e = buf.get_iter_at_mark(self._word_end_mark)
+        buf.delete(it_s, it_e)
+        buf.insert(it_s, replacement)
+        self._commit_and_advance()
+
     def _skip(self) -> None:
-        _widget, _start, end, _word, _label = self._current
-        self._scan_pos = end
+        self._scan_pos = self._current["word_end"]
         self._advance()
 
     def _skip_word(self) -> None:
-        _widget, _start, end, word, _label = self._current
-        self._skip_words.add(word.lower())
-        self._scan_pos = end
+        self._skip_words.add(self._current["word"].lower())
+        self._scan_pos = self._current["word_end"]
         self._advance()
 
     def _add_to_dictionary(self) -> None:
-        _widget, _start, end, word, _label = self._current
-        spellcheck.add_to_personal(word)
-        self._scan_pos = end
+        spellcheck.add_to_personal(self._current["word"])
+        self._scan_pos = self._current["word_end"]
         self._advance()
 
     # ------------------------------------------------------------------
     # Input
     # ------------------------------------------------------------------
 
-    def _on_correction_activate(self, entry: Gtk.Entry) -> None:
+    def _on_context_key(self, _ctrl, keyval, _keycode, _state) -> bool:
         if self._current is None:
-            return
-        text = entry.get_text().strip()
-        if text:
-            self._apply(text)
+            return False
+        name = Gdk.keyval_name(keyval) or ""
+        if name in ("Return", "KP_Enter"):
+            self._commit_and_advance()
+            return True
+        return False
 
     def _on_row_activated(self, _box, row: Gtk.ListBoxRow) -> None:
         if self._current is None:
             return
         idx = row.get_index()
         if 0 <= idx < len(self._suggestions):
-            self._apply(self._suggestions[idx])
+            self._apply_suggestion(self._suggestions[idx])
 
     def _on_key(self, _ctrl, keyval, _keycode, state) -> bool:
         name = Gdk.keyval_name(keyval) or ""
@@ -242,7 +282,7 @@ class SpellcheckModal(Gtk.Window):
         if name.isdigit() and name != "0":
             idx = int(name) - 1
             if 0 <= idx < len(self._suggestions):
-                self._apply(self._suggestions[idx])
+                self._apply_suggestion(self._suggestions[idx])
             return True
         if name.lower() == "s":
             self._skip_word() if shift_held else self._skip()

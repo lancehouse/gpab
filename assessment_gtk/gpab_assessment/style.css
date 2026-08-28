@@ -497,14 +497,16 @@ entry {
 /* Ctrl+S spell-check modal (spellcheck_modal.py). .spellcheck-top-suggestion
    is deliberately much larger than the rest of the numbered list — meant to
    be readable at a glance while moving quickly through a pass, not read
-   carefully like the others. .spellcheck-correction-entry is kept modest —
-   it's a hand-typed fallback for when the suggestions are no good, not the
-   primary glance target the top suggestion is, so it doesn't need to compete
-   with it for size. */
+   carefully like the others. .spellcheck-context-view is the editable
+   context preview (a plain border so it visually reads as "you can type in
+   here", distinct from the app's read-only labels); the flagged word inside
+   it is bold/red-underlined via a Gtk.TextTag in code, not CSS. */
 .spellcheck-top-suggestion {
     font-size: 1.6rem;
     font-weight: bold;
 }
-.spellcheck-correction-entry {
-    font-size: 1.05rem;
+.spellcheck-context-view {
+    border: 1px solid alpha(currentColor, 0.25);
+    border-radius: 4px;
+    padding: 6px 8px;
 }
