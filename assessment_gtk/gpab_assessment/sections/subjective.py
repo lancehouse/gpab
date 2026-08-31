@@ -398,6 +398,34 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         # not immediately forced to disk on its own.
 
     def _rebuild_note_slots(self, saved_note_fields: dict, prefill: dict) -> None:
+        # This rebuild runs on every chart-file poll tick (chart_watcher.py),
+        # which fires on a ~30s heartbeat even when nothing actually changed
+        # (bodychart's own autosave rewrites the session file unconditionally
+        # every 30s). Hiding a focused widget and re-showing it does NOT
+        # restore GTK's keyboard focus to it, so without this, a clinician
+        # mid-note in one of these fields silently loses input until they
+        # notice and click back in. Identify what (if anything) is focused
+        # before tearing slots down, then restore focus to the equivalent
+        # field afterward — found and fixed 2026-08-28.
+        root = self.get_root()
+        focused = root.get_focus() if root else None
+        focus_sid: str | None = None
+        focus_attr: str | None = None
+        if focused is not None:
+            for i, sid in self._slot_to_stable_id.items():
+                slot = self._note_slots[i]
+                for attr, w in slot.text_widgets():
+                    if w.textview is focused:
+                        focus_sid, focus_attr = str(sid), attr
+                        break
+                if focus_sid is not None:
+                    break
+            if focus_sid is None and self.misc_slot.get_visible():
+                if self.misc_loc.textview is focused:
+                    focus_sid, focus_attr = "misc", "loc"
+                elif self.misc_nat.textview is focused:
+                    focus_sid, focus_attr = "misc", "nat"
+
         for slot in self._note_slots:
             slot.set_visible(False)
         self.misc_slot.set_visible(False)
@@ -435,6 +463,18 @@ class SubjectiveSection(Gtk.Box, SectionBase):
             self.misc_slot.set_visible(True)
             self.misc_loc.text = misc_loc
             self.misc_nat.text = misc_nat
+
+        if focus_sid == "misc" and self.misc_slot.get_visible():
+            (self.misc_loc if focus_attr == "loc" else self.misc_nat).grab_focus()
+        elif focus_sid is not None:
+            for i, sid in self._slot_to_stable_id.items():
+                if str(sid) != focus_sid:
+                    continue
+                for attr, w in self._note_slots[i].text_widgets():
+                    if attr == focus_attr:
+                        w.grab_focus()
+                        break
+                break
 
         has_content = bool(notes) or bool(misc_loc or misc_nat)
         self.no_notes_msg.set_visible(not has_content)
