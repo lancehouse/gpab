@@ -72,16 +72,20 @@ rebuild took effect the moment the desktop icon was next clicked, with no tested
 protected from whatever was mid-change. These rules are non-negotiable and override any other
 instruction in this session.
 
-**`dev`/`gpabd` and `main`/`gpabs` currently run genuinely different architectures** (as of
-2026-08-26 — see "Embedded architecture" below): `dev` embeds gpab's Python inside bodychart's own
-process (one process, two windows); `main` still spawns gpab as a separate process, coordinated
-over D-Bus (two processes). This is a bigger difference than a normal dev/stable gap and matters
-when reasoning about a `dev`→`main` promotion later — it isn't a small diff.
+**`dev`/`gpabd` and `main`/`gpabs` run the same embedded architecture** as of 2026-09-01 (see
+"Embedded architecture" below) — both embed gpab's Python inside bodychart's own process (one
+process, two windows). Before that promotion, `main` ran an older separate-process design
+coordinated over D-Bus (two processes); that's gone now on both branches, superseded entirely by
+`py_embed.c`. Future `dev`→`main` promotions on either `integration.c` or `py_embed.c` should be
+mechanical again (both files are now structurally identical between branches) — the one thing that
+still needs a manual check on every promotion is `py_embed.c`'s `GPAB_SITE_PACKAGES`/
+`GPAB_APP_ROOT` constants (see below), which must NOT come across unedited from a `dev`→`main`
+merge.
 
 | Launcher | Bodychart binary | gpab assessment app | Git branch |
 |----------|-------------------|----------------------|------------|
 | `gpabd`  | `bodychart/build/bodychart` | embedded in-process (see below) — `gpab-assessment` (this checkout's `assessment_gtk/.venv`) only used for standalone `./gpab`/`scripts/run.sh` testing, not the real bodychart-launched flow any more | `dev` |
-| `gpabs`  | `gpab-stable/bodychart/build-stable/bodychart` | separate process — `gpab-assessment-stable` → `gpab-stable/assessment_gtk/.venv` | `main` |
+| `gpabs`  | `gpab-stable/bodychart/build-stable/bodychart` | embedded in-process (see below) — `gpab-stable/assessment_gtk/.venv`, separate interpreter instance from `gpabd`'s | `main` |
 
 `gpab-stable/` is a **git worktree of this same repo**, nested inside it and pinned to `main` (`git
 worktree list` shows both). It has its own build directory, its own Python venv, and its own copy
@@ -90,13 +94,14 @@ of every file — a bug in dev code cannot reach it just by existing on disk. Th
 `gpabs`'s stable binary — that's the one actually used for real patient sessions. `gpabd`/the
 dev binary are for testing changes before they're promoted, not daily clinical use.
 
-`bodychart/src/py_embed.c` differs from its `main`-branch copy (once/if this architecture is ever
-promoted there) in the `GPAB_SITE_PACKAGES`/`GPAB_APP_ROOT` path constants — worktree-specific by
-necessity (embedding links the interpreter directly, no `$PATH`-resolved wrapper-script
-indirection is possible the way `dev`'s standalone launch still uses). `main`'s `integration.c`
-still has the OLD one-line `GPAB_LAUNCHER` divergence from the separate-process design — that
-mechanism doesn't exist on `dev` any more (superseded entirely by `py_embed.c`), so a future
-`dev`→`main` merge on `integration.c` needs a real read, not a mechanical conflict-resolve.
+`bodychart/src/py_embed.c` differs from its `dev`-branch copy in the `GPAB_SITE_PACKAGES`/
+`GPAB_APP_ROOT` path constants only — worktree-specific by necessity (embedding links the
+interpreter directly, no `$PATH`-resolved wrapper-script indirection is possible the way process-
+spawning used to allow). `main`'s copy points at `gpab-stable/assessment_gtk`, not `dev`'s own
+checkout. A mechanical `dev`→`main` merge brings `py_embed.c` across **cleanly, with no conflict
+marker** — always manually re-check these two `#define`s after any such merge
+(`strings gpab-stable/bodychart/build-stable/bodychart | grep assessment_gtk` should show only
+`gpab-stable` paths) before trusting the result.
 
 1. **All development work goes to `dev` first.** Every code change, bug fix, or feature lands on
    `dev`. No exceptions.
@@ -110,7 +115,7 @@ mechanism doesn't exist on `dev` any more (superseded entirely by `py_embed.c`),
 5. Rebuilding `gpab-stable/bodychart` (`ninja -C gpab-stable/bodychart/build-stable`) is itself
    part of "touching main" — don't do it as a side effect of a dev-side rebuild habit.
 
-### Embedded architecture (promoted to `dev`/`gpabd` 2026-08-26)
+### Embedded architecture (promoted to `dev`/`gpabd` 2026-08-26, to `main`/`gpabs` 2026-09-01)
 
 `dev`'s bodychart now embeds a CPython interpreter (`bodychart/src/py_embed.c/.h`) and imports
 gpab's Python directly into its own process, rather than spawning it as a separate process
@@ -133,8 +138,10 @@ under the new process model. The `merged-app` worktree/branch itself may still e
 treat it as historical at this point, not a live parallel development target, unless told
 otherwise.
 
-**`main`/`gpabs` has NOT received this yet** and still runs the older separate-process design —
-don't assume the two are equivalent when reasoning about `main`.
+**`main`/`gpabs` received this promotion 2026-09-01** (merge commit `c8f05ed`, cherry-pick
+`1b0be86` for the Subjective note-slot focus fix that landed on `dev` the same day) — the two
+branches are now architecturally aligned; don't assume future `dev` work is automatically mirrored
+here though, only what's been explicitly promoted.
 
 ## Maintaining the kb link
 
