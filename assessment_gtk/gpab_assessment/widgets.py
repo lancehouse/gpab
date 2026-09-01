@@ -12,7 +12,20 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, Gdk, GObject, Pango, GLib  # noqa: E402
 
+from . import autocorrect
+
 MIN_TOUCH = 48  # px, GNOME HIG minimum touch target
+
+
+def _is_autocorrect_trigger(keyval: int) -> bool:
+    """True for the character that, once typed, ends the word before it.
+
+    Deliberately excludes apostrophe/hyphen (both appear inside real words)
+    and anything with no unicode representation (Tab/arrows/etc, handled by
+    each widget's own navigation logic instead).
+    """
+    ch = chr(Gdk.keyval_to_unicode(keyval)) if Gdk.keyval_to_unicode(keyval) else ""
+    return bool(ch) and not ch.isalnum() and ch not in ("'", "-")
 
 # RadioGroup/MultiSelectGroup chip minimum width. A RadioGroup chip's natural
 # width comes from its own label text (e.g. "↓Mrkd" naturally measures ~82px,
@@ -808,6 +821,8 @@ class AutoTextView(Gtk.ScrolledWindow):
         return self.textview.grab_focus()
 
     def _on_key_pressed(self, _ctrl, keyval, _keycode, _state) -> bool:
+        if _is_autocorrect_trigger(keyval):
+            self._maybe_autocorrect()
         name = Gdk.keyval_name(keyval) or ""
         if name not in ("Up", "Down", "Left", "Right"):
             return False
@@ -834,6 +849,22 @@ class AutoTextView(Gtk.ScrolledWindow):
                 return True
             return False
         return False
+
+    def _maybe_autocorrect(self) -> None:
+        buf = self.textview.get_buffer()
+        cursor = buf.get_iter_at_mark(buf.get_insert())
+        line_start = cursor.copy()
+        line_start.set_line_offset(0)
+        preceding = buf.get_text(line_start, cursor, True)
+        hit = autocorrect.find_correction(preceding)
+        if hit is None:
+            return
+        word_len, corrected = hit
+        start = cursor.copy()
+        start.backward_chars(word_len)
+        buf.delete(start, cursor)
+        buf.insert(start, corrected)
+        buf.place_cursor(start)
 
     @property
     def text(self) -> str:
@@ -889,7 +920,20 @@ class TouchEntry(Gtk.Entry):
         if name == "Right" and self.get_position() >= len(self.get_text()):
             self.emit("navigate", "right")
             return True
+        if _is_autocorrect_trigger(keyval):
+            self._maybe_autocorrect()
         return False
+
+    def _maybe_autocorrect(self) -> None:
+        pos = self.get_position()
+        hit = autocorrect.find_correction(self.get_text()[:pos])
+        if hit is None:
+            return
+        word_len, corrected = hit
+        start = pos - word_len
+        self.delete_text(start, pos)
+        self.insert_text(corrected, start)
+        self.set_position(start + len(corrected))
 
     @property
     def text(self) -> str:

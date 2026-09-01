@@ -54,8 +54,11 @@ Classification's Regional Differential cluster-tally panel (`sections/regional_d
 live-updated per active region, click-to-KB wired), the Ctrl+D full Clinical KB browser
 (`objective/kb_db_screen.py`, region list + condition/cluster/test tree + detail panel + its own
 fuzzy search), Ctrl+F fuzzy jump-search across every assessment/objective field
-(`search.py` + `search_widget.py`), a heading-map overview (`grid_overview.py`, Ctrl+T), and a
-Ctrl+G ROM/goniometer import wizard are all built and wired. This app is what `bodychart` launches
+(`search.py` + `search_widget.py`), a heading-map overview (`grid_overview.py`, Ctrl+T), a
+Ctrl+G ROM/goniometer import wizard, and a Ctrl+S spell-check pass (`spellcheck.py` +
+`spellcheck_modal.py`, dictionary-backed via `enchant`, walking every free-text field live in the
+widget tree and correcting in place — separate from `autocorrect.py`'s fixed-typo table, which
+fires inline while typing) are all built and wired. This app is what `bodychart` launches
 directly for every real session (see `../bodychart/src/integration.c`) and is in genuine clinical
 use, not a prototype running alongside the TUI.
 

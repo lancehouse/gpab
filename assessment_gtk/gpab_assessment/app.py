@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gtk, Gdk, GLib  # noqa: E402
+from gi.repository import Gtk, Gdk, GLib, Gio  # noqa: E402
 
 from .storage_bridge import (
     load_assessment_block, save_sections, SECTION_KEYS,
@@ -56,6 +56,7 @@ from .nav import SectionNav
 from .topbar import SubsectionNavBar
 from .footer import FooterBar
 from .report_modal import ReportModal
+from .spellcheck_modal import SpellcheckModal
 from .notes_overlay import NotesOverlay
 from .chart_watcher import ChartFileWatcher
 from .report_timer import ReportTimer
@@ -115,12 +116,66 @@ _DEFAULT_ACTIVE_REGIONS = ["lumbar"]
 _SECTION_ID_TO_NAME = {v: k for k, v in _NAME_TO_SECTION_ID.items()}
 _OBJECTIVE_SECTION_IDS = set(_OBJECTIVE_NAME_TO_SECTION_ID.values())
 
+# The four region-tab sections (RegionTabContent-backed — see
+# region_section.py) whose top-bar/Ctrl+T/Ctrl+F anchor_ids name a body
+# region to mount-and-jump-to, not a subsection header to scroll to — see
+# _jump_to_region_tab. Each prefix is deliberately its own namespace, not
+# reused from that tab's existing field-id prefixes (e.g. "am_"/"pm_"/"ml_",
+# still used unchanged by search.py's finer-grained subsection entries),
+# since e.g. "am_lumbar" already names Active Movement's "Lumbar ROM"
+# subsection anchor — reusing it for "open+jump to the Lumbar region" would
+# collide with that existing meaning for the one region whose name happens
+# to match an existing YAML group label. "st_" (Special Tests) predates this
+# generalisation and was left as-is rather than churned to match.
+_REGION_TAB_ANCHOR_PREFIX: dict[str, str] = {
+    "02_active": "amr_",
+    "03_passive": "pmr_",
+    "06_muscle": "mtr_",
+    "08_special": "st_",
+}
+
+# Top bar chip content per section (2026-08-26) — keyed off the exact same
+# SUBJ_GRID_DATA/OBJ_GRID_DATA rows Ctrl+T's grid overview uses, so the top
+# bar and Ctrl+T can never disagree about a tab's own subsection breakdown.
+# SUBJ_GRID_DATA's "04_objective" row is never looked up here — section_id
+# is always a concrete tab id by the time _show_section reaches the
+# set_headings() call, never the literal "04_objective" redirect key.
+_SUBJ_HEADINGS_BY_SECTION: dict[str, list[tuple[str, str]]] = {
+    sid: headings for sid, _, headings in SUBJ_GRID_DATA
+}
+_OBJ_HEADINGS_BY_SECTION: dict[str, list[tuple[str, str]]] = {
+    sid: headings for sid, _, headings in OBJ_GRID_DATA
+}
+
 
 class TrialWindow(Gtk.ApplicationWindow):
-    def __init__(self, app: Gtk.Application, session_file: str) -> None:
+    def __init__(
+        self,
+        app: Gtk.Application,
+        session_file: str,
+        bodychart_present=None,
+        bodychart_close=None,
+    ) -> None:
+        """bodychart_present/bodychart_close (2026-08-25, merged-app spike only):
+        when this window is running embedded inside bodychart's own process
+        (see build_embedded below), these are direct Python-callable
+        functions — bodychart_bridge.present/close, a tiny C extension
+        module bodychart's main.c registers before Py_Initialize — that
+        call straight into bodychart's own gtk_window_present/close. Left
+        None in standalone mode (build_app, the normal `gpab-assessment`/
+        `./gpab` process), which falls back to the D-Bus `gapplication`
+        subprocess calls that ARE the current gpabd/main behaviour: they
+        work for the quit-coupling half but Ctrl+B's raise half doesn't
+        really work over D-Bus/Wayland (see this file's git history,
+        2026-08-25) — the whole reason this embedded mode exists. Same
+        underlying operation either way from TrialWindow's own point of
+        view: "make bodychart's window appear" / "close bodychart"."""
         super().__init__(application=app, title="PAB GTK Trial — Consent + Subjective")
         self.set_default_size(1100, 900)
         self.session_file = session_file
+        self._bodychart_present = bodychart_present
+        self._bodychart_close = bodychart_close
+        self._closing = False  # re-entrancy guard — see _on_close_request
         self._save_source_id: int | None = None       # debounce for _assessment.json
         self._save_source_id_obj: int | None = None    # debounce for _objective.json (separate file, separate timer — matches TUI's AssessmentView/ObjectiveAssessmentView split)
         self._is_fullscreen = False
@@ -160,22 +215,35 @@ class TrialWindow(Gtk.ApplicationWindow):
         # -- top bar: the ONE persistent bar, shown on every sidebar tab
         # (there is no separate app-title bar — that wasted a second row of
         # vertical space duplicating the OS window title; removed per
-        # feedback). It swaps content depending on the active tab: the
-        # Subjective mnemonic row everywhere, or the body-region toggle
-        # chips across every Objective tab (mirrors the TUI's RegionTopbar
-        # being shown for the whole Objective mode, not just the
-        # region-variable tabs) — see _show_section.
+        # feedback). Two parts sharing one row, not a Gtk.Stack swap between
+        # them (2026-08-26 — see _show_section):
+        #  - subsection_nav (left, hexpand) — the current section's own
+        #    subsection chips, content rebuilt on every tab change.
+        #  - region_topbar (right, non-expanding) — the body-region toggle
+        #    chips, visible only in Objective mode (mirrors the TUI's
+        #    RegionTopbar being shown for the whole Objective mode, not just
+        #    the region-variable tabs).
+        # Previously these were two full-width alternatives in a Gtk.Stack
+        # (Subjective's chips OR the region chips, never both) — that meant
+        # Objective mode showed region chips only, no subsection nav at all,
+        # and every OTHER tab showed Subjective's own chips regardless of
+        # which was actually active (a real bug, not intentional — see
+        # topbar.py's module docstring).
         self._active_regions: list[str] = []
         self.subsection_nav = SubsectionNavBar()
-        self.subsection_nav.connect("jump", self._on_subsection_jump)
+        self.subsection_nav.set_hexpand(True)
+        self.subsection_nav.set_halign(Gtk.Align.START)
+        self.subsection_nav.connect("jump", self._on_topbar_jump)
         self.region_topbar = RegionTopbar(_DEFAULT_ACTIVE_REGIONS)
+        self.region_topbar.set_hexpand(False)
+        self.region_topbar.set_halign(Gtk.Align.END)
+        self.region_topbar.set_visible(False)
         self.region_topbar.connect("region-toggled", self._on_region_toggled)
 
-        self.topbar_stack = Gtk.Stack()
-        self.topbar_stack.set_transition_type(Gtk.StackTransitionType.NONE)
-        self.topbar_stack.add_named(self.subsection_nav, "subjective")
-        self.topbar_stack.add_named(self.region_topbar, "region")
-        outer.append(self.topbar_stack)
+        topbar_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        topbar_row.append(self.subsection_nav)
+        topbar_row.append(self.region_topbar)
+        outer.append(topbar_row)
 
         main_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         main_row.set_vexpand(True)
@@ -422,9 +490,31 @@ class TrialWindow(Gtk.ApplicationWindow):
     def _on_objective_back(self, _nav) -> None:
         self._show_section(self._last_assessment_section_id or "01_consent")
 
-    def _on_subsection_jump(self, _bar, key: str) -> None:
-        self._show_section("02_subjective")
-        self.subjective.jump_to(key)
+    def _on_topbar_jump(self, _bar, anchor_id: str) -> None:
+        """A top-bar chip click — jump within whichever section is
+        CURRENTLY active (the bar's own content always matches the active
+        section, see _show_section's set_headings call), never a
+        hardcoded target the way this used to always jump into Subjective
+        regardless of the active tab."""
+        self._jump_within_current_section(anchor_id)
+
+    def _jump_within_current_section(self, anchor_id: str) -> None:
+        """Shared by the top bar, Ctrl+F search-jump, and Ctrl+T's grid
+        overview — jump to anchor_id inside whichever section is passed
+        implicitly via _current_section_id(). The four region-tab sections
+        (Active Movement, Passive/OP, Muscle Testing, Special Tests) name a
+        body region ("<prefix><region>", see _REGION_TAB_ANCHOR_PREFIX), not
+        a subsection header — see _jump_to_region_tab's own docstring for
+        why that needs different handling (the region may not be mounted
+        yet)."""
+        section_id = self._current_section_id()
+        prefix = _REGION_TAB_ANCHOR_PREFIX.get(section_id)
+        if prefix is not None and anchor_id.startswith(prefix):
+            self._jump_to_region_tab(section_id, anchor_id.removeprefix(prefix))
+        else:
+            name = _SECTION_ID_TO_NAME.get(section_id)
+            if name is not None:
+                self._scroll_section_to_anchor(name, anchor_id)
 
     def _enter_objective_mode(self) -> None:
         self._show_section("04_objective")
@@ -445,20 +535,26 @@ class TrialWindow(Gtk.ApplicationWindow):
                 self._last_assessment_section_id = self.nav.active_section
             self._in_objective_mode = True
             self.sidebar_stack.set_visible_child_name("objective")
-            self.topbar_stack.set_visible_child_name("region")
+            self.region_topbar.set_visible(True)
             section_id = self.objective_nav.active_section
         elif section_id in _OBJECTIVE_SECTION_IDS:
             if not self._in_objective_mode:
                 self._last_assessment_section_id = self.nav.active_section
             self._in_objective_mode = True
             self.sidebar_stack.set_visible_child_name("objective")
-            self.topbar_stack.set_visible_child_name("region")
+            self.region_topbar.set_visible(True)
         else:
             if self._in_objective_mode:
                 self._in_objective_mode = False
                 self.sidebar_stack.set_visible_child_name("assessment")
-                self.topbar_stack.set_visible_child_name("subjective")
+                self.region_topbar.set_visible(False)
             self._last_assessment_section_id = section_id
+
+        headings = (
+            _OBJ_HEADINGS_BY_SECTION if section_id in _OBJECTIVE_SECTION_IDS
+            else _SUBJ_HEADINGS_BY_SECTION
+        ).get(section_id, [])
+        self.subsection_nav.set_headings(headings)
 
         name = _SECTION_ID_TO_NAME.get(section_id)
         if name is None:
@@ -485,6 +581,8 @@ class TrialWindow(Gtk.ApplicationWindow):
                 "outcome_measures": self.outcome_measures.collect(),
                 "diagnosis": self.diagnosis.collect(),
             })
+        elif name == "crps":
+            self.crps.update_cross_refs({"sensory": self.sensory.collect()})
 
     # ------------------------------------------------------------------
     # Region toggling — mirrors objective_view.py's _mount_region /
@@ -692,6 +790,10 @@ class TrialWindow(Gtk.ApplicationWindow):
             self.subjective.refresh_from_chart(data)
         except Exception as e:
             logger.error("chart update handler failed: %s", e)
+        try:
+            self.sensory.refresh_from_chart(data)
+        except Exception as e:
+            logger.error("sensory chart-link refresh failed: %s", e)
 
     # ------------------------------------------------------------------
     # Global hotkeys — mirrors main.py's PhysioAssessment.BINDINGS for the
@@ -709,6 +811,7 @@ class TrialWindow(Gtk.ApplicationWindow):
     #   Alt+<letter>     subjective jump     (BINDINGS alt+s/h/b/m/a/w/e/4/p/g/r)
     #   Ctrl+Q           quit, flushing any pending debounced save first
     #   Ctrl+A           select-all in the focused text field
+    #   Ctrl+S           spell-check pass over every free-text field
     # ------------------------------------------------------------------
 
     _ALT_KEY_MAP = {
@@ -790,10 +893,16 @@ class TrialWindow(Gtk.ApplicationWindow):
         if ctrl_held and name.lower() == "q":
             self._flush_and_quit()
             return True
+        if ctrl_held and name.lower() == "b":
+            self._switch_to_bodychart()
+            return True
         if ctrl_held and name.lower() == "a":
             return self._select_all_focused()
         if ctrl_held and name.lower() == "r":
             self._show_report()
+            return True
+        if ctrl_held and name.lower() == "s":
+            self._open_spellcheck()
             return True
         if ctrl_held and name.lower() == "k":
             self._toggle_kb_panel()
@@ -829,6 +938,13 @@ class TrialWindow(Gtk.ApplicationWindow):
             self._save_source_id_obj = None
             self._do_save_obj()
         ReportModal(self, self.session_file).present()
+
+    def _open_spellcheck(self) -> None:
+        """Ctrl+S — walk every free-text field currently in the widget tree
+        (see spellcheck.collect_fields) and step through flagged words one
+        at a time. Corrections edit each field's buffer in place, so they
+        ride the normal autosave path exactly like typed edits."""
+        SpellcheckModal(self, self).present()
 
     def _open_gonio_import(self) -> None:
         """Ctrl+G — import goniometer ROM measurements for the open patient
@@ -1017,15 +1133,7 @@ class TrialWindow(Gtk.ApplicationWindow):
             if widget is not None:
                 widget.grab_focus()
         elif entry.anchor_id:
-            if section_id == "08_special" and entry.anchor_id.startswith("st_"):
-                # Same as the grid overview's Special Tests row: these
-                # anchor_ids name a body region, not a subsection header,
-                # and the region may not be mounted yet.
-                self._jump_to_special_region(entry.anchor_id)
-            else:
-                name = _SECTION_ID_TO_NAME.get(section_id)
-                if name is not None:
-                    self._scroll_section_to_anchor(name, entry.anchor_id)
+            self._jump_within_current_section(entry.anchor_id)
 
     def _collect_grid_has_data(self, grid_data) -> dict[str, bool]:
         has_data: dict[str, bool] = {}
@@ -1070,19 +1178,9 @@ class TrialWindow(Gtk.ApplicationWindow):
             # current mode, so no special-casing needed here.
             if section_id == "04_objective":
                 self._show_section(anchor_id)
-            elif section_id == "08_special":
-                # OBJ_GRID_DATA's Special Tests row lists body regions, not
-                # subsection anchors (Special Tests has no fixed layout of
-                # its own — see grid_overview.py) — anchor_id is "st_<region>";
-                # the region may not currently be mounted, unlike every other
-                # row's target, so activate it first.
-                self._show_section(section_id)
-                self._jump_to_special_region(anchor_id)
             else:
                 self._show_section(section_id)
-                name = _SECTION_ID_TO_NAME.get(section_id)
-                if name is not None:
-                    self._scroll_section_to_anchor(name, anchor_id)
+                self._jump_within_current_section(anchor_id)
 
         self.grid_overview.open(grid_data, has_data, cursor, on_selected)
         self.stack.set_visible_child_name("grid_overview")
@@ -1129,21 +1227,27 @@ class TrialWindow(Gtk.ApplicationWindow):
 
         GLib.timeout_add(50, do_scroll)
 
-    def _jump_to_special_region(self, anchor_id: str) -> None:
-        """Special Tests row click: anchor_id is "st_<region>" — mount that
-        region if it isn't already active, then scroll straight to its
-        RegionContainer (the container itself is the target, no header
-        text-matching needed — unlike every other row)."""
-        region_id = anchor_id.removeprefix("st_")
+    def _jump_to_region_tab(self, section_id: str, region_id: str) -> None:
+        """Region-tab row click (Active Movement / Passive-OP / Muscle
+        Testing / Special Tests): mount that region if it isn't already
+        active, then scroll straight to its RegionContainer (the container
+        itself is the target, no header text-matching needed — unlike every
+        other row). Originally Special-Tests-only (_jump_to_special_region);
+        generalised 2026-08-26 once the user asked for the other three
+        region-tab sections to behave identically — all four share the same
+        RegionTabContent/get_container() plumbing (see region_section.py),
+        so only the section_id → stack-name/tab lookup differs per tab."""
         if region_id not in self._active_regions:
             self._sync_active_regions(self._active_regions + [region_id])
 
-        scroll = self.stack.get_child_by_name("special_tests")
-        if scroll is None:
+        name = _SECTION_ID_TO_NAME.get(section_id)
+        tab = self._sections_by_name.get(name) if name else None
+        scroll = self.stack.get_child_by_name(name) if name else None
+        if scroll is None or tab is None:
             return
 
         def do_scroll() -> bool:
-            container = self.special_tests.get_container(region_id)
+            container = tab.get_container(region_id)
             if container is None:
                 return False
             ok, bounds = container.compute_bounds(scroll)
@@ -1225,6 +1329,43 @@ class TrialWindow(Gtk.ApplicationWindow):
             return True
         return False
 
+    def _switch_to_bodychart(self) -> None:
+        """Ctrl+B — raise bodychart's window instead of gpab's own, the
+        dedicated-key half of "feels like one program". Landed on Ctrl+B
+        (no particular mnemonic — "for all I care" was the user's own bar)
+        only after two failed attempts, both live-tested 2026-08-25:
+        Ctrl+` (the user's original preference, from the old embedded-TUI
+        setup) and then Ctrl+Tab both got silently intercepted before
+        reaching either app's key handler at all — something below
+        GNOME's own gsettings-visible keybindings (checked thoroughly:
+        wm/mutter/shell schemas, no explicit binding for either combo
+        found anywhere) reproducibly caught both as its own
+        app/window-switcher gesture instead.
+
+        The `gapplication launch com.gpab.bodychart` fallback below is the
+        ORIGINAL fix attempt — it correctly avoids spawning a duplicate
+        (re-delivers "activate" to the running instance) but, discovered
+        the same day, doesn't actually work either: Wayland blocks one
+        process from forcing focus onto a DIFFERENT process's window, so
+        this just produces a "ready" notification instead of a real raise.
+        That's the reason this merged-app spike exists — see
+        _bodychart_present's docstring on TrialWindow.__init__. This
+        fallback stays only for standalone mode (bodychart_present=None,
+        e.g. running via `gpab-assessment`/`./gpab` directly with no
+        bodychart involved at all), where there's no embedded C host to
+        call into and D-Bus is the only option available, however
+        imperfect."""
+        if self._bodychart_present is not None:
+            self._bodychart_present()
+            return
+        try:
+            subprocess.Popen(
+                ["gapplication", "launch", "com.gpab.bodychart"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except OSError as e:
+            logger.warning("_switch_to_bodychart: gapplication launch failed: %s", e)
+
     def _flush_and_quit(self) -> None:
         """Ctrl+Q — just closes the window; _on_close_request does the actual
         flush-then-report work, uniformly for every close path (this, the
@@ -1252,7 +1393,22 @@ class TrialWindow(Gtk.ApplicationWindow):
         + docx — the one format the periodic timer deliberately skips) in a
         non-daemon background thread so it keeps completing (including the
         slower pandoc/docx step) even after the window itself has closed.
+
+        Re-entrancy guard (embedded mode only, added alongside
+        bodychart_close 2026-08-25): in embedded mode the "close both"
+        coupling below is a direct, SYNCHRONOUS function call into
+        bodychart's own gtk_window_close — unlike the standalone-mode
+        gapplication fallback, which is an async D-Bus round-trip to a
+        separate process and naturally can't recurse. A synchronous call
+        can: this closing → calls bodychart_close() → bodychart's own
+        close handler, coupled the same way, calls straight back into THIS
+        window's .close() → re-enters this method → infinite recursion.
+        self._closing makes the second entry a no-op.
         """
+        if self._closing:
+            return False
+        self._closing = True
+
         if self._save_source_id is not None:
             GLib.source_remove(self._save_source_id)
             self._save_source_id = None
@@ -1265,6 +1421,25 @@ class TrialWindow(Gtk.ApplicationWindow):
         self._chart_watcher.stop()
         self._report_timer.stop()
         self.session_timer_widget.stop()
+
+        # "Close once": whichever of the two windows closes, the other
+        # should too. In embedded mode (self._bodychart_close set) this is
+        # a direct call into bodychart's own gtk_window_close — safe
+        # against recursion because of the self._closing guard above, not
+        # because the call itself is one-shot. In standalone mode, falls
+        # back to the async D-Bus gapplication call (best-effort,
+        # fire-and-forget, never blocks this close; harmless no-op if
+        # bodychart isn't running or already gone).
+        if self._bodychart_close is not None:
+            self._bodychart_close()
+        else:
+            try:
+                subprocess.Popen(
+                    ["gapplication", "action", "com.gpab.bodychart", "quit"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+            except OSError as e:
+                logger.warning("_on_close_request: gapplication action quit failed: %s", e)
 
         session_file = self.session_file
 
@@ -1465,53 +1640,156 @@ class TrialWindow(Gtk.ApplicationWindow):
 
 
 def build_app(session_file: str) -> Gtk.Application:
+    """Owns two 2026-08-25 additions on top of the plain single-window app,
+    both in service of "feels like one program with bodychart" — see
+    TrialWindow._switch_to_bodychart's docstring for the other half:
+
+    1. on_activate now reuses an existing window instead of creating a new
+       TrialWindow every time it fires. It used to always create one, which
+       was harmless as long as nothing ever re-activated a running
+       instance (the only real trigger was a second `gpab_assessment.main`
+       launch, and that always got pkilled first by bodychart's
+       kill_existing_gpab / ./gpab's own pkill, so on_activate only ever
+       ran once per process in practice). That stops being true now that
+       bodychart's Ctrl+B deliberately re-activates a still-running gpab on
+       purpose (via `gapplication launch`) to raise its window — without
+       this fix that would have popped a second, confusingly-blank
+       TrialWindow on top of the real one instead.
+    2. A "quit" GAction, activated remotely via
+       `gapplication action com.gpab.assessment quit` — the half of "close
+       once" that lets bodychart's own close handler ask gpab to close too.
+       Just closes the window, same as any other close path — routes
+       through TrialWindow._on_close_request as normal, no shortcuts on the
+       flush/report-regeneration work that path does.
+    """
     app = Gtk.Application(application_id="com.gpab.assessment")
+    state = {"win": None}
+
+    def on_quit_action(_action, _param) -> None:
+        if state["win"] is not None:
+            state["win"].close()
+
+    quit_action = Gio.SimpleAction.new("quit", None)
+    quit_action.connect("activate", on_quit_action)
+    app.add_action(quit_action)
 
     def on_activate(app):
-        display = Gdk.Display.get_default()
-        provider = Gtk.CssProvider()
-        provider.load_from_path(str(Path(__file__).with_name("style.css")))
-        Gtk.StyleContext.add_provider_for_display(
-            display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        )
+        if state["win"] is not None:
+            state["win"].present()
+            return
+        _load_css()
         win = TrialWindow(app, session_file)
-
-        # GTK CSS has no light/dark media query, so app.py detects the
-        # system preference itself (via Gtk.Settings, which GNOME's
-        # appearance portal keeps in sync) and toggles a .theme-dark class
-        # the stylesheet keys off of — see style.css's focus-ring rules.
-        # Re-applied live on toggle (e.g. GNOME's dark-mode switch) as well
-        # as at startup, not just once.
-        settings = Gtk.Settings.get_default()
-
-        def _apply_theme_class(*_args) -> None:
-            is_dark = settings.get_property("gtk-application-prefer-dark-theme")
-            if is_dark:
-                win.add_css_class("theme-dark")
-            else:
-                win.remove_css_class("theme-dark")
-
-        settings.connect("notify::gtk-application-prefer-dark-theme", _apply_theme_class)
-        _apply_theme_class()
-
-        win.present()
-
-        # Default to fullscreen on startup — per direct user feedback
-        # 2026-08-23: "full attention, no distraction" was the whole point
-        # of this touch-first port, and opening windowed undercut that.
-        # Deferred 200ms, not called immediately after present() — same
-        # rationale, and the same proven fix, as bodychart's own
-        # deferred_fullscreen in window.c: requesting fullscreen before the
-        # compositor has finished the initial windowed configure round-trip
-        # is exactly the kind of thing that's already needed a workaround
-        # once on this machine's compositor. F11 (_toggle_fullscreen) still
-        # works normally afterward since _is_fullscreen is set to match.
-        def _start_fullscreen() -> bool:
-            win.fullscreen()
-            win._is_fullscreen = True
-            return GLib.SOURCE_REMOVE
-
-        GLib.timeout_add(200, _start_fullscreen)
+        state["win"] = win
+        _finish_window_setup(win)
 
     app.connect("activate", on_activate)
     return app
+
+
+def _load_css() -> None:
+    display = Gdk.Display.get_default()
+    provider = Gtk.CssProvider()
+    provider.load_from_path(str(Path(__file__).with_name("style.css")))
+    Gtk.StyleContext.add_provider_for_display(
+        display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+    )
+
+
+def _finish_window_setup(win: "TrialWindow") -> None:
+    """Shared tail of window construction — used by both build_app's
+    on_activate and build_embedded, so the two entry points can't drift
+    apart on theme/fullscreen behaviour.
+
+    GTK CSS has no light/dark media query, so app.py detects the system
+    preference itself (via Gtk.Settings, which GNOME's appearance portal
+    keeps in sync) and toggles a .theme-dark class the stylesheet keys off
+    of — see style.css's focus-ring rules. Re-applied live on toggle
+    (e.g. GNOME's dark-mode switch) as well as at startup, not just once.
+
+    Defaults to fullscreen on startup — per direct user feedback
+    2026-08-23: "full attention, no distraction" was the whole point of
+    this touch-first port, and opening windowed undercut that. Deferred
+    200ms, not called immediately after present() — same rationale, and
+    the same proven fix, as bodychart's own deferred_fullscreen in
+    window.c: requesting fullscreen before the compositor has finished the
+    initial windowed configure round-trip is exactly the kind of thing
+    that's already needed a workaround once on this machine's compositor.
+    F11 (_toggle_fullscreen) still works normally afterward since
+    _is_fullscreen is set to match.
+    """
+    settings = Gtk.Settings.get_default()
+
+    def _apply_theme_class(*_args) -> None:
+        is_dark = settings.get_property("gtk-application-prefer-dark-theme")
+        if is_dark:
+            win.add_css_class("theme-dark")
+        else:
+            win.remove_css_class("theme-dark")
+
+    settings.connect("notify::gtk-application-prefer-dark-theme", _apply_theme_class)
+    _apply_theme_class()
+
+    win.present()
+
+    def _start_fullscreen() -> bool:
+        win.fullscreen()
+        win._is_fullscreen = True
+        # Re-present after fullscreening (2026-08-26): in embedded mode,
+        # bodychart's own window_create() does the identical present() +
+        # 200ms-deferred-fullscreen dance for ITS window, synchronously
+        # just before this one is even built (see integration_create_tui_
+        # window / py_embed_open_session) — so on load, both windows race
+        # to fullscreen/raise themselves within the same ~200ms window, and
+        # bodychart's timer (registered first) was winning, leaving
+        # bodychart in front instead of the assessment screen the user
+        # actually wants to land on. This callback's own 350ms delay (vs
+        # bodychart's 200ms, see window.c's window_create) plus this
+        # explicit re-present after fullscreen() makes gpab's raise
+        # unambiguously the LAST thing that happens during load, so it wins
+        # regardless of exact compositor timing. No effect in standalone
+        # mode (build_app) — there's no second window competing for focus.
+        win.present()
+        return GLib.SOURCE_REMOVE
+
+    GLib.timeout_add(350, _start_fullscreen)
+
+
+def build_embedded(session_file: str) -> "TrialWindow":
+    """Entry point for running gpab embedded inside bodychart's own
+    process (merged-app spike, 2026-08-25) — see TrialWindow.__init__'s
+    docstring on bodychart_present/bodychart_close for the full "why":
+    Ctrl+B's window-raise doesn't actually work over D-Bus/Wayland (a
+    process can't force focus onto a DIFFERENT process's window), and
+    same-process window raising isn't subject to that restriction. Called
+    from bodychart's C code (py_embed.c) via an embedded CPython
+    interpreter, after Py_Initialize and after the bodychart_bridge C
+    extension module (present()/close(), calling straight back into
+    bodychart's own gtk_window_present/close) has been registered.
+
+    Deliberately does NOT create a Gtk.Application that calls .run() —
+    bodychart's own g_application_run() already drives the one shared GLib
+    main loop for the whole process; a plain .register() only satisfies
+    Gtk.ApplicationWindow's constructor requirement. Confirmed via a
+    standalone C proof-of-concept (not committed — see this commit's log
+    message) that a Gtk.ApplicationWindow parented to a registered-but-
+    never-.run() Gtk.Application is serviced correctly by an external,
+    C-driven main loop: window creation, retitling, and closing all worked
+    from plain GLib timeout callbacks in C.
+
+    Returns the TrialWindow itself — the caller (py_embed.c) keeps a
+    reference alive and calls .present()/.close() on it later, for Ctrl+B
+    and close-coupling triggered from the bodychart side.
+    """
+    import bodychart_bridge  # only importable when actually embedded
+
+    app = Gtk.Application(application_id="com.gpab.assessment")
+    app.register()
+
+    _load_css()
+    win = TrialWindow(
+        app, session_file,
+        bodychart_present=bodychart_bridge.present,
+        bodychart_close=bodychart_bridge.close,
+    )
+    _finish_window_setup(win)
+    return win

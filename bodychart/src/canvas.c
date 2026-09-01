@@ -392,6 +392,7 @@ static void screen_to_body(ColData *cd, double sx, double sy,
 /* ── Screen-space hit testing for draggable annotations ─────────────────── */
 static void label_anchor_resolve(const NoteAnnotation *na,
                                   double *out_lbx, double *out_lby);  /* fwd */
+static void draw_pencil_strokes_body(AppState *app, cairo_t *cr, int view, double zoom);  /* fwd */
 
 /* Returns index of the note whose label box contains (sx, sy), or -1 */
 static int note_hit_screen(AppState *app, ColData *cd, double sx, double sy)
@@ -707,27 +708,32 @@ static void draw_stroke_legend(cairo_t *cr, AppState *app,
 /* ── Objective legend (screen-space, posterior + obj mode only) ──────────── */
 static int obj_legend_count_used(const AppState *app,
                                   gboolean zone_used[OBJ_ZONE_COUNT],
-                                  gboolean point_used[OBJ_POINT_COUNT])
+                                  gboolean point_used[OBJ_POINT_COUNT],
+                                  gboolean tick_used[OBJ_TICK_TYPE_COUNT])
 {
     for (int t = 0; t < OBJ_ZONE_COUNT;  t++) zone_used[t]  = FALSE;
     for (int t = 0; t < OBJ_POINT_COUNT; t++) point_used[t] = FALSE;
+    for (int t = 0; t < OBJ_TICK_TYPE_COUNT; t++) tick_used[t] = FALSE;
     for (int i = 0; i < app->obj_zone_count;  i++) {
         const ObjZone *z = app->obj_zones[i];
         if (z) zone_used[z->type] = TRUE;
     }
     for (int i = 0; i < app->obj_point_count; i++)
         point_used[app->obj_points[i].type] = TRUE;
+    for (int i = 0; i < app->obj_tick_count; i++)
+        tick_used[app->obj_ticks[i].type] = TRUE;
     int n = 0;
     for (int t = 0; t < OBJ_ZONE_COUNT;  t++) if (zone_used[t])  n++;
     for (int t = 0; t < OBJ_POINT_COUNT; t++) if (point_used[t]) n++;
+    for (int t = 0; t < OBJ_TICK_TYPE_COUNT; t++) if (tick_used[t]) n++;
     return n;
 }
 
 static gboolean obj_legend_hit_screen(AppState *app, ColData *cd,
                                        double sx, double sy)
 {
-    gboolean zu[OBJ_ZONE_COUNT], pu[OBJ_POINT_COUNT];
-    int n = obj_legend_count_used(app, zu, pu);
+    gboolean zu[OBJ_ZONE_COUNT], pu[OBJ_POINT_COUNT], tu[OBJ_TICK_TYPE_COUNT];
+    int n = obj_legend_count_used(app, zu, pu, tu);
     if (n == 0) return FALSE;
     const double pad = 5.0, row_h = 18.0, bw = 122.0;
     double bh = n * row_h + 2.0 * pad;
@@ -745,8 +751,8 @@ static gboolean obj_legend_hit_screen(AppState *app, ColData *cd,
 static void draw_obj_legend(cairo_t *cr, AppState *app,
                              double sx, double sy)
 {
-    gboolean zone_used[OBJ_ZONE_COUNT], point_used[OBJ_POINT_COUNT];
-    int n = obj_legend_count_used(app, zone_used, point_used);
+    gboolean zone_used[OBJ_ZONE_COUNT], point_used[OBJ_POINT_COUNT], tick_used[OBJ_TICK_TYPE_COUNT];
+    int n = obj_legend_count_used(app, zone_used, point_used, tick_used);
     if (n == 0) return;
 
     const double pad   = 5.0;
@@ -821,6 +827,45 @@ static void draw_obj_legend(cairo_t *cr, AppState *app,
         cairo_arc(cr, rx + sw_w * 0.5, ry_mid, 4.5, 0, 2*M_PI);
         cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.55);
         cairo_set_line_width(cr, 1.2);
+        cairo_stroke(cr);
+
+        /* Label */
+        cairo_set_source_rgba(cr, 0.88, 0.88, 0.95, 1.0);
+        cairo_move_to(cr, rx + sw_w + gap, ry_mid + 4.0);
+        cairo_show_text(cr, d->name);
+        row++;
+    }
+
+    /* Ticks/crosses — one row per TYPE (colour identifies the type; both
+     * the tick and cross glyph share that colour, see obj_chart.c's
+     * OBJ_TICK_DEFS), swatch shows the same small vector check mark used
+     * on the chart itself so the legend key matches what's actually drawn. */
+    for (int t = 0; t < OBJ_TICK_TYPE_COUNT; t++) {
+        if (!tick_used[t]) continue;
+        const ObjTickDef *d = &OBJ_TICK_DEFS[t];
+        double ry_top = sy - bh + pad + row * row_h;
+        double ry_mid = ry_top + row_h * 0.5;
+        double rx     = sx + pad;
+        double cx_sw  = rx + sw_w * 0.5;
+
+        cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+        cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+
+        cairo_new_sub_path(cr);
+        cairo_arc(cr, cx_sw, ry_mid, 4.5, 0, 2*M_PI);
+        cairo_set_source_rgba(cr, d->r, d->g, d->b, 0.90);
+        cairo_fill(cr);
+        cairo_new_sub_path(cr);
+        cairo_arc(cr, cx_sw, ry_mid, 4.5, 0, 2*M_PI);
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.55);
+        cairo_set_line_width(cr, 1.2);
+        cairo_stroke(cr);
+
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0);
+        cairo_set_line_width(cr, 1.1);
+        cairo_move_to(cr, cx_sw - 2.0, ry_mid + 0.2);
+        cairo_line_to(cr, cx_sw - 0.5, ry_mid + 1.8);
+        cairo_line_to(cr, cx_sw + 2.2, ry_mid - 2.0);
         cairo_stroke(cr);
 
         /* Label */
@@ -1028,14 +1073,23 @@ static void draw_arrow_body_space(cairo_t *cr,
     cairo_set_line_width(cr, 0.8);
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
 
-    /* Quadratic bezier shaft (converted to cubic for Cairo).
-     * Shaft ends at head base, not tip, so the head sits clean. */
-    double c1x = x1  + (2.0/3.0) * (cx - x1);
-    double c1y = y1  + (2.0/3.0) * (cy - y1);
-    double c2x = hbx + (2.0/3.0) * (cx - hbx);
-    double c2y = hby + (2.0/3.0) * (cy - hby);
+    /* Full quadratic bezier (P0=x1,y1  P1=cx,cy  P2=x2,y2), converted to
+     * cubic via standard exact degree elevation, drawn all the way to the
+     * TRUE tip — not truncated at the head base. The previous version
+     * truncated the shaft at hbx,hby but reused the same control point
+     * cx,cy (computed for the full-length curve) as if it were valid for
+     * that much shorter segment — it isn't a real subdivision of the
+     * curve, just a different, wrong curve, and it showed up as a very
+     * tight, exaggerated bend right at the tip (direct user report). The
+     * opaque, filled arrowhead below simply sits on top of the last
+     * head_len of shaft, same as any arrowhead covering the tail of its
+     * own line — no truncation needed. */
+    double c1x = x1 + (2.0/3.0) * (cx - x1);
+    double c1y = y1 + (2.0/3.0) * (cy - y1);
+    double c2x = x2 + (2.0/3.0) * (cx - x2);
+    double c2y = y2 + (2.0/3.0) * (cy - y2);
     cairo_move_to(cr, x1, y1);
-    cairo_curve_to(cr, c1x, c1y, c2x, c2y, hbx, hby);
+    cairo_curve_to(cr, c1x, c1y, c2x, c2y, x2, y2);
     cairo_stroke(cr);
 
     /* Filled triangular arrowhead */
@@ -1066,6 +1120,8 @@ void canvas_render_view(AppState *app, cairo_t *cr, BodyView view,
 
     if (app->current_mode == APP_MODE_OBJECTIVE) {
         obj_chart_render_body(app, cr, (int)view);
+        obj_chart_render_ticks_body(app, cr, (int)view);
+        draw_pencil_strokes_body(app, cr, (int)view, zoom);
     } else {
         for (int i = 0; i < app->strokes->n; i++) {
             Stroke *sk = app->strokes->strokes[i];
@@ -1280,6 +1336,12 @@ static void on_col_draw(GtkDrawingArea *da, cairo_t *cr,
     } else if (app->current_mode == APP_MODE_OBJECTIVE) {
         obj_chart_render_body(app, cr, (int)cd->view);
         obj_chart_render_active_body(app, cr, (int)cd->view);
+        obj_chart_render_ticks_body(app, cr, (int)cd->view);
+        draw_pencil_strokes_body(app, cr, (int)cd->view, *cd->p_zoom);
+        if (app->active_stroke && app->active_stroke->type == SYMPTOM_PENCIL &&
+            app->active_stroke->view == (int)cd->view)
+            draw_stroke(cr, app->active_stroke,
+                        &SYMPTOM_DEFS[app->active_stroke->type], app, *cd->p_zoom);
     }
 
     cairo_restore(cr);
@@ -1345,6 +1407,36 @@ static int obj_point_hit_body(AppState *app, int view, double bx, double by)
     return -1;
 }
 
+static int obj_tick_hit_body(AppState *app, int view, double bx, double by)
+{
+    for (int i = app->obj_tick_count - 1; i >= 0; i--) {
+        ObjTick *t = &app->obj_ticks[i];
+        if (t->view != view) continue;
+        double dx = t->bx - bx, dy = t->by - by;
+        if (dx*dx + dy*dy < 12.0 * 12.0) return i;
+    }
+    return -1;
+}
+
+/* Places a tick/cross immediately at (bx,by) using the currently-armed
+ * obj_tick_type/obj_tick_state — no drag phase, no dialog, unlike zones
+ * (drag-to-draw) and numeric points (click opens a value-entry dialog).
+ * Direct user request: "I just want to select the purple tick and put it
+ * in" — one click per marker. */
+static void obj_place_tick(AppState *app, int view, double bx, double by, GtkWidget *da)
+{
+    if (app->obj_tick_count >= MAX_OBJ_TICKS) return;
+    ObjTick *t = &app->obj_ticks[app->obj_tick_count++];
+    t->bx    = bx;
+    t->by    = by;
+    t->view  = view;
+    t->type  = app->obj_tick_type;
+    t->state = app->obj_tick_state;
+    if (app->obj_undo_type_top < 64)
+        app->obj_undo_type_stack[app->obj_undo_type_top++] = 2;
+    if (da) gtk_widget_queue_draw(da);
+}
+
 static void obj_commit_active_zone(AppState *app, GtkWidget *da)
 {
     ObjZone *z = app->obj_active_zone;
@@ -1387,7 +1479,71 @@ static gboolean obj_handle_erase(AppState *app, int view,
         gtk_widget_queue_draw(da);
         return TRUE;
     }
+    int it = obj_tick_hit_body(app, view, bx, by);
+    if (it >= 0) {
+        for (int k = it; k < app->obj_tick_count - 1; k++)
+            app->obj_ticks[k] = app->obj_ticks[k + 1];
+        app->obj_tick_count--;
+        if (app->obj_undo_type_top > 0 &&
+            app->obj_undo_type_stack[app->obj_undo_type_top - 1] == 2)
+            app->obj_undo_type_top--;
+        gtk_widget_queue_draw(da);
+        return TRUE;
+    }
+    /* Pencil strokes drawn while in Objective mode (2026-08-26) — same
+     * proximity hit-test input_begin()'s own TOOL_ERASE case uses for
+     * Subjective strokes, against app->obj_pencil_strokes (Objective's own
+     * pencil layer, NOT app->strokes — see canvas.h's field comment). */
+    for (int i = app->obj_pencil_strokes->n - 1; i >= 0; i--) {
+        Stroke *s = app->obj_pencil_strokes->strokes[i];
+        if ((int)s->view != view) continue;
+        for (size_t j = 0; j < s->n_pts; j++) {
+            double dx = s->pts[j].x - bx, dy = s->pts[j].y - by;
+            if (sqrt(dx*dx + dy*dy) < 8.0) {
+                stroke_free(s);
+                for (int k = i; k < app->obj_pencil_strokes->n - 1; k++)
+                    app->obj_pencil_strokes->strokes[k] = app->obj_pencil_strokes->strokes[k + 1];
+                app->obj_pencil_strokes->n--;
+                app->stroke_version++;
+                if (app->obj_undo_type_top > 0 &&
+                    app->obj_undo_type_stack[app->obj_undo_type_top - 1] == 3)
+                    app->obj_undo_type_top--;
+                gtk_widget_queue_draw(da);
+                return TRUE;
+            }
+        }
+    }
     return FALSE;
+}
+
+/* ── Pencil tool in Objective mode (2026-08-26) ──────────────────────────────
+ * "Add a pencil tool to the objective fields, exactly the same as the
+ * subjective" — rather than inventing a new Objective-specific freehand
+ * construct, this reuses Subjective's own SYMPTOM_PENCIL stroke mechanism
+ * outright (same Stroke struct, same input_begin/motion/end, same
+ * app->strokes list — a pencil mark has no clinical typing of its own, so
+ * there's no reason for it to need separate storage per mode). When this
+ * predicate is true, every Objective-mode gesture branch below steps aside
+ * (via `&& !obj_pencil_active(app)` on its current_mode check) so execution
+ * falls through to the exact same generic code Subjective mode already
+ * uses. Rendering is the one place that needs an ADDITION rather than a
+ * bypass — see draw_pencil_strokes_body() — since Objective's own render
+ * path doesn't otherwise touch app->strokes at all. */
+gboolean obj_pencil_active(const AppState *app)
+{
+    return app->obj_pencil_mode && app->tool == TOOL_DRAW;
+}
+
+static void draw_pencil_strokes_body(AppState *app, cairo_t *cr, int view, double zoom)
+{
+    /* app->obj_pencil_strokes, NOT app->strokes — Objective's own pencil
+     * marks are a separate annotation layer from Subjective's, even though
+     * they share the same tool/drawing code. See canvas.h's field comment. */
+    for (int i = 0; i < app->obj_pencil_strokes->n; i++) {
+        Stroke *sk = app->obj_pencil_strokes->strokes[i];
+        if (sk->view != view) continue;
+        draw_stroke(cr, sk, &SYMPTOM_DEFS[sk->type], app, zoom);
+    }
 }
 
 /* ── Pressure helper (raw GdkEvent — no gesture required) ───────────────── */
@@ -1539,11 +1695,15 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
             return TRUE;
         }
 
-        if (app->current_mode == APP_MODE_OBJECTIVE) {
+        if (app->current_mode == APP_MODE_OBJECTIVE && !obj_pencil_active(app)) {
             double bx, by;
             screen_to_body(cd, x, y, &bx, &by);
             if (app->tool == TOOL_ERASE) {
                 obj_handle_erase(app, (int)cd->view, bx, by, cd->da);
+                return TRUE;
+            }
+            if (app->obj_tick_mode) {
+                obj_place_tick(app, (int)cd->view, bx, by, cd->da);
                 return TRUE;
             }
             if (app->obj_point_mode) {
@@ -1557,7 +1717,7 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
                     return TRUE;
                 }
                 if (app->show_ppt_entry_cb)
-                    app->show_ppt_entry_cb(app, (int)cd->view, bx, by);
+                    app->show_ppt_entry_cb(app, cd->da, x, y, (int)cd->view, bx, by);
                 return TRUE;
             }
             if (app->obj_active_zone) {
@@ -1713,7 +1873,7 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
             gtk_widget_queue_draw(cd->da);
             return TRUE;
         }
-        if (app->current_mode == APP_MODE_OBJECTIVE) {
+        if (app->current_mode == APP_MODE_OBJECTIVE && !obj_pencil_active(app)) {
             obj_commit_active_zone(app, cd->da);
             return TRUE;
         }
@@ -1827,21 +1987,34 @@ static void on_drag_begin(GtkGestureDrag *gd, double x, double y, gpointer d)
         return;
     }
 
-    if (app->current_mode == APP_MODE_OBJECTIVE) {
+    if (app->current_mode == APP_MODE_OBJECTIVE && !obj_pencil_active(app)) {
         if (app->tool == TOOL_ERASE) {
             obj_handle_erase(app, (int)cd->view, bx, by, cd->da);
             return;
         }
-        if (!app->obj_point_mode) {
-            if (app->obj_active_zone) {
-                obj_zone_free(app->obj_active_zone);
-                app->obj_active_zone = NULL;
-            }
-            app->obj_active_zone = obj_zone_new(app->obj_zone_type, (int)cd->view);
-            obj_zone_add_pt(app->obj_active_zone, (float)bx, (float)by);
-            cd->touch_drawing = TRUE;
-            gtk_widget_queue_draw(cd->da);
+        if (app->obj_tick_mode) {
+            obj_place_tick(app, (int)cd->view, bx, by, cd->da);
+            return;
         }
+        if (app->obj_point_mode) {
+            /* Placing a NEW numeric point (PPT/TS/Monofilament/2-PD) via
+             * finger or mouse — this branch was missing entirely (found
+             * live: touch/mouse could drag an EXISTING point's label, see
+             * the phit>=0 branch above, but tapping empty space to place a
+             * new one silently did nothing, only on_stylus_legacy's own
+             * BUTTON_PRESS handler had this). Matches that handler exactly. */
+            if (app->show_ppt_entry_cb)
+                app->show_ppt_entry_cb(app, cd->da, x, y, (int)cd->view, bx, by);
+            return;
+        }
+        if (app->obj_active_zone) {
+            obj_zone_free(app->obj_active_zone);
+            app->obj_active_zone = NULL;
+        }
+        app->obj_active_zone = obj_zone_new(app->obj_zone_type, (int)cd->view);
+        obj_zone_add_pt(app->obj_active_zone, (float)bx, (float)by);
+        cd->touch_drawing = TRUE;
+        gtk_widget_queue_draw(cd->da);
         return;
     }
 
@@ -1969,7 +2142,7 @@ static void on_drag_end(GtkGestureDrag *gd, double dx, double dy, gpointer d)
         return;
     }
 
-    if (app->current_mode == APP_MODE_OBJECTIVE) {
+    if (app->current_mode == APP_MODE_OBJECTIVE && !obj_pencil_active(app)) {
         obj_commit_active_zone(app, cd->da);
         return;
     }
@@ -2356,7 +2529,9 @@ void canvas_clear(AppState *app)
     }
     app->obj_zone_count = 0;
     app->obj_point_count = 0;
+    app->obj_tick_count = 0;
     app->obj_undo_type_top = 0;
+    stroke_list_clear(app->obj_pencil_strokes);
     if (app->obj_active_zone) {
         obj_zone_free(app->obj_active_zone);
         app->obj_active_zone = NULL;
@@ -2372,6 +2547,14 @@ void canvas_undo(AppState *app)
             guint8 type = app->obj_undo_type_stack[--app->obj_undo_type_top];
             if (type == 1) {
                 if (app->obj_point_count > 0) app->obj_point_count--;
+            } else if (type == 2) {
+                if (app->obj_tick_count > 0) app->obj_tick_count--;
+            } else if (type == 3) {
+                /* Pencil stroke committed while in Objective mode — see
+                 * input_end()'s comment. Its own list (obj_pencil_strokes),
+                 * NOT Subjective's app->strokes. */
+                stroke_free(stroke_list_pop(app->obj_pencil_strokes));
+                app->stroke_version++;
             } else {
                 if (app->obj_zone_count > 0) {
                     obj_zone_free(app->obj_zones[--app->obj_zone_count]);

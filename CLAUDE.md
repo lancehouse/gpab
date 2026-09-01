@@ -72,10 +72,16 @@ rebuild took effect the moment the desktop icon was next clicked, with no tested
 protected from whatever was mid-change. These rules are non-negotiable and override any other
 instruction in this session.
 
+**`dev`/`gpabd` and `main`/`gpabs` currently run genuinely different architectures** (as of
+2026-08-26 — see "Embedded architecture" below): `dev` embeds gpab's Python inside bodychart's own
+process (one process, two windows); `main` still spawns gpab as a separate process, coordinated
+over D-Bus (two processes). This is a bigger difference than a normal dev/stable gap and matters
+when reasoning about a `dev`→`main` promotion later — it isn't a small diff.
+
 | Launcher | Bodychart binary | gpab assessment app | Git branch |
 |----------|-------------------|----------------------|------------|
-| `gpabd`  | `bodychart/build/bodychart` | `gpab-assessment` → this checkout's `assessment_gtk/.venv` | `dev` |
-| `gpabs`  | `gpab-stable/bodychart/build-stable/bodychart` | `gpab-assessment-stable` → `gpab-stable/assessment_gtk/.venv` | `main` |
+| `gpabd`  | `bodychart/build/bodychart` | embedded in-process (see below) — `gpab-assessment` (this checkout's `assessment_gtk/.venv`) only used for standalone `./gpab`/`scripts/run.sh` testing, not the real bodychart-launched flow any more | `dev` |
+| `gpabs`  | `gpab-stable/bodychart/build-stable/bodychart` | separate process — `gpab-assessment-stable` → `gpab-stable/assessment_gtk/.venv` | `main` |
 
 `gpab-stable/` is a **git worktree of this same repo**, nested inside it and pinned to `main` (`git
 worktree list` shows both). It has its own build directory, its own Python venv, and its own copy
@@ -84,11 +90,13 @@ of every file — a bug in dev code cannot reach it just by existing on disk. Th
 `gpabs`'s stable binary — that's the one actually used for real patient sessions. `gpabd`/the
 dev binary are for testing changes before they're promoted, not daily clinical use.
 
-`bodychart/src/integration.c` differs from its `main`-branch copy in exactly one line — the
-`GPAB_LAUNCHER` macro (`"gpab-assessment"` on `dev`, `"gpab-assessment-stable"` on `main`) — by
-design, so a `dev`→`main` merge always surfaces it as a conflict to resolve by hand (keep `main`'s
-value), never a silent overwrite of which checkout stable launches. This is the same shape as
-pab's own single-line `"assessment"`/`"assessments"` divergence in its `integration.c`.
+`bodychart/src/py_embed.c` differs from its `main`-branch copy (once/if this architecture is ever
+promoted there) in the `GPAB_SITE_PACKAGES`/`GPAB_APP_ROOT` path constants — worktree-specific by
+necessity (embedding links the interpreter directly, no `$PATH`-resolved wrapper-script
+indirection is possible the way `dev`'s standalone launch still uses). `main`'s `integration.c`
+still has the OLD one-line `GPAB_LAUNCHER` divergence from the separate-process design — that
+mechanism doesn't exist on `dev` any more (superseded entirely by `py_embed.c`), so a future
+`dev`→`main` merge on `integration.c` needs a real read, not a mechanical conflict-resolve.
 
 1. **All development work goes to `dev` first.** Every code change, bug fix, or feature lands on
    `dev`. No exceptions.
@@ -101,6 +109,32 @@ pab's own single-line `"assessment"`/`"assessments"` divergence in its `integrat
    until the user explicitly requests the promotion in a separate, deliberate instruction.
 5. Rebuilding `gpab-stable/bodychart` (`ninja -C gpab-stable/bodychart/build-stable`) is itself
    part of "touching main" — don't do it as a side effect of a dev-side rebuild habit.
+
+### Embedded architecture (promoted to `dev`/`gpabd` 2026-08-26)
+
+`dev`'s bodychart now embeds a CPython interpreter (`bodychart/src/py_embed.c/.h`) and imports
+gpab's Python directly into its own process, rather than spawning it as a separate process
+coordinated over D-Bus. Root cause this fixed: Wayland blocks one process from forcing focus onto
+a *different* process's window, so the earlier D-Bus `gapplication launch` approach could never
+really raise gpab's window (just produced a "ready" notification) — a same-process window raising
+a sibling window isn't cross-process, so that restriction doesn't apply. `Ctrl+B` in either window
+now raises the other for real; closing either window closes both, guarded against the mutual-
+recursion this introduces (`TrialWindow._closing` in Python, `window.c`'s static `g_closing` in C)
+since both directions are now synchronous, in-process calls rather than async D-Bus round-trips.
+
+Developed and proven on a third-tier `merged-app` worktree/branch (see git log around
+2026-08-25/26) before being explicitly promoted to `dev` — that included finding and fixing a real
+CSS-bleed bug (`bodychart/src/window.c`'s `apply_css()` had unscoped bare-tag selectors like
+`window { background: #2b2b2b; }` that, once both apps shared one `GdkDisplay`, matched gpab's
+widgets too — fixed by scoping to a shared `.bodychart-app` CSS class every bodychart-owned window
+now carries), and confirming the file read/write/atomic-write/cross-app-sync layer
+(`persistence.c`, `storage.py`, `chart_watcher.py`) needed no changes and keeps working correctly
+under the new process model. The `merged-app` worktree/branch itself may still exist on disk —
+treat it as historical at this point, not a live parallel development target, unless told
+otherwise.
+
+**`main`/`gpabs` has NOT received this yet** and still runs the older separate-process design —
+don't assume the two are equivalent when reasoning about `main`.
 
 ## Maintaining the kb link
 

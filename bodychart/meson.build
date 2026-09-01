@@ -7,6 +7,11 @@ cairo_dep   = dependency('cairo')
 rsvg_dep    = dependency('librsvg-2.0')
 jsonc_dep   = dependency('json-c')
 m_dep       = meson.get_compiler('c').find_library('m', required : false)
+# Embeds gpab's Python assessment app in this process via CPython — see
+# src/py_embed.c/.h. Developed and proven on a third-tier `merged-app`
+# worktree (see CLAUDE.md's "Branch and deployment rules"), promoted to
+# dev/gpabd's own build 2026-08-26. main/gpabs has NOT received this yet.
+python_dep  = dependency('python3-embed')
 
 sources = files(
   'src/main.c',
@@ -22,6 +27,7 @@ sources = files(
   'src/settings.c',
   'src/persistence.c',
   'src/integration.c',
+  'src/py_embed.c',
   'src/obj_chart.c',
   'src/report.c',
   'src/svg_regions.c',
@@ -32,7 +38,7 @@ sources = files(
 
 executable('bodychart',
   sources,
-  dependencies : [gtk4_dep, cairo_dep, rsvg_dep, jsonc_dep, m_dep],
+  dependencies : [gtk4_dep, cairo_dep, rsvg_dep, jsonc_dep, m_dep, python_dep],
   install : true)
 
 install_data('data/com.pab.bodychart.desktop',

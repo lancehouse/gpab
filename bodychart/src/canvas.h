@@ -197,16 +197,42 @@ struct _AppState {
     ObjZone  *obj_active_zone;      /* in-progress zone being drawn */
     ObjPoint  obj_points[MAX_OBJ_POINTS];
     int       obj_point_count;
+    /* Pencil tool in Objective mode (2026-08-26) — same Stroke mechanism
+     * and drawing UX as Subjective's own Pencil (see canvas.c's
+     * obj_pencil_active()/input.c's input_end()), but its OWN storage:
+     * a mark made while looking at the Objective chart is a different
+     * annotation from one made on the Subjective chart, even though nothing
+     * distinguishes them visually or in how they're drawn. Sharing
+     * app->strokes made an Objective pencil mark show up (and be erasable/
+     * undoable) from the Subjective tab too, which is NOT what "use the
+     * same pencil tool" meant — fixed same day it was found live. */
+    StrokeList *obj_pencil_strokes;
+    ObjTick   obj_ticks[MAX_OBJ_TICKS];
+    int       obj_tick_count;
     ObjZoneType   obj_zone_type;    /* currently selected zone type */
     ObjPointType  obj_point_type;   /* currently selected point type */
+    ObjTickType   obj_tick_type;    /* currently armed tick/cross type */
+    ObjTickState  obj_tick_state;   /* currently armed tick/cross state */
     gboolean  obj_point_mode;       /* TRUE = point tool, FALSE = zone tool */
+    gboolean  obj_tick_mode;        /* TRUE = tick/cross tool armed — takes
+                                      * priority over obj_point_mode/zone tool;
+                                      * one click places+commits immediately,
+                                      * no drag/dialog, see canvas.c */
+    gboolean  obj_pencil_mode;      /* TRUE = pencil tool selected in Objective
+                                      * mode — see canvas.c's obj_pencil_active().
+                                      * A dedicated flag, not just "app->symptom
+                                      * == SYMPTOM_PENCIL", so a stale leftover
+                                      * symptom value from Subjective mode can
+                                      * never make Objective's zone/point/tick
+                                      * tools misbehave as pencil drawing. */
     gboolean  obj_erase_mode;       /* TRUE = erase obj items */
     gboolean  obj_wide_mode;        /* wide-band zone drawing */
-    /* Objective undo: 0=zone, 1=point */
+    /* Objective undo: 0=zone, 1=point, 2=tick */
     guint8    obj_undo_type_stack[64];
     int       obj_undo_type_top;
     /* Callback: show PPT value entry dialog; set by window.c */
-    void (*show_ppt_entry_cb)(AppState *, int view, double bx, double by);
+    void (*show_ppt_entry_cb)(AppState *, GtkWidget *da, double screen_x, double screen_y,
+                              int view, double bx, double by);
 
     /* Obj point drag state */
     int     obj_point_drag_idx;
@@ -240,3 +266,8 @@ void canvas_screen_to_body(AppState *app, double sx, double sy,
 void canvas_render_view(AppState *app, cairo_t *cr, BodyView view,
                         double w, double h,
                         double zoom, double pan_x, double pan_y);
+
+/* Pencil tool in Objective mode (2026-08-26) — see canvas.c's own comment
+ * on obj_pencil_active(). Exposed here so window.c's sidebar button-state
+ * update can check it too. */
+gboolean obj_pencil_active(const AppState *app);

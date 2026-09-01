@@ -156,9 +156,28 @@ void input_end(AppState *app)
                          app->active_stroke->n_pts >= 1);
         if (keep) {
             app->active_stroke->id = app->next_stroke_id++;
-            stroke_list_push(app->strokes, app->active_stroke);
-            if (app->undo_type_top < 64)
-                app->undo_type_stack[app->undo_type_top++] = 0;
+            /* Pencil tool in Objective mode (2026-08-26, see obj_pencil_active()
+             * in canvas.c) reuses this exact same Stroke mechanism — but NOT
+             * the same storage: a mark made while looking at the Objective
+             * chart is a different annotation from one made on the
+             * Subjective chart (found live: sharing app->strokes made an
+             * Objective pencil mark show up, and be erasable/undoable, from
+             * the Subjective tab too — not what "use the same pencil tool"
+             * meant). canvas_undo() also dispatches on current_mode BEFORE
+             * ever looking at app->undo_type_stack, so an entry pushed there
+             * while in Objective mode would sit unreachable until a Sx-mode
+             * undo happened to fall through to it — recorded on Objective's
+             * own obj_undo_type_stack instead (type 3 = pencil stroke), so
+             * the Obj sidebar's own Undo button can reach it immediately. */
+            if (app->current_mode == APP_MODE_OBJECTIVE) {
+                stroke_list_push(app->obj_pencil_strokes, app->active_stroke);
+                if (app->obj_undo_type_top < 64)
+                    app->obj_undo_type_stack[app->obj_undo_type_top++] = 3;
+            } else {
+                stroke_list_push(app->strokes, app->active_stroke);
+                if (app->undo_type_top < 64)
+                    app->undo_type_stack[app->undo_type_top++] = 0;
+            }
             app->stroke_version++;  /* new committed stroke — invalidate cache */
         } else {
             stroke_free(app->active_stroke);

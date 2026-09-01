@@ -113,6 +113,23 @@ def generate_report(session_file: str) -> str:
         return ""
 
 
+def generate_clean_report(session_file: str) -> str:
+    """Regenerate *_clean.md via storage.export_session_report(clean=True, dev=True)
+    and return its text — same call shape as save_clean_reports' own second call,
+    so this always reflects what the periodic/exit clean-report path itself writes.
+
+    Writes the file (so it's current on disk) and returns the freshly-written
+    content for direct display, rather than reading the file back a second time.
+    """
+    out_path = export_session_report(session_file, clean=True, dev=True)
+    if not out_path:
+        return ""
+    try:
+        return Path(out_path).read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
 def generate_all_reports(session_file: str) -> None:
     """Regenerate *_raw.txt, *_report.md, and *_clean.txt/*_clean.md — same
     three calls as assessment_view.py's _generate_reports() (its 60s
@@ -164,6 +181,7 @@ __all__ = [
     "load_objective_block",
     "save_objective_sections",
     "generate_report",
+    "generate_clean_report",
     "generate_all_reports",
     "generate_all_reports_final",
     "SECTION_KEYS",

@@ -2,12 +2,11 @@
 
 The TUI renders clean.md through Textual's MarkdownViewer (with a
 table-of-contents pane). GTK has no equivalent built-in markdown widget, so
-this is a deliberate simplification: a read-only monospace TextView showing
-the raw *_report.md text, not a rendered preview. Per CONVERSION_PLAN.md
-Phase 5, storage.py's report generation is already reused unchanged and this
-is purely the trigger/preview surface — the value here is proving a
-GTK-written session produces the same report storage.py would generate for
-a TUI-written one, not matching the TUI's rendering fidelity.
+this renders the same *_clean.md storage.py generates through a small
+Markdown-subset -> Pango markup converter (`markdown_render.py`) into a
+read-only TextView, rather than showing the raw *_report.md text. Per
+CONVERSION_PLAN.md Phase 5, storage.py's report generation is already reused
+unchanged — this is purely the trigger/preview surface.
 """
 
 from __future__ import annotations
@@ -15,9 +14,10 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Gdk  # noqa: E402
+from gi.repository import Gtk, Gdk, GLib  # noqa: E402
 
-from .storage_bridge import generate_report
+from .markdown_render import md_to_pango
+from .storage_bridge import generate_clean_report
 
 
 class ReportModal(Gtk.Window):
@@ -47,7 +47,6 @@ class ReportModal(Gtk.Window):
         self.text_view.set_editable(False)
         self.text_view.set_cursor_visible(False)
         self.text_view.set_wrap_mode(Gtk.WrapMode.WORD)
-        self.text_view.set_monospace(True)
         self.text_view.set_top_margin(12)
         self.text_view.set_bottom_margin(12)
         self.text_view.set_left_margin(16)
@@ -71,5 +70,16 @@ class ReportModal(Gtk.Window):
         self._load_report()
 
     def _load_report(self) -> None:
-        text = generate_report(self.session_file) or "(report generation failed — see terminal log)"
-        self.text_view.get_buffer().set_text(text)
+        text = generate_clean_report(self.session_file)
+        buf = self.text_view.get_buffer()
+        buf.set_text("")
+        if not text:
+            buf.set_text("(report generation failed — see terminal log)")
+            return
+        try:
+            markup = md_to_pango(text)
+            buf.insert_markup(buf.get_end_iter(), markup, -1)
+        except GLib.Error:
+            # Malformed markup (shouldn't happen — inputs are escaped) —
+            # fall back to showing the raw, unrendered text.
+            buf.set_text(text)
