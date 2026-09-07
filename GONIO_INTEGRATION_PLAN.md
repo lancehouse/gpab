@@ -1,7 +1,20 @@
 # Goniometer → gpab integration plan
 
 Drafted 2026-09-07. Status: **plan only, nothing implemented.** All work
-described here targets `dev` / `gpabd` (see Guardrails at the bottom).
+described here targets `dev` / `gpabd` (see Guardrails at the bottom), plus
+one change on the `goniometer` repo (Part 0).
+
+**The 3 open decisions are now settled** (2026-09-07, by the user):
+
+1. **AROM/PROM value format** — detailed range first, then each mark point,
+   `;`-separated: `110 (-8->102) ; 43 ; 98`. No degree symbol. Repeats of the
+   same field still `" // "`-joined between measurements. This needs mark
+   angle values in the manifest — see **Part 0**.
+2. **Lateral views** — **keep them.** Charts float over the Objective canvas;
+   the lateral SVG stays one tap away behind the per-slot toggle (§D5).
+3. **Chart count** — 3–4 per session is typical, never 8–10 ("only formally
+   measure key findings after initial screens"). No paging / hidden-charts
+   list needed; §D stays simple.
 
 ## Goal
 
@@ -73,6 +86,44 @@ Real samples on disk to preserve compatibility with:
 
 ---
 
+## Part 0 — Goniometer app: mark angles in the manifest  (repo: `goniometer`)
+
+Decision 1's format needs the primary-channel angle **at each mark**, in
+capture order. The manifest emits only `mark_count` today
+(`BundleExporter.kt:128`); `Mark` is `(tMs, sampleIndex)` and
+`ChartRenderer.kt:159` already computes the angle at each mark to draw them.
+
+**Change** (`app/src/main/java/com/lancehouse/goniometer/BundleExporter.kt`,
+`measurementJson`):
+
+```kotlin
+put("mark_count", r.marks.size)
+put("marks_deg", JSONArray(r.marks.map { mk ->
+    round1(r.samples[mk.sampleIndex].channel(r.primaryChannelIndex))
+}))   // primary-channel angle at each mark, capture order
+```
+
+(use whatever the existing per-channel accessor is — `channelPeak` /
+`Sample` already expose it; `ChartRenderer` line ~159 shows the exact call.)
+
+- Guard `mk.sampleIndex` against `-1` / out-of-range (a mark pressed before
+  the first sample — `SessionState.kt:118` already notes this case): skip or
+  clamp, don't crash the export.
+- **Bump `BUNDLE_SCHEMA` 1 → 2.** Update the schema comment block at the top
+  of `BundleExporter.kt`. `bundle_schema` is already in the manifest so the
+  gpab importer can branch on it; `marks_deg` absent + `bundle_schema == 1`
+  → old bundle, fall back to range-only (see §C).
+- Update the goniometer repo's own memory note
+  (`goniometer-chart-export.md`) and commit on `main` (that repo is
+  single-branch, local-only).
+- The `TEST_07_09_2026_1112.gonio.zip` sample already on disk is schema 1 —
+  keep it as the back-compat test fixture; capture a fresh schema-2 bundle
+  once the phone app is rebuilt.
+
+This is the only goniometer-side change. Everything else is gpab.
+
+---
+
 ## Part A — Router: accept `.gonio.zip`
 
 **File:** `~/.local/bin/gsconnect-goniometer-router.sh` (outside both repos —
@@ -119,6 +170,7 @@ class Measurement:
     max_deg: float | None = None
     deficit_to_full_deg: float | None = None
     mark_count: int = 0
+    marks_deg: list[float] = dataclass_field(default_factory=list)  # manifest schema 2+
     chart_png: str | None = None   # zip-relative path from manifest, or None
 ```
 
@@ -136,7 +188,7 @@ Add `load_gonio_bundle(zip_path: Path) -> tuple[str, list[Measurement], Path]`
 - For each `manifest["measurements"]`: construct `Measurement` straight from
   the denormalised fields (`primary_range_deg` is ready — no `ranges[]`
   indexing), carrying `min_deg`/`max_deg`/`deficit_to_full_deg`/`mark_count`/
-  `chart_png`.
+  `marks_deg` (default `[]` if absent — schema-1 bundle)/`chart_png`.
 - Return `(manifest["patient_code"], measurements, zip_path)`.
 
 ### B3. Glob sites accept both extensions
@@ -181,53 +233,55 @@ view from disk.
 
 ---
 
-## Part C — Enrich the AROM / PROM field value  ⚠ CONFIRM FORMAT FIRST
+## Part C — Enrich the AROM / PROM field value  ✅ FORMAT SETTLED
 
 **Constraint:** this string is stored in `_objective.json` and flows through
-`storage.py` into **generated clinical reports**. It must read as clinical
-shorthand, not telemetry. Repeats are `" // "`-joined, so every extra
-character multiplies per capture — the addition must be genuinely slight.
+`storage.py` into **generated clinical reports**, so it must read cleanly.
+Repeats of the same field are `" // "`-joined between measurements.
 
-**What's missing today:** a lone range number loses *direction*. `36` for a
-lumbar extension capture that actually swept `0° → −36°` reads identically to
-one that swept `+18° → −18°`. This is exactly the ambiguity the phone-side
-commit `582eb60` just fixed by reporting `min_deg`/`max_deg` instead of a
-single peak.
-
-**Proposed default** (mark **confirm before implementing**): append the
-directional excursion in parentheses, unit once at the end:
+**Format (user, 2026-09-07):** detailed range first, then each mark point,
+`" ; "`-separated:
 
 ```
-group_resolved value per measurement:
-    f"{rng}° ({lo}→{hi})"      when min/max available
-    f"{rng}°"                  fallback (old .gonio.json, no min/max)
+per measurement:
+    "<rng> (<lo>-><hi>) ; <m1> ; <m2> ; ..."   when marks_deg present
+    "<rng> (<lo>-><hi>)"                        when min/max present, no marks
+    "<rng>"                                     fallback: schema-1 bundle or
+                                                old .gonio.json (no min/max)
 
-where rng = round(primary_range_deg), lo = round(min_deg), hi = round(max_deg)
+rng = round(primary_range_deg)
+lo  = round(min_deg),  hi = round(max_deg)      (signed; may be negative)
+mN  = round(marks_deg[N])  in capture order
 ```
+
+No degree symbol. `->` is literal ASCII (user wrote it that way — swap to
+`→` only if the user later prefers it).
 
 Examples:
-- lumbar flexion 110°, swept −8→102  →  `110° (-8→102)`
-- lumbar extension 37°, swept −37→0  →  `37° (-37→0)`
-- three flexion repeats  →  `110° (-8→102) // 112° (-5→104) // 115° (-2→106)`
+- lumbar flexion, range 110, swept −8→102, marks at 43 and 98
+  →  `110 (-8->102) ; 43 ; 98`
+- lumbar extension, range 37, swept −37→0, no marks
+  →  `37 (-37->0)`
+- two flexion repeats (2 marks each)
+  →  `110 (-8->102) ; 43 ; 98 // 115 (-2->106) ; 45 ; 99`
+- re-applied old `.gonio.json` (no min/max, no marks)
+  →  `110`   (unchanged from today's behaviour)
 
-**Alternatives to weigh with the user:**
-- degrees only, no direction, but keep the `°` unit: `110°` (minimal).
-- add mark count when > 0: `110° (-8→102, 3 marks)` — richer, longer.
-- put the excursion only on the *first* repeat of a group to fight length
-  growth: `110° (-8→102) // 112 // 115`.
-
-**Do not** include `total_angular_sweep_deg`, `duration_ms`, `sample_count`,
-`app_version` — telemetry, not clinical.
+**Do not** include `total_angular_sweep_deg`, `deficit_to_full_deg`,
+`duration_ms`, `sample_count`, `app_version`.
 
 Implementation point: the value is built in **two** places that must stay in
-sync — `matcher.group_resolved` (line ~205) and `wizard_screen._apply`'s
-override branch (line ~361). The wizard's *preview* label
-(`wizard_screen.py:256`, currently `f"{...}°"`) should show the same enriched
-string so what's previewed is what's written.
+sync — `matcher.group_resolved` (builds `values = [...]` then
+`" // ".join(values)`, ~line 205) and `wizard_screen._apply`'s override
+branch (`joined_value=str(round(...))`, ~line 361). Factor a single
+`format_measurement_value(m: Measurement) -> str` helper and call it from
+both. The wizard's *preview* label (`wizard_screen.py:256`, currently
+`f"{round(primary_range_deg)}°"`) should call the same helper so the preview
+matches what gets written.
 
 ---
 
-## Part D — Charts on the Objective bodychart  ⚠ CONFIRM UI CHOICES
+## Part D — Charts on the Objective bodychart  ✅ UI CHOICES SETTLED
 
 **Files:** `bodychart/src/canvas.c`, `obj_chart.c/.h`, `persistence.c`,
 `meson.build`. All on `dev`; build with `ninja -C bodychart/build`.
@@ -302,56 +356,58 @@ Add `gonio_chart_drag_idx` following the same pattern:
   chart, or +/- keys while a chart is "active". Pinch is the most natural on
   the Yoga touchscreen. Per-chart `scale` in `_session.json`.
 - a small close/hide affordance (corner ✕) toggles `visible:false` rather
-  than deleting — re-running the import or re-entering Objective mode brings
-  hidden ones back only if the user asks; TBD whether hidden charts get a
-  "show N hidden charts" chip.
+  than deleting — re-entering Objective mode brings hidden ones back only if
+  the user asks. With 3–4 charts typical (§D6) no "show N hidden" chip is
+  needed; a hidden chart just isn't drawn.
 
-### D5. "In place of the lateral views" — CONFIRM
+### D5. "In place of the lateral views" — SETTLED: keep the lateral views
 
-Two readings:
+The lateral views stay. The two right-column quad slots (`g_col[2]`,
+`g_col[3]`, `app->right_slot_views`) are already cyclable views — add one
+more per-slot mode that collapses the slot to a plain backdrop the floating
+charts sit over. **Default that mode to "charts" once a session has any
+`gonio_charts[]`**, else the lateral SVG as today. The lateral view is always
+one tap away on the slot's existing view-cycle control; nothing is removed.
 
-- **(recommended default)** *Reclaim the space, keep lateral as a toggle.*
-  The two right-column quad slots (`g_col[2]`, `g_col[3]`,
-  `app->right_slot_views`) are already cyclable views. Add a per-slot mode:
-  show the lateral SVG (today's behaviour) **or** collapse the right column
-  to a plain backdrop that the floating charts sit over. Default the toggle
-  to "charts" once a session has any `gonio_charts[]`, else "lateral".
-  Nothing is lost; the user flips back if they want a lateral view.
-- *Remove lateral from the Objective quad entirely.* Simpler layout, but
-  destructive and hard to undo per-session.
+The charts themselves **float free** over the whole Objective canvas — not
+pinned into the grid cell — so they can be dragged over the anterior/
+posterior panels and scaled up to be readable (a 1600×900 chart in the
+untouched col-4 cell renders ~200×110 px on the Yoga, which is why
+fixed-slot placement was rejected).
 
-Either way the charts **float free** — not pinned into the grid cell — so
-they can be dragged over the anterior panel and scaled up to be readable
-(a 1600×900 chart in the untouched col-4 cell renders ~200×110 px on the
-Yoga, which is why fixed-slot placement was rejected).
+### D6. Chart count — SETTLED: 3–4 typical, never 8–10
 
-### D6. Open question for the user — chart count per session
-
-The `TEST` sample has 2 measurements. If a typical session is 2–4 charts the
-free-floating model is comfortable as described. If a full ROM screen
-produces 8–10, D2/D4 need a show/hide list or paging so the canvas doesn't
-drown — that would expand this section.
+User only formally measures key findings after the initial screen, so a
+session carries roughly 3–4 charts. The free-floating model in D2/D4 is
+comfortable at that count with no paging, no scrollable list, no
+"hidden charts" chip. Don't build those.
 
 ---
 
 ## Suggested implementation order
 
+0. **Part 0** (goniometer: `marks_deg` in manifest, schema 1→2). Repo:
+   `goniometer`, branch `main`. Rebuild the phone app, capture one fresh
+   schema-2 bundle to test with. Keeps the schema-1 `TEST` zip as the
+   back-compat fixture.
 1. **Part A** (router `.gonio.zip`) — smallest, unblocks real bundles landing
-   in the inbox. Test: SEND from phone → file appears in
-   `~/PAB/_inbox/goniometer/TEST/`.
-2. **Part B1–B4** (importer reads manifest) + **Part C** (enriched value) —
+   in the inbox. Test: SEND from phone → zip appears in
+   `~/PAB/_inbox/goniometer/<code>/`.
+2. **Part B1–B4** (importer reads manifest) + **Part C** (value format) —
    the data half end-to-end. Test: Ctrl+G on a session whose `patient_id`
    matches, wizard shows measurements, Apply writes
-   `110° (-8→102)` into the right `active`/`passive` field, `_objective.json`
-   round-trips, other fields untouched. Re-test the old `.gonio.json`
-   re-apply path still works.
+   `110 (-8->102) ; 43 ; 98` into the right `active`/`passive` field,
+   `_objective.json` round-trips, other fields untouched. Re-test the old
+   `.gonio.json` re-apply path still writes plain `110`.
 3. **Part B5** (extract charts to `gonio_charts/`) — bridge to the visual
-   half. Test: after an import, PNGs are in `~/PAB/<session>/gonio_charts/`.
+   half. Test: after an import, PNGs are in `~/PAB/<session>/gonio_charts/`
+   and survive `archive_imported_file` moving the zip to `_imported/`.
 4. **Part D** (bodychart charts) — biggest, most iteration expected on
    readability/placement. Do D1–D3 first (charts appear, correct, persist
-   position across reload), then D4 (drag + scale), then D5 (lateral toggle).
+   position across reload), then D4 (drag + scale), then D5 (right-slot
+   "charts" mode + default).
 
-Parts A–C are independently useful even if D slips.
+Parts 0–C are independently useful even if D slips.
 
 ---
 
@@ -378,11 +434,16 @@ Parts A–C are independently useful even if D slips.
 - Both repos (`goniometer`, `gpab`) are **remote-less** — back up the
   directories to external storage before the PC reset.
 
-## Decisions still needed from the user
+## Decisions — all settled (2026-09-07)
 
-1. **AROM/PROM value format** (§C) — recommended `110° (-8→102)`; lands in
-   generated reports, so confirm the wording.
-2. **Lateral views** (§D5) — recommended: keep behind a per-slot toggle,
-   default to charts once a session has any. Or remove entirely?
-3. **Typical chart count per session** (§D6) — changes whether §D needs
-   paging / a hidden-charts list.
+1. **AROM/PROM value format** (§C) — `110 (-8->102) ; 43 ; 98` (detailed
+   range, then each mark point, `;`-separated). No degree symbol. Repeats
+   still `" // "`-joined.
+2. **Lateral views** (§D5) — kept. Charts float over the canvas; a right-slot
+   "charts" mode defaults on once a session has charts, lateral view one tap
+   away.
+3. **Chart count** (§D6) — 3–4 typical, never 8–10. No paging / hidden-list
+   UI.
+
+Nothing is blocked on further input — this plan is ready to implement in a
+fresh session, Part 0 first.
