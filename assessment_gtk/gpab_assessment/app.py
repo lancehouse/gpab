@@ -1013,15 +1013,26 @@ class TrialWindow(Gtk.ApplicationWindow):
         # phone sent it in more than one batch.
         combined = []
         offset = 0
+        unreadable: list[str] = []
         for f in files:
-            _, measurements = gonio_importer.load_gonio_measurements(f)
+            try:
+                _, measurements = gonio_importer.load_gonio_export(f)  # .gonio.zip or flat .gonio.json
+            except gonio_importer.GonioExportError as e:
+                # A truncated/corrupt bundle must not escape into this key
+                # handler — skip it, keep going with whatever else loaded.
+                unreadable.append(f.name)
+                continue
             for m in measurements:
                 m.index += offset
             combined.extend(measurements)
             offset += len(measurements)
 
         if not combined:
-            self.save_status.set_label(f"Goniometer file(s) for {patient_code} had no measurements")
+            if unreadable:
+                self.save_status.set_label(
+                    f"Goniometer file(s) unreadable: {', '.join(unreadable)}")
+            else:
+                self.save_status.set_label(f"Goniometer file(s) for {patient_code} had no measurements")
             return
 
         results = match_batch(combined)

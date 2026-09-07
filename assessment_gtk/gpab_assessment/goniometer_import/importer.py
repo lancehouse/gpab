@@ -38,6 +38,7 @@ tree) — mirrors tui.py's action_import_gonio exactly.
 from __future__ import annotations
 
 import json
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,6 +47,32 @@ from pab_assessment import storage  # noqa: E402
 from .matcher import GroupedValue, Measurement
 
 INBOX_ROOT = Path.home() / "PAB" / "_inbox" / "goniometer"
+
+
+class GonioExportError(Exception):
+    """A goniometer export file could not be read (truncated .gonio.zip,
+    missing manifest.json, malformed JSON, …). Raised only by
+    load_gonio_export() — the raw loaders raise their natural exceptions.
+    _run_gonio_import_for catches this and skips the file with a status
+    message rather than letting it escape into the GTK key handler."""
+
+# Both export shapes live side by side in an inbox folder: the old flat
+# ``<code>_<date>.gonio.json`` and the new ``<session>.gonio.zip`` bundle
+# (manifest.json + session.json + charts/). Every discovery glob below counts
+# and lists both.
+_GONIO_PATTERNS = ("*.gonio.json", "*.gonio.zip")
+
+
+def _gonio_files(d: Path) -> list[Path]:
+    """Every goniometer export file (either shape) directly in *d*, unsorted."""
+    out: list[Path] = []
+    for pat in _GONIO_PATTERNS:
+        out.extend(d.glob(pat))
+    return out
+
+
+def _opt_float(v) -> float | None:
+    return None if v is None else float(v)
 
 
 @dataclass
@@ -66,20 +93,21 @@ def available_patient_codes() -> list[InboxPatientSummary]:
     for d in sorted(INBOX_ROOT.iterdir()):
         if not d.is_dir():
             continue
-        pending = len(list(d.glob("*.gonio.json")))
+        pending = len(_gonio_files(d))
         imported_dir = d / "_imported"
-        imported = len(list(imported_dir.glob("*.gonio.json"))) if imported_dir.exists() else 0
+        imported = len(_gonio_files(imported_dir)) if imported_dir.exists() else 0
         if pending or imported:
             summaries.append(InboxPatientSummary(d.name, pending, imported))
     return summaries
 
 
 def inbox_files_for(patient_code: str) -> list[Path]:
-    """Every not-yet-imported .gonio.json for this patient code, oldest first."""
+    """Every not-yet-imported goniometer export (.gonio.json or .gonio.zip)
+    for this patient code, oldest first."""
     d = INBOX_ROOT / patient_code
     if not d.exists():
         return []
-    return sorted(d.glob("*.gonio.json"), key=lambda p: p.stat().st_mtime)
+    return sorted(_gonio_files(d), key=lambda p: p.stat().st_mtime)
 
 
 def imported_files_for(patient_code: str) -> list[Path]:
@@ -90,7 +118,7 @@ def imported_files_for(patient_code: str) -> list[Path]:
     d = INBOX_ROOT / patient_code / "_imported"
     if not d.exists():
         return []
-    return sorted(d.glob("*.gonio.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return sorted(_gonio_files(d), key=lambda p: p.stat().st_mtime, reverse=True)
 
 
 def load_gonio_measurements(path: Path) -> tuple[str, list[Measurement]]:
@@ -107,6 +135,70 @@ def load_gonio_measurements(path: Path) -> tuple[str, list[Measurement]]:
             rom_type = "AROM"  # missing on pre-toggle files, or anything unexpected
         measurements.append(Measurement(i, label, float(primary), rom_type))
     return data.get("patient_code", ""), measurements
+
+
+def load_gonio_bundle(zip_path: Path) -> tuple[str, list[Measurement], Path]:
+    """Returns (patient_code, measurements, zip_path) from one .gonio.zip
+    export bundle. Reads manifest.json only — session.json and charts/ are
+    left in the zip (charts are extracted later, at apply time; see
+    GONIO_INTEGRATION_PLAN.md §B5).
+
+    Kept SEPARATE from load_gonio_measurements() on purpose: that one still
+    serves the flat ``_imported/*.gonio.json`` re-apply path. The manifest is
+    already denormalised — primary_range_deg is ready, no ranges[] indexing —
+    and it carries the min/max + marks_deg that format_measurement_value()
+    needs for the richer field string. A schema-1 bundle simply has no
+    marks_deg, so the formatter falls back to the range-only form.
+    """
+    with zipfile.ZipFile(zip_path) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+
+    measurements: list[Measurement] = []
+    for i, m in enumerate(manifest.get("measurements", [])):
+        rom_type = str(m.get("rom_type") or "AROM").upper()
+        if rom_type not in ("AROM", "PROM"):
+            rom_type = "AROM"
+        # marks_deg length is == mark_count in the manifest; a slot is null
+        # only when a corrupt/hand-edited session pointed a mark outside its
+        # sample stream. Drop nulls here — the formatter lists whatever real
+        # angles remain, in capture order.
+        marks_deg = [float(x) for x in (m.get("marks_deg") or []) if x is not None]
+        measurements.append(Measurement(
+            index=i,
+            label=m.get("label") or "",
+            primary_range_deg=float(m.get("primary_range_deg") or 0.0),
+            rom_type=rom_type,
+            min_deg=_opt_float(m.get("min_deg")),
+            max_deg=_opt_float(m.get("max_deg")),
+            deficit_to_full_deg=_opt_float(m.get("deficit_to_full_deg")),
+            mark_count=int(m.get("mark_count") or 0),
+            marks_deg=marks_deg,
+            chart_png=m.get("chart_png"),
+        ))
+    return manifest.get("patient_code", ""), measurements, zip_path
+
+
+def load_gonio_export(path: Path) -> tuple[str, list[Measurement]]:
+    """Shape-agnostic front door: dispatches to load_gonio_bundle() for a
+    ``.gonio.zip`` and load_gonio_measurements() for a flat ``.gonio.json``.
+    Returns (patient_code, measurements) either way — callers that don't need
+    the zip path (the wizard flow) use this.
+
+    This is the SAFE boundary: any structural failure of either loader (bad
+    zip, absent manifest.json, unparseable JSON, unreadable file) is
+    re-raised as GonioExportError so _run_gonio_import_for can skip the file
+    instead of crashing the Ctrl+G handler. The raw loaders stay strict.
+    """
+    try:
+        if path.name.endswith(".gonio.zip"):
+            code, measurements, _ = load_gonio_bundle(path)
+            return code, measurements
+        return load_gonio_measurements(path)
+    except (zipfile.BadZipFile, KeyError, ValueError, OSError) as e:
+        # ValueError covers json.JSONDecodeError and a float()/int() cast on
+        # a malformed field; KeyError covers ZipFile.read("manifest.json")
+        # when the entry is absent.
+        raise GonioExportError(f"{path.name}: {type(e).__name__}: {e}") from e
 
 
 def apply_grouped_values(session_file: str, grouped: list[GroupedValue]) -> None:
