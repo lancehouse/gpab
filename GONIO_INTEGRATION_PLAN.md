@@ -431,8 +431,9 @@ Parts 0–C are independently useful even if D slips.
 - Session writes stay atomic (inherited from `storage.py` /
   `persistence.c`); separate debounced timers for `_assessment.json` vs
   `_objective.json` vs `_session.json`.
-- Both repos (`goniometer`, `gpab`) are **remote-less** — back up the
-  directories to external storage before the PC reset.
+- Both repos now have a private GitHub backup remote (`origin`):
+  `github.com/lancehouse/{gpab,goniometer}` (added 2026-09-07). gpab's
+  `origin` is a backup only — still no link to `pab`/`kb` (see `CLAUDE.md`).
 
 ## Decisions — all settled (2026-09-07)
 
