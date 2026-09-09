@@ -249,8 +249,13 @@ struct _AppState {
     int        gonio_chart_count;
     int        gonio_chart_active_idx;      /* last touched — highlighted, +/- target; -1 none */
     int        gonio_chart_drag_idx;        /* -1 = none */
-    double     gonio_chart_drag_fx_off;
+    double     gonio_chart_drag_fx_off;     /* move: chart fx/fy minus pointer fraction */
     double     gonio_chart_drag_fy_off;
+    gboolean   gonio_chart_resizing;        /* TRUE = drag is a corner-resize, not a move */
+    double     gonio_chart_rs_start_scale;  /* scale at resize-drag start */
+    double     gonio_chart_rs_start_w;      /* drawn width (layer px) at resize-drag start */
+    double     gonio_chart_rs_origin_gx;    /* chart top-left (layer px) — fixed during resize */
+    double     gonio_chart_rs_origin_gy;
 
     /* Stroke cache version counter — incremented whenever committed strokes
      * or arrows change (stroke commit/undo/clear/load, arrow add/delete).

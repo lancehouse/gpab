@@ -1562,6 +1562,105 @@ static double event_effective_pressure(GdkEvent *ev, const AppState *app)
     return pow(fmax(pressure, 0.01), (double)app->pen_gamma);
 }
 
+/* ── Floating goniometer-chart interaction ─────────────────────────────── *
+ * The charts render on a can-target=FALSE overlay (on_gonio_layer_draw), so
+ * their drag / resize / hide input is picked up here in the panels' own
+ * press/motion/release handlers — highest priority, since a chart floats
+ * visually above everything. A panel-local point is mapped into the overlay
+ * layer's coordinate space (where gonio_charts_render lays the charts out)
+ * with gtk_widget_compute_point. A chart overhanging into the inter-panel
+ * gutter can only be grabbed by the part still over a panel widget.        */
+
+static gboolean gonio_map_point(ColData *cd, double x, double y,
+                                double *gx, double *gy, double *lw, double *lh)
+{
+    GtkWidget *layer = cd->app->gonio_layer_da;
+    if (!layer || !gtk_widget_get_realized(layer)) return FALSE;
+    graphene_point_t src = { (float)x, (float)y }, dst;
+    if (!gtk_widget_compute_point(cd->da, layer, &src, &dst)) return FALSE;
+    *gx = (double)dst.x;
+    *gy = (double)dst.y;
+    *lw = (double)gtk_widget_get_width(layer);
+    *lh = (double)gtk_widget_get_height(layer);
+    return (*lw > 0.0 && *lh > 0.0);
+}
+
+/* Objective-mode only. TRUE = a chart claimed this press (caller consumes). */
+static gboolean gonio_press(ColData *cd, double x, double y)
+{
+    AppState *app = cd->app;
+    if (app->current_mode != APP_MODE_OBJECTIVE || app->gonio_chart_count == 0)
+        return FALSE;
+
+    double gx, gy, lw, lh;
+    if (!gonio_map_point(cd, x, y, &gx, &gy, &lw, &lh)) return FALSE;
+
+    gboolean on_close = FALSE, on_resize = FALSE;
+    int hit = gonio_chart_hit(app, lw, lh, gx, gy, &on_close, &on_resize);
+    if (hit < 0) return FALSE;
+
+    GonioChart *gc = &app->gonio_charts[hit];
+    app->gonio_chart_active_idx = hit;
+
+    if (on_close) {                       /* the x badge — hide, no drag */
+        gc->visible = FALSE;
+        app->gonio_chart_active_idx = -1;
+        canvas_invalidate(app);
+        return TRUE;
+    }
+
+    app->gonio_chart_drag_idx = hit;
+    if (on_resize) {
+        app->gonio_chart_resizing      = TRUE;
+        app->gonio_chart_rs_start_scale = gc->scale > 0 ? gc->scale : 1.0;
+        app->gonio_chart_rs_start_w     = GONIO_CHART_BASE_FRAC * lw *
+                                          app->gonio_chart_rs_start_scale;
+        app->gonio_chart_rs_origin_gx   = gc->fx * lw;
+        app->gonio_chart_rs_origin_gy   = gc->fy * lh;
+    } else {                              /* plain move */
+        app->gonio_chart_resizing    = FALSE;
+        app->gonio_chart_drag_fx_off = gc->fx - gx / lw;
+        app->gonio_chart_drag_fy_off = gc->fy - gy / lh;
+    }
+    canvas_invalidate(app);
+    return TRUE;
+}
+
+static gboolean gonio_motion(ColData *cd, double x, double y)
+{
+    AppState *app = cd->app;
+    if (app->gonio_chart_drag_idx < 0) return FALSE;
+
+    double gx, gy, lw, lh;
+    if (!gonio_map_point(cd, x, y, &gx, &gy, &lw, &lh)) return TRUE;  /* still ours */
+    GonioChart *gc = &app->gonio_charts[app->gonio_chart_drag_idx];
+
+    if (app->gonio_chart_resizing) {
+        double new_w = gx - app->gonio_chart_rs_origin_gx;
+        double min_w = 0.06 * lw;
+        if (new_w < min_w) new_w = min_w;
+        double s = app->gonio_chart_rs_start_scale *
+                   (new_w / app->gonio_chart_rs_start_w);
+        gc->scale = CLAMP(s, 0.15, 6.0);
+    } else {
+        gc->fx = gx / lw + app->gonio_chart_drag_fx_off;
+        gc->fy = gy / lh + app->gonio_chart_drag_fy_off;
+        gc->fx = CLAMP(gc->fx, -0.20, 0.98);  /* keep a graspable sliver on-screen */
+        gc->fy = CLAMP(gc->fy, -0.02, 0.95);
+    }
+    canvas_invalidate(app);
+    return TRUE;
+}
+
+static gboolean gonio_release(AppState *app)
+{
+    if (app->gonio_chart_drag_idx < 0) return FALSE;
+    app->gonio_chart_drag_idx = -1;
+    app->gonio_chart_resizing = FALSE;
+    canvas_invalidate(app);   /* placement persists via the normal autosave path */
+    return TRUE;
+}
+
 /* ── Single capture-phase stylus handler (replaces GtkGestureStylus) ────── *
  * Using GtkGestureStylus, the gesture state machine gets stuck after focus  *
  * switches: the compositor doesn't always deliver proximity-out on loss of  *
@@ -1625,6 +1724,9 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
         /* Physical eraser tip overrides current tool */
         if (tooltype == GDK_DEVICE_TOOL_TYPE_ERASER)
             app->tool = TOOL_ERASE;
+
+        /* Floating ROM chart drag / resize / hide — beats every panel tool */
+        if (gonio_press(cd, x, y)) return TRUE;
 
         /* Legend drag (posterior only) */
         if (cd->view == VIEW_POSTERIOR) {
@@ -1758,6 +1860,8 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
     if (GDK_IS_EVENT_TYPE(event, GDK_MOTION_NOTIFY)) {
         app->last_stylus_us = g_get_monotonic_time();
 
+        if (gonio_motion(cd, x, y)) return TRUE;
+
         if (app->legend_drag_active) {
             double bx, by;
             screen_to_body(cd, x, y, &bx, &by);
@@ -1828,6 +1932,8 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
         if (btn != 1) return TRUE; /* consume barrel releases silently */
         app->last_stylus_us = g_get_monotonic_time();
 
+        if (gonio_release(app)) return TRUE;
+
         if (app->legend_drag_active) {
             app->legend_drag_active = FALSE;
             gtk_widget_queue_draw(cd->da);
@@ -1896,6 +2002,9 @@ static void on_drag_begin(GtkGestureDrag *gd, double x, double y, gpointer d)
     ColData  *cd  = d;
     AppState *app = cd->app;
     (void)gd;
+
+    /* Floating ROM chart drag / resize / hide — beats every panel tool */
+    if (gonio_press(cd, x, y)) return;
 
     /* Legend drag (posterior only, mode-specific hit test) */
     if (cd->view == VIEW_POSTERIOR) {
@@ -2032,6 +2141,9 @@ static void on_drag_update(GtkGestureDrag *gd, double dx, double dy,
     AppState *app = cd->app;
     double sx, sy;
     gtk_gesture_drag_get_start_point(gd, &sx, &sy);
+
+    if (gonio_motion(cd, sx + dx, sy + dy)) return;
+
     double bx, by;
     screen_to_body(cd, sx + dx, sy + dy, &bx, &by);
 
@@ -2088,6 +2200,8 @@ static void on_drag_end(GtkGestureDrag *gd, double dx, double dy, gpointer d)
 {
     ColData  *cd  = d;
     AppState *app = cd->app;
+
+    if (gonio_release(app)) return;
 
     /* Clear legend / note / link drag (any tool) */
     if (app->legend_drag_active) {
@@ -2569,6 +2683,7 @@ void canvas_clear(AppState *app)
     app->gonio_chart_count      = 0;
     app->gonio_chart_active_idx = -1;
     app->gonio_chart_drag_idx   = -1;
+    app->gonio_chart_resizing   = FALSE;
     stroke_list_clear(app->obj_pencil_strokes);
     if (app->obj_active_zone) {
         obj_zone_free(app->obj_active_zone);

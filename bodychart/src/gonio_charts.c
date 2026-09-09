@@ -5,8 +5,10 @@
 #include <string.h>
 #include <math.h>
 
-/* Close (hide) badge size in device px — fixed, not scaled with the chart. */
-#define GC_CLOSE_PX 22.0
+/* Close (hide) badge and resize grip size in device px — fixed, not scaled
+ * with the chart so they stay tappable at any chart size. */
+#define GC_CLOSE_PX  22.0
+#define GC_HANDLE_PX 22.0
 
 /* ── directory sync ─────────────────────────────────────────────────────── */
 
@@ -26,6 +28,13 @@ static void charts_dir(AppState *app, char *buf, size_t len)
 void gonio_charts_rescan(AppState *app)
 {
     if (!app->session_dir[0]) return;
+
+    /* The sweep below compacts app->gonio_charts[], so any raw index into it
+     * is stale afterwards. A rescan only runs on load / on entering
+     * Objective mode — never mid-drag — so just drop them. */
+    app->gonio_chart_active_idx = -1;
+    app->gonio_chart_drag_idx   = -1;
+    app->gonio_chart_resizing   = FALSE;
 
     char dir[600];
     charts_dir(app, dir, sizeof(dir));
@@ -123,6 +132,30 @@ cairo_surface_t *gonio_chart_get_surface(AppState *app, GonioChart *gc)
     return gc->surf;
 }
 
+int gonio_charts_reset_layout(AppState *app)
+{
+    for (int i = 0; i < app->gonio_chart_count; i++) {
+        GonioChart *gc = &app->gonio_charts[i];
+        gc->visible = TRUE;
+        gc->scale   = 1.0;
+        gc->fx      = fmin(0.68 + 0.015 * i, 0.90);
+        gc->fy      = fmin(0.04 + 0.15  * i, 0.70);
+    }
+    return app->gonio_chart_count;
+}
+
+void gonio_chart_bump_active_scale(AppState *app, double factor)
+{
+    int i = app->gonio_chart_active_idx;
+    if (i < 0 || i >= app->gonio_chart_count) return;
+    double s = app->gonio_charts[i].scale;
+    if (s <= 0) s = 1.0;
+    s *= factor;
+    if (s < 0.15) s = 0.15;
+    if (s > 6.0)  s = 6.0;
+    app->gonio_charts[i].scale = s;
+}
+
 void gonio_charts_free_surfaces(AppState *app)
 {
     for (int i = 0; i < app->gonio_chart_count; i++) {
@@ -211,15 +244,30 @@ void gonio_charts_render(AppState *app, cairo_t *cr, double w, double h,
             cairo_move_to(cr, bx + GC_CLOSE_PX - p,  by + p);
             cairo_line_to(cr, bx + p,               by + GC_CLOSE_PX - p);
             cairo_stroke(cr);
+
+            /* Resize grip, bottom-right — a few diagonal ticks. */
+            double hx = x + cw - GC_HANDLE_PX, hy = y + ch - GC_HANDLE_PX;
+            cairo_set_source_rgba(cr, 0.10, 0.10, 0.14, 0.75);
+            cairo_rectangle(cr, hx, hy, GC_HANDLE_PX, GC_HANDLE_PX);
+            cairo_fill(cr);
+            cairo_set_source_rgba(cr, 1, 1, 1, 0.9);
+            cairo_set_line_width(cr, 1.4);
+            for (double o = 5.0; o <= 15.0; o += 5.0) {
+                cairo_move_to(cr, hx + GC_HANDLE_PX - o, hy + GC_HANDLE_PX - 3);
+                cairo_line_to(cr, hx + GC_HANDLE_PX - 3, hy + GC_HANDLE_PX - o);
+                cairo_stroke(cr);
+            }
         }
         cairo_restore(cr);
     }
 }
 
 int gonio_chart_hit(AppState *app, double w, double h,
-                    double px, double py, gboolean *on_close)
+                    double px, double py,
+                    gboolean *on_close, gboolean *on_resize)
 {
-    if (on_close) *on_close = FALSE;
+    if (on_close)  *on_close  = FALSE;
+    if (on_resize) *on_resize = FALSE;
     for (int i = app->gonio_chart_count - 1; i >= 0; i--) {   /* topmost first */
         GonioChart *gc = &app->gonio_charts[i];
         if (!gc->visible) continue;
@@ -228,6 +276,9 @@ int gonio_chart_hit(AppState *app, double w, double h,
         if (px < x || px > x + cw || py < y || py > y + ch) continue;
         if (on_close && px >= x + cw - GC_CLOSE_PX && py <= y + GC_CLOSE_PX)
             *on_close = TRUE;
+        else if (on_resize && px >= x + cw - GC_HANDLE_PX &&
+                              py >= y + ch - GC_HANDLE_PX)
+            *on_resize = TRUE;
         return i;
     }
     return -1;

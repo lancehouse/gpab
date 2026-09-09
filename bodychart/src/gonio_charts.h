@@ -44,6 +44,15 @@ void gonio_charts_rescan(AppState *app);
  * Returns NULL if the PNG can't be read. */
 cairo_surface_t *gonio_chart_get_surface(AppState *app, GonioChart *gc);
 
+/* Recovery for an over-enthusiastic hide/drag: unhide every chart, reset each
+ * to scale 1.0, and re-stagger them down the right side. Returns the number
+ * of charts. */
+int gonio_charts_reset_layout(AppState *app);
+
+/* Nudge the active chart's scale by `factor` (e.g. 1.1 / 0.9), clamped.
+ * No-op if there's no active chart. */
+void gonio_chart_bump_active_scale(AppState *app, double factor);
+
 /* Free every cached surface (on canvas_clear / session switch). Entries and
  * their placement stay; surfaces reload on next draw. */
 void gonio_charts_free_surfaces(AppState *app);
@@ -56,7 +65,9 @@ void gonio_charts_render(AppState *app, cairo_t *cr, double w, double h,
                          gboolean interactive);
 
 /* Hit-test in the `w` x `h` area. Returns the topmost visible chart index at
- * (px, py), or -1. If it lands on that chart's hide (x) badge, *on_close is
- * set TRUE. */
+ * (px, py), or -1. If the point lands on that chart's top-right hide (x)
+ * badge, *on_close is set TRUE; on its bottom-right resize grip, *on_resize
+ * is set TRUE. Either out-pointer may be NULL. */
 int gonio_chart_hit(AppState *app, double w, double h,
-                    double px, double py, gboolean *on_close);
+                    double px, double py,
+                    gboolean *on_close, gboolean *on_resize);
