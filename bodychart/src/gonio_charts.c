@@ -10,6 +10,25 @@
 #define GC_CLOSE_PX  22.0
 #define GC_HANDLE_PX 22.0
 
+/* Default tiled layout (fractions of the objective canvas). Charts land in a
+ * non-overlapping grid, filling left-to-right then wrapping to the next row
+ * — never cascaded/stacked. A chart at scale 1.0 is GONIO_CHART_BASE_FRAC
+ * (~0.28) wide, so three fit across; GC_TILE_DX/DY leave a small gutter.
+ * The user drags/scales from here; this is only the starting arrangement. */
+#define GC_TILE_COLS 3
+#define GC_TILE_MX   0.015    /* left margin  */
+#define GC_TILE_MY   0.030    /* top margin   */
+#define GC_TILE_DX   0.325    /* column pitch */
+#define GC_TILE_DY   0.240    /* row pitch    */
+
+static void gonio_tile_pos(int i, double *fx, double *fy)
+{
+    int col = i % GC_TILE_COLS;
+    int row = i / GC_TILE_COLS;
+    *fx = GC_TILE_MX + col * GC_TILE_DX;
+    *fy = GC_TILE_MY + row * GC_TILE_DY;
+}
+
 /* ── directory sync ─────────────────────────────────────────────────────── */
 
 static int find_chart(AppState *app, const char *base)
@@ -62,7 +81,6 @@ void gonio_charts_rescan(AppState *app)
 
     /* Mark-and-sweep: which existing entries still have a file. */
     gboolean seen[MAX_GONIO_CHARTS] = { FALSE };
-    int n_new = 0;
     for (guint k = 0; k < names->len; k++) {
         const char *base = g_ptr_array_index(names, k);
         int idx = find_chart(app, base);
@@ -71,19 +89,15 @@ void gonio_charts_rescan(AppState *app)
             continue;
         }
         if (app->gonio_chart_count >= MAX_GONIO_CHARTS) continue;
-        GonioChart *gc = &app->gonio_charts[app->gonio_chart_count];
+        int slot = app->gonio_chart_count;   /* next free grid cell */
+        GonioChart *gc = &app->gonio_charts[slot];
         memset(gc, 0, sizeof(*gc));
         g_strlcpy(gc->file, base, sizeof(gc->file));
-        /* Stagger new charts down the right side — over the lateral slots,
-         * which is where they replace the rarely-used lateral views, but
-         * free to be dragged anywhere afterwards. */
-        gc->fx      = fmin(0.68 + 0.015 * n_new, 0.90);
-        gc->fy      = fmin(0.04 + 0.15  * n_new, 0.70);
+        gonio_tile_pos(slot, &gc->fx, &gc->fy);   /* tiled, wraps to a new row */
         gc->scale   = 1.0;
         gc->visible = TRUE;
-        seen[app->gonio_chart_count] = TRUE;
+        seen[slot] = TRUE;
         app->gonio_chart_count++;
-        n_new++;
     }
     g_ptr_array_free(names, TRUE);
 
@@ -138,8 +152,7 @@ int gonio_charts_reset_layout(AppState *app)
         GonioChart *gc = &app->gonio_charts[i];
         gc->visible = TRUE;
         gc->scale   = 1.0;
-        gc->fx      = fmin(0.68 + 0.015 * i, 0.90);
-        gc->fy      = fmin(0.04 + 0.15  * i, 0.70);
+        gonio_tile_pos(i, &gc->fx, &gc->fy);
     }
     return app->gonio_chart_count;
 }
