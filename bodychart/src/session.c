@@ -66,6 +66,14 @@ static void render_all_views_export(AppState *app, cairo_t *cr)
         canvas_render_view(app, cr, SINGLE_VIEWS[slot],
                            SINGLE_W, SINGLE_H, EXPORT_ZOOM, 0.0, 0.0);
     }
+
+    /* Floating ROM charts sit above every panel — bake them in for the
+     * objective export at the same fractional positions as on screen. */
+    if (app->current_mode == APP_MODE_OBJECTIVE) {
+        double gw, gh;
+        export_dims(app, &gw, &gh);
+        gonio_charts_render(app, cr, gw, gh, FALSE);
+    }
 }
 
 /* Focus dims: quad uses fixed export size; single uses actual widget pixels.
@@ -122,6 +130,12 @@ static void render_all_views_focus(AppState *app, cairo_t *cr)
                            app->single_pan_x[slot],
                            app->single_pan_y[slot]);
     }
+
+    if (app->current_mode == APP_MODE_OBJECTIVE) {
+        double gw, gh;
+        focus_dims(app, &gw, &gh);
+        gonio_charts_render(app, cr, gw, gh, FALSE);
+    }
 }
 
 /* Live render (uses current zoom/pan — kept for SVG export). */
@@ -156,6 +170,12 @@ static void render_all_views_live(AppState *app, cairo_t *cr)
                            app->single_zoom[slot],
                            app->single_pan_x[slot],
                            app->single_pan_y[slot]);
+    }
+
+    if (app->current_mode == APP_MODE_OBJECTIVE) {
+        double gw, gh;
+        export_dims(app, &gw, &gh);
+        gonio_charts_render(app, cr, gw, gh, FALSE);
     }
 }
 

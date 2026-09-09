@@ -29,6 +29,7 @@ sources = files(
   'src/integration.c',
   'src/py_embed.c',
   'src/obj_chart.c',
+  'src/gonio_charts.c',
   'src/report.c',
   'src/svg_regions.c',
   'src/overlay_data/dermatomes.c',

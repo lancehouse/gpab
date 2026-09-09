@@ -653,6 +653,11 @@ static void on_mode_clicked(GtkButton *btn, gpointer data)
     app->current_mode = mode;
     persistence_write_session_current(app);
 
+    /* Entering Objective: pick up any goniometer charts imported by gpab's
+     * Ctrl+G since this session was opened (new PNGs appear, deleted drop). */
+    if (mode == APP_MODE_OBJECTIVE)
+        gonio_charts_rescan(app);
+
     update_toolbar_state(app);
     canvas_invalidate(app);
 }

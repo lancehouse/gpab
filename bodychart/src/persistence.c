@@ -219,6 +219,26 @@ static json_object *obj_ticks_to_json(AppState *app)
     return arr;
 }
 
+/* Goniometer ROM chart placement. The PNGs themselves are gpab-owned
+ * (<session_dir>/gonio_charts/); we persist only where the user parked each
+ * one. gonio_charts_rescan() reconciles this list with the files on disk
+ * after load. */
+static json_object *gonio_charts_to_json(AppState *app)
+{
+    json_object *arr = json_object_new_array();
+    for (int i = 0; i < app->gonio_chart_count; i++) {
+        const GonioChart *gc = &app->gonio_charts[i];
+        json_object *o = json_object_new_object();
+        json_object_object_add(o, "file",    json_object_new_string(gc->file));
+        json_object_object_add(o, "fx",      json_object_new_double(gc->fx));
+        json_object_object_add(o, "fy",      json_object_new_double(gc->fy));
+        json_object_object_add(o, "scale",   json_object_new_double(gc->scale));
+        json_object_object_add(o, "visible", json_object_new_boolean(gc->visible));
+        json_object_array_add(arr, o);
+    }
+    return arr;
+}
+
 /* ── Stroke clustering ────────────────────────────────────────────────────── *
  * Groups strokes into clusters: same SymptomType + same view + padded bbox   *
  * overlap (Option B — no point-to-point proximity).                          *
@@ -574,6 +594,7 @@ gboolean persistence_save(AppState *app)
     json_object_object_add(obj, "points", obj_points_to_json(app));
     json_object_object_add(obj, "ticks",  obj_ticks_to_json(app));
     json_object_object_add(obj, "pencil_strokes", strokes_to_json(app->obj_pencil_strokes));
+    json_object_object_add(obj, "gonio_charts", gonio_charts_to_json(app));
     json_object_object_add(root, "objective", obj);
     json_object_object_add(root, "neuro", json_object_new_object());
 
@@ -844,6 +865,27 @@ static void load_obj_data(AppState *app, json_object *obj_j)
                 stroke_free(sk);
         }
     }
+
+    /* Goniometer ROM chart placement — restore saved positions; a following
+     * gonio_charts_rescan() (persistence_load's tail) reconciles this list
+     * against the PNGs actually present in <session_dir>/gonio_charts/. */
+    app->gonio_chart_count = 0;
+    json_object *gc_arr;
+    if (json_object_object_get_ex(obj_j, "gonio_charts", &gc_arr)) {
+        int n = (int)json_object_array_length(gc_arr);
+        for (int i = 0; i < n && app->gonio_chart_count < MAX_GONIO_CHARTS; i++) {
+            json_object *o = json_object_array_get_idx(gc_arr, i);
+            const char *file = js(o, "file");
+            if (!file || !file[0]) continue;
+            GonioChart *gc = &app->gonio_charts[app->gonio_chart_count++];
+            memset(gc, 0, sizeof(*gc));
+            g_strlcpy(gc->file, file, sizeof(gc->file));
+            gc->fx      = jd(o, "fx", 0.70);
+            gc->fy      = jd(o, "fy", 0.05);
+            gc->scale   = jd(o, "scale", 1.0);
+            gc->visible = jb(o, "visible", TRUE);
+        }
+    }
 }
 
 gboolean persistence_load(AppState *app, const char *path)
@@ -920,6 +962,7 @@ gboolean persistence_load(AppState *app, const char *path)
     json_object *subj;
     if (!json_object_object_get_ex(root, "subjective", &subj)) {
         json_object_put(root);
+        gonio_charts_rescan(app);   /* session_dir is set by now */
         return TRUE;  /* empty but valid */
     }
 
@@ -1137,6 +1180,10 @@ gboolean persistence_load(AppState *app, const char *path)
     }
 
     json_object_put(root);
+
+    /* Reconcile restored gonio-chart placement with the PNGs on disk
+     * (new imports since last save appear; deleted ones drop out). */
+    gonio_charts_rescan(app);
 
     /* Invalidate per-view stroke caches: strokes/arrows changed. */
     app->stroke_version++;

@@ -2369,6 +2369,22 @@ static GtkWidget *make_drawing_area(AppState *app, ColData *cd,
     return vbox;
 }
 
+/* ── Floating goniometer-chart overlay layer ───────────────────────────── *
+ * A transparent GtkDrawingArea sitting in a GtkOverlay above the whole
+ * canvas stack, so ROM charts float over all four panels and the inter-
+ * panel gutters with no clipping. Display only for now (can-target FALSE);
+ * chart dragging is handled from the per-panel gesture handlers in a later
+ * step, translating their local coords into this layer's space.            */
+static void on_gonio_layer_draw(GtkDrawingArea *da, cairo_t *cr,
+                                int width, int height, gpointer user_data)
+{
+    (void)da;
+    AppState *app = user_data;
+    if (app->current_mode != APP_MODE_OBJECTIVE) return;
+    if (app->gonio_chart_count == 0) return;
+    gonio_charts_render(app, cr, (double)width, (double)height, TRUE);
+}
+
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
 GtkWidget *canvas_new(AppState *app)
@@ -2377,6 +2393,8 @@ GtkWidget *canvas_new(AppState *app)
     app->link_drag_active     = FALSE;
     app->legend_drag_active   = FALSE;
     app->obj_point_drag_idx   = -1;
+    app->gonio_chart_active_idx = -1;
+    app->gonio_chart_drag_idx   = -1;
     if (app->legend_bx == 0.0 && app->legend_by == 0.0) {
         app->legend_bx = 135.0;
         app->legend_by = 378.0;
@@ -2480,7 +2498,22 @@ GtkWidget *canvas_new(AppState *app)
     app->current_view = VIEW_ANTERIOR;
     app->canvas       = stack;
 
-    return stack;
+    /* Wrap the stack in an overlay carrying the floating ROM-chart layer.
+     * canvas_set_layout() still drives app->canvas (the stack) directly, so
+     * layout switching is unaffected. */
+    GtkWidget *overlay = gtk_overlay_new();
+    gtk_overlay_set_child(GTK_OVERLAY(overlay), stack);
+
+    GtkWidget *layer = gtk_drawing_area_new();
+    gtk_widget_set_can_target(layer, FALSE);          /* display only (step D-2) */
+    gtk_widget_set_hexpand(layer, TRUE);
+    gtk_widget_set_vexpand(layer, TRUE);
+    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(layer),
+                                   on_gonio_layer_draw, app, NULL);
+    gtk_overlay_add_overlay(GTK_OVERLAY(overlay), layer);
+    app->gonio_layer_da = layer;
+
+    return overlay;
 }
 
 void canvas_set_layout(AppState *app, LayoutMode mode)
@@ -2509,6 +2542,7 @@ void canvas_invalidate(AppState *app)
         if (app->col_da[i])    gtk_widget_queue_draw(app->col_da[i]);
         if (app->single_da[i]) gtk_widget_queue_draw(app->single_da[i]);
     }
+    if (app->gonio_layer_da) gtk_widget_queue_draw(app->gonio_layer_da);
 }
 
 void canvas_clear(AppState *app)
@@ -2531,6 +2565,10 @@ void canvas_clear(AppState *app)
     app->obj_point_count = 0;
     app->obj_tick_count = 0;
     app->obj_undo_type_top = 0;
+    gonio_charts_free_surfaces(app);
+    app->gonio_chart_count      = 0;
+    app->gonio_chart_active_idx = -1;
+    app->gonio_chart_drag_idx   = -1;
     stroke_list_clear(app->obj_pencil_strokes);
     if (app->obj_active_zone) {
         obj_zone_free(app->obj_active_zone);
