@@ -11,21 +11,23 @@
 #define GC_HANDLE_PX 22.0
 
 /* Default tiled layout (fractions of the objective canvas). Charts land in a
- * non-overlapping grid, filling left-to-right then wrapping to the next row
- * — never cascaded/stacked. A chart at scale 1.0 is GONIO_CHART_BASE_FRAC
- * (~0.28) wide, so three fit across; GC_TILE_DX/DY leave a small gutter.
- * The user drags/scales from here; this is only the starting arrangement. */
-#define GC_TILE_COLS 3
-#define GC_TILE_MX   0.015    /* left margin  */
-#define GC_TILE_MY   0.030    /* top margin   */
-#define GC_TILE_DX   0.325    /* column pitch */
-#define GC_TILE_DY   0.240    /* row pitch    */
+ * non-overlapping grid anchored to the RIGHT edge: fill the rightmost column
+ * top-to-bottom (GC_TILE_ROWS per column), then step one column left and
+ * fill that, and so on toward the middle — never cascaded/stacked. A chart
+ * at scale 1.0 is GONIO_CHART_BASE_FRAC (~0.28) wide. The user drags/scales
+ * from here; this is only the starting arrangement. */
+#define GC_TILE_ROWS 4       /* charts per column before stepping left */
+#define GC_TILE_MR   0.015   /* right margin */
+#define GC_TILE_MY   0.030   /* top margin   */
+#define GC_TILE_DX   0.325   /* column pitch, leftward */
+#define GC_TILE_DY   0.240   /* row pitch, downward    */
 
 static void gonio_tile_pos(int i, double *fx, double *fy)
 {
-    int col = i % GC_TILE_COLS;
-    int row = i / GC_TILE_COLS;
-    *fx = GC_TILE_MX + col * GC_TILE_DX;
+    int row = i % GC_TILE_ROWS;
+    int col = i / GC_TILE_ROWS;          /* 0 = rightmost column, grows leftward */
+    double x = 1.0 - GC_TILE_MR - GONIO_CHART_BASE_FRAC - col * GC_TILE_DX;
+    *fx = x < 0.01 ? 0.01 : x;           /* clamp the (unlikely) 12+-chart case */
     *fy = GC_TILE_MY + row * GC_TILE_DY;
 }
 
