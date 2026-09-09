@@ -6,6 +6,7 @@
 #include "body_outlines.h"
 #include "input.h"
 #include "obj_chart.h"
+#include "gonio_charts.h"
 #include "report.h"
 #include "svg_regions.h"
 
@@ -54,6 +55,7 @@ struct _AppState {
     /* Main window */
     GtkWidget       *window;
     GtkWidget       *canvas;        /* GtkStack */
+    GtkWidget       *gonio_layer_da; /* transparent GtkOverlay child: floating ROM charts */
 
     /* View / layout */
     BodyView         current_view;
@@ -238,6 +240,22 @@ struct _AppState {
     int     obj_point_drag_idx;
     double  obj_point_drag_bx_off;
     double  obj_point_drag_by_off;
+
+    /* ── Goniometer ROM charts (free-floating over the Objective canvas) ──── *
+     * PNGs owned by gpab's Ctrl+G import (<session_dir>/gonio_charts/);
+     * bodychart persists only placement, in _session.json's
+     * objective.gonio_charts[]. See gonio_charts.h. */
+    GonioChart gonio_charts[MAX_GONIO_CHARTS];
+    int        gonio_chart_count;
+    int        gonio_chart_active_idx;      /* last touched — highlighted, +/- target; -1 none */
+    int        gonio_chart_drag_idx;        /* -1 = none */
+    double     gonio_chart_drag_fx_off;     /* move: chart fx/fy minus pointer fraction */
+    double     gonio_chart_drag_fy_off;
+    gboolean   gonio_chart_resizing;        /* TRUE = drag is a corner-resize, not a move */
+    double     gonio_chart_rs_start_scale;  /* scale at resize-drag start */
+    double     gonio_chart_rs_start_w;      /* drawn width (layer px) at resize-drag start */
+    double     gonio_chart_rs_origin_gx;    /* chart top-left (layer px) — fixed during resize */
+    double     gonio_chart_rs_origin_gy;
 
     /* Stroke cache version counter — incremented whenever committed strokes
      * or arrows change (stroke commit/undo/clear/load, arrow add/delete).

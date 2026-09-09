@@ -8,9 +8,10 @@ project with its own `dev`/`main` branch rules and `pabd`/`pab` launchers — se
 `CLAUDE.md`) specifically so early work here could never risk the working `pab` install; that
 provenance is still true and still matters (see the isolation guarantee below), but it's a
 technical fact about how this repo is set up, not a statement that this is somehow less real than
-`pab`. This repo has no remote, and its `dev` branch is just an artifact of being cloned from
-`pab` — nothing done here can reach production, and there is no plan to merge back (see
-"Permanent end state" below).
+`pab`. This repo's only remote is `origin` — a private GitHub backup (`github.com/lancehouse/gpab`,
+added 2026-09-07); it still has no link to `pab` or `kb`. Its `dev` branch is just an artifact of
+being cloned from `pab` — nothing done here can reach production, and there is no plan to merge
+back (see "Permanent end state" below).
 
 **Why this project exists:** the TUI works well with keyboard/mouse but is slow on the
 touchscreen of the Lenovo Yoga this runs on, especially in the Objective examination tabs. An
@@ -30,9 +31,10 @@ guarantee below for exactly what that does and doesn't change.
 
 ## Isolation guarantee — read before touching anything here
 
-- **This is a `git clone` of `~/Projects/pab`, with its own independent `.git` and no remote.**
-  (`git remote -v` returns nothing — confirm this hasn't changed before doing anything risky.)
-  It cannot push to, pull from, or otherwise affect the real `pab` or `kb` repos.
+- **This is a `git clone` of `~/Projects/pab`, with its own independent `.git`.** Its one remote,
+  `origin`, is a private GitHub backup (`github.com/lancehouse/gpab`) and nothing else — it cannot
+  push to, pull from, or otherwise affect the real `pab` or `kb` repos. (`git remote -v` should
+  show only that `origin` — anything else is unexpected; confirm before doing anything risky.)
 - `assessment/` in this clone is a **read-only reference copy** — the actual TUI source, kept so
   the conversion has something authoritative to port from and compare against. Never edit it; if a
   fix is needed, it needs to happen in the real `~/Projects/pab` separately, by hand, later — not

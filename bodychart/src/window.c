@@ -67,6 +67,32 @@ static gboolean on_key_pressed(GtkEventControllerKey *ctrl,
         return TRUE;
     }
 
+    /* Objective-mode goniometer-chart keys. Ctrl+Shift+G unhides + re-lays
+     * out every chart (recovery after an accidental hide/drag). +/- resize
+     * whichever chart was last touched. */
+    if (app->current_mode == APP_MODE_OBJECTIVE) {
+        if ((mods & GDK_CONTROL_MASK) && (mods & GDK_SHIFT_MASK) &&
+            (keyval == GDK_KEY_g || keyval == GDK_KEY_G)) {
+            gonio_charts_reset_layout(app);
+            canvas_invalidate(app);
+            return TRUE;
+        }
+        if (app->gonio_chart_active_idx >= 0 &&
+            (keyval == GDK_KEY_plus || keyval == GDK_KEY_equal ||
+             keyval == GDK_KEY_KP_Add)) {
+            gonio_chart_bump_active_scale(app, 1.10);
+            canvas_invalidate(app);
+            return TRUE;
+        }
+        if (app->gonio_chart_active_idx >= 0 &&
+            (keyval == GDK_KEY_minus || keyval == GDK_KEY_underscore ||
+             keyval == GDK_KEY_KP_Subtract)) {
+            gonio_chart_bump_active_scale(app, 0.90);
+            canvas_invalidate(app);
+            return TRUE;
+        }
+    }
+
     return input_key_pressed(app, keyval, mods);
 }
 
@@ -652,6 +678,11 @@ static void on_mode_clicked(GtkButton *btn, gpointer data)
     window_autosave(app);
     app->current_mode = mode;
     persistence_write_session_current(app);
+
+    /* Entering Objective: pick up any goniometer charts imported by gpab's
+     * Ctrl+G since this session was opened (new PNGs appear, deleted drop). */
+    if (mode == APP_MODE_OBJECTIVE)
+        gonio_charts_rescan(app);
 
     update_toolbar_state(app);
     canvas_invalidate(app);

@@ -35,11 +35,25 @@ _SIDE_WORDS = {
 
 @dataclass
 class Measurement:
-    """One kept measurement from a goniometer .gonio.json session file."""
+    """One kept measurement from a goniometer export.
+
+    The old flat ``.gonio.json`` (importer.load_gonio_measurements) fills only
+    the first four fields; the new ``.gonio.zip`` manifest
+    (importer.load_gonio_bundle) fills the rest. Everything past ``rom_type``
+    is defaulted so a flat-format load still constructs, and every consumer
+    that only reads ``primary_range_deg`` keeps working unchanged.
+    """
     index: int
     label: str
     primary_range_deg: float
     rom_type: str = "AROM"  # "AROM" or "PROM" — see importer.load_gonio_measurements
+    # ── from the .gonio.zip manifest only (bundle_schema >= 1) ──────────────
+    min_deg: float | None = None            # primary-channel low vs baseline (signed)
+    max_deg: float | None = None            # primary-channel high vs baseline (signed)
+    deficit_to_full_deg: float | None = None
+    mark_count: int = 0
+    marks_deg: list[float] = dataclass_field(default_factory=list)  # manifest schema 2+; null slots dropped on load
+    chart_png: str | None = None            # zip-relative path, or None
 
 
 @dataclass
@@ -157,6 +171,32 @@ class GroupedValue:
     source_indices: list[int]  # measurement indices contributing, chronological
 
 
+def format_measurement_value(m: Measurement) -> str:
+    """The string written into a pab AROM/PROM field for ONE measurement —
+    the single source of truth, called from group_resolved() (joined-repeats
+    path), the wizard's raw-override path, and the wizard's row preview so all
+    three always agree. Repeats of the same field are ' // '-joined by
+    group_resolved(); this formats one contribution only.
+
+    Format (user, 2026-09-07 — see gpab/GONIO_INTEGRATION_PLAN.md §C):
+      marks present         "110 (-8->102) ; 43 ; 98"
+      min/max, no marks      "110 (-8->102)"
+      neither (schema-1      "110"
+        bundle or flat
+        .gonio.json)
+
+    '->' is literal ASCII. No degree symbol. lo/hi are signed and may be
+    negative. Every printed number is round()ed exactly once here.
+    """
+    rng = round(m.primary_range_deg)
+    if m.min_deg is None or m.max_deg is None:
+        return str(rng)
+    swept = f"{rng} ({round(m.min_deg)}->{round(m.max_deg)})"
+    if not m.marks_deg:
+        return swept
+    return swept + "".join(f" ; {round(x)}" for x in m.marks_deg)
+
+
 def group_resolved(results: list[MatchResult]) -> list[GroupedValue]:
     """Groups every RESOLVED result by (section_key, field_id), joining
     repeats chronologically as whole-number degrees with ' // ' — pab's own
@@ -183,7 +223,7 @@ def group_resolved(results: list[MatchResult]) -> list[GroupedValue]:
     for section_key, fid in order:
         items = buckets[(section_key, fid)]
         items.sort(key=lambda r: r.measurement.index)
-        values = [str(round(r.measurement.primary_range_deg)) for r in items]
+        values = [format_measurement_value(r.measurement) for r in items]
         first = items[0]
         assert first.field is not None
         side_suffix = ""

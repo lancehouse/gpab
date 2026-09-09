@@ -52,7 +52,7 @@ from gi.repository import Gtk, Gdk, Pango  # noqa: E402
 from .field_dictionary_active import ROM_FIELDS
 from .field_dictionary_passive import ROM_FIELDS as PASSIVE_ROM_FIELDS
 from .importer import InboxPatientSummary
-from .matcher import GroupedValue, MatchResult, group_resolved
+from .matcher import GroupedValue, MatchResult, format_measurement_value, group_resolved
 from .rom_field import RomField
 
 _SIDE_LABEL = {"l": "L", "r": "R", None: ""}
@@ -253,7 +253,10 @@ class GonioImportWizard(Gtk.Window):
             target = f"{row.field.region.capitalize()} {row.field.movement}" + (f" ({side})" if side else "")
         else:
             target = "— needs review —"
-        value = f"{round(row.result.measurement.primary_range_deg)}°"
+        # Preview EXACTLY what Apply will write for this one measurement
+        # (repeats still get ' // '-joined downstream) — same helper, so the
+        # review row and the stored value can never disagree.
+        value = format_measurement_value(row.result.measurement)
         label_text = row.result.measurement.label or "(no label)"
 
         hrow = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -282,7 +285,9 @@ class GonioImportWizard(Gtk.Window):
         hrow.append(target_lbl)
 
         value_lbl = Gtk.Label(label=value)
-        value_lbl.set_size_request(60, -1)
+        value_lbl.set_size_request(200, -1)  # wide enough for "110 (-8->102) ; 43 ; 98"
+        value_lbl.set_halign(Gtk.Align.START)
+        value_lbl.set_ellipsize(Pango.EllipsizeMode.END)
         hrow.append(value_lbl)
 
         return hrow
@@ -358,7 +363,7 @@ class GonioImportWizard(Gtk.Window):
                 region=region_guess,
                 section_key=row.result.section_key,
                 display_label=f"(override) {field_id}",
-                joined_value=str(round(row.result.measurement.primary_range_deg)),
+                joined_value=format_measurement_value(row.result.measurement),
                 source_indices=[row.result.measurement.index],
             ))
 
