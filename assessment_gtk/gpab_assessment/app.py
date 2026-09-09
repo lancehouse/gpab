@@ -1014,6 +1014,7 @@ class TrialWindow(Gtk.ApplicationWindow):
         combined = []
         offset = 0
         unreadable: list[str] = []
+        chart_sources: dict[int, tuple[Path, str]] = {}  # measurement.index -> (zip, png entry)
         for f in files:
             try:
                 _, measurements = gonio_importer.load_gonio_export(f)  # .gonio.zip or flat .gonio.json
@@ -1022,8 +1023,11 @@ class TrialWindow(Gtk.ApplicationWindow):
                 # handler — skip it, keep going with whatever else loaded.
                 unreadable.append(f.name)
                 continue
+            is_bundle = f.name.endswith(".gonio.zip")
             for m in measurements:
                 m.index += offset
+                if is_bundle and m.chart_png:
+                    chart_sources[m.index] = (f, m.chart_png)
             combined.extend(measurements)
             offset += len(measurements)
 
@@ -1054,11 +1058,22 @@ class TrialWindow(Gtk.ApplicationWindow):
                 self._do_save_obj()
 
             gonio_importer.apply_grouped_values(self.session_file, grouped)
+
+            # Extract the chart PNG for every measurement that landed a field
+            # value into <session>/gonio_charts/, WHILE the zips are still at
+            # their inbox path (archive_imported_file below moves them). The
+            # bodychart side (Part D) discovers them by globbing that dir.
+            resolved_idx = {i for g in grouped for i in g.source_indices}
+            charts = gonio_importer.extract_charts(self.session_file, chart_sources, resolved_idx)
+
             for f in files:
                 gonio_importer.archive_imported_file(f)
 
             verb = "Re-imported" if reimporting else "Imported"
-            self.save_status.set_label(f"{verb} {len(grouped)} ROM field(s) for {patient_code}")
+            extra = f", {len(charts)} chart(s)" if charts else ""
+            skipped = f" ({len(unreadable)} file(s) skipped)" if unreadable else ""
+            self.save_status.set_label(
+                f"{verb} {len(grouped)} ROM field(s){extra} for {patient_code}{skipped}")
 
             # Reload everything from disk so the new values show immediately
             # — same path used for opening a session, and the only way the

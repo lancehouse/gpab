@@ -38,6 +38,7 @@ tree) — mirrors tui.py's action_import_gonio exactly.
 from __future__ import annotations
 
 import json
+import logging
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,8 @@ from pathlib import Path
 from .. import pab_path_bootstrap  # noqa: F401  (sys.path side effect)
 from pab_assessment import storage  # noqa: E402
 from .matcher import GroupedValue, Measurement
+
+logger = logging.getLogger(__name__)
 
 INBOX_ROOT = Path.home() / "PAB" / "_inbox" / "goniometer"
 
@@ -222,6 +225,86 @@ def apply_grouped_values(session_file: str, grouped: list[GroupedValue]) -> None
     payload["active_regions"] = list(active_regions)
 
     storage.save_objective(session_file, payload, sections_complete)
+
+
+def extract_charts(
+    session_file: str,
+    chart_sources: dict[int, tuple[Path, str]],
+    keep_indices: set[int],
+) -> list[str]:
+    """Copy the rendered chart PNG for every RESOLVED measurement out of its
+    .gonio.zip into ``<session dir>/gonio_charts/``. Returns the basenames
+    written, in no particular order.
+
+    Runs at Apply time, AFTER apply_grouped_values and BEFORE
+    archive_imported_file — the zips must still be at their inbox path here
+    (archiving moves them). Only measurements that actually landed a field
+    value get a chart, so a half-reviewed import doesn't scatter unrelated
+    graphs onto the bodychart.
+
+    Args:
+      chart_sources: measurement.index -> (zip_path, zip-relative png entry),
+        built by the caller while loading each bundle. Flat .gonio.json
+        measurements never appear (that format carries no charts).
+      keep_indices: the measurement indices that resolved to a field on
+        Apply — the union of every GroupedValue.source_indices.
+
+    Destination is a dedicated subdir, never the session root: bodychart
+    writes subj.png / obj.png / combined.png etc. straight into the root and
+    a bare NN_*.png could collide. Writes are temp+rename; re-apply
+    overwrites in place (idempotent, same contract as the field write). The
+    PNG filenames themselves are the only handoff the C/bodychart side needs
+    — ``NN_<slug>_<AROM|PROM>.png`` already encodes index, label and mode.
+    """
+    wanted: dict[Path, list[str]] = {}
+    deselected: set[str] = set()  # basenames this import carried but did NOT resolve this pass
+    for idx, (zip_path, entry) in chart_sources.items():
+        if not entry:
+            continue
+        if idx in keep_indices:
+            wanted.setdefault(zip_path, []).append(entry)
+        else:
+            deselected.add(Path(entry).name)
+
+    dest_dir = Path(session_file).parent / "gonio_charts"
+
+    # Re-apply cleanup: if a measurement that got a chart last time was
+    # deselected in the wizard this time, drop its stale PNG so Part D's
+    # rescan doesn't resurrect it. Scoped to THIS import's own bundles only —
+    # PNGs from other visits' imports sharing gonio_charts/ are never touched.
+    keep_bases = {Path(e).name for es in wanted.values() for e in es}
+    if dest_dir.is_dir():
+        for base in deselected - keep_bases:
+            stale = dest_dir / base
+            try:
+                if stale.is_file():
+                    stale.unlink()
+                    logger.info("gonio chart pruned (deselected on re-apply): %s", base)
+            except OSError as e:
+                logger.warning("could not prune gonio chart %s: %s", base, e)
+
+    if not wanted:
+        return []
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    written: list[str] = []
+    for zip_path, entries in wanted.items():
+        try:
+            with zipfile.ZipFile(zip_path) as zf:
+                names = set(zf.namelist())
+                for entry in entries:
+                    if entry not in names:
+                        logger.warning("gonio chart %s not in %s", entry, zip_path.name)
+                        continue
+                    base = Path(entry).name
+                    tmp = dest_dir / (base + ".tmp")
+                    tmp.write_bytes(zf.read(entry))
+                    tmp.replace(dest_dir / base)
+                    written.append(base)
+        except (zipfile.BadZipFile, OSError) as e:
+            # Field values are already written; charts are best-effort.
+            logger.warning("gonio chart extract from %s failed: %s", zip_path.name, e)
+    return written
 
 
 def archive_imported_file(path: Path) -> None:
