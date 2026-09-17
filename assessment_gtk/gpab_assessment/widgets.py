@@ -758,9 +758,29 @@ class AutoTextView(Gtk.ScrolledWindow):
     internal scroll beyond that), just driven by measurement instead of a
     static CSS rule since GTK has no height:auto equivalent for TextView.
     expand=False: the old fixed-height-and-scroll behaviour — used only by
-    the F10 notes overlay, which is deliberately a small fixed-size panel
-    docked at the bottom of the window, not a field that should push the
-    rest of the form around as it's typed into.
+    the F10 notes panel, which is deliberately a small fixed-size panel
+    (now the resizable Ctrl+K-style side slot, not a field that should push
+    the rest of the form around as it's typed into.
+
+    grid_nav=True (default, matching every section's field): the
+    Up/Down/Left/Right boundary-crossing interception described above.
+    grid_nav=False — used only by the F10 notes panel, which sits in its
+    own side-panel slot with no adjacent grid cell to hand off to — skips
+    that interception entirely so arrow keys are pure native GtkTextView
+    behaviour. Needed because the boundary check compares LOGICAL lines
+    (get_line()), not wrapped/visual rows: on a long word-wrapped final
+    paragraph, the logical-line check matches while the cursor is still on
+    an earlier visual row of that paragraph, so Down got swallowed (emitted
+    an unlistened "navigate" signal) one visual row before the real end —
+    found live 2026-09-17 as "stuck one line above the bottom" in the notes
+    panel, which has no grid to navigate into anyway.
+
+    accepts_tab=False (default, matching every section's field): Tab always
+    moves focus, never inserts a literal tab character, so keyboard tab
+    order is consistent everywhere else in the app. accepts_tab=True — used
+    only by the F10 notes panel per direct request 2026-09-17: it should
+    behave like a plain standalone text editor (Tab types a tab), not like
+    a form field participating in the rest of gpab's tab order.
     """
 
     __gsignals__ = {
@@ -769,10 +789,12 @@ class AutoTextView(Gtk.ScrolledWindow):
 
     _LINE_PX = 22  # matches the estimate min_lines*22/max_lines*22 always used here
 
-    def __init__(self, field_id: str, min_lines: int = 2, max_lines: int = 20, expand: bool = True) -> None:
+    def __init__(self, field_id: str, min_lines: int = 2, max_lines: int = 20, expand: bool = True,
+                 grid_nav: bool = True, accepts_tab: bool = False) -> None:
         super().__init__()
         self.field_id = field_id
         self._expand = expand
+        self._grid_nav = grid_nav
         self._min_h = min_lines * self._LINE_PX
         self._max_h = max_lines * self._LINE_PX
         self.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -782,7 +804,7 @@ class AutoTextView(Gtk.ScrolledWindow):
 
         self.textview = Gtk.TextView()
         self.textview.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self.textview.set_accepts_tab(False)  # critical: Tab must move focus, not insert \t
+        self.textview.set_accepts_tab(accepts_tab)
         self.textview.set_top_margin(4)
         self.textview.set_bottom_margin(4)
         self.textview.set_left_margin(6)
@@ -823,6 +845,8 @@ class AutoTextView(Gtk.ScrolledWindow):
     def _on_key_pressed(self, _ctrl, keyval, _keycode, _state) -> bool:
         if _is_autocorrect_trigger(keyval):
             self._maybe_autocorrect()
+        if not self._grid_nav:
+            return False
         name = Gdk.keyval_name(keyval) or ""
         if name not in ("Up", "Down", "Left", "Right"):
             return False

@@ -2735,6 +2735,22 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
                       f"**Session ID:** {data.get('session_name', '')}  ",
                       ""])
 
+    # Plain Language Summary — the F10 notes-panel freeform text. Moved to
+    # the very top of the report 2026-09-17 (was "Scratchpad Notes" at the
+    # very bottom, after Rx & Plan) per direct request: it should be the
+    # first thing anyone reading the report sees, right after the date and
+    # before Subjective. clean+empty emits nothing at all (heading included)
+    # — matches every other clean-mode section's "omit if no data" rule.
+    pls = a.get("scratchpad", {}) or {}
+    pls_notes = (pls.get("notes") or "").strip()
+    if pls_notes or not clean:
+        lines.append("\n## Plain Language Summary\n")
+        if pls_notes:
+            for row in pls_notes.split("\n"):
+                lines.append((row + "  ") if (clean and row.strip()) else row)
+        else:
+            lines.append("*(empty)*")
+
     lines.append("\n# S — Subjective\n")
 
     # ════════════════════════════════════════════════════════════════════════
@@ -3846,18 +3862,6 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     f("ps_audit_dudit",    rp)
 
     # ════════════════════════════════════════════════════════════════════════
-    # SCRATCHPAD
-    # ════════════════════════════════════════════════════════════════════════
-    sp = a.get("scratchpad", {}) or {}
-    sec("Scratchpad Notes")
-    notes = (sp.get("notes") or "").strip()
-    if notes:
-        for row in notes.split("\n"):
-            _emit((row + "  ") if (clean and row.strip()) else row)
-    elif not clean:
-        _emit("*(empty)*")
-
-    # ════════════════════════════════════════════════════════════════════════
     # BODY CHART SUMMARY — omitted in clean mode
     # ════════════════════════════════════════════════════════════════════════
     if not clean:
@@ -4499,6 +4503,19 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     title = "PHYSIOTHERAPY ASSESSMENT — ENTERED DATA" if clean else "PHYSIOTHERAPY ASSESSMENT — FULL RAW DATA"
     lines.extend([SEP, title, f"Patient:    {preferred_name}", f"Date:       {date_str}",
                   f"Region:     {regions}", f"Session ID: {session_name}", SEP])
+
+    # Plain Language Summary — see export_session_report's identical block
+    # for why this moved to the top (2026-09-17, was "SCRATCHPAD NOTES" at
+    # the very bottom).
+    pls = a.get("scratchpad", {}) or {}
+    pls_notes = (pls.get("notes") or "").strip()
+    if pls_notes or not clean:
+        lines.extend(["", SEP, "PLAIN LANGUAGE SUMMARY", SEP])
+        if pls_notes:
+            for row in pls_notes.split("\n"):
+                lines.append(f"  {row}")
+        else:
+            lines.append("  (empty)")
 
     lines.extend(["", SEP, "S — SUBJECTIVE", SEP])
 
@@ -5592,18 +5609,6 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     f("ps_isi_pbas",       rp)
     f("ps_csi",            rp)
     f("ps_audit_dudit",    rp)
-
-    # ════════════════════════════════════════════════════════════════════════
-    # SCRATCHPAD
-    # ════════════════════════════════════════════════════════════════════════
-    sp = a.get("scratchpad", {}) or {}
-    sec("SCRATCHPAD NOTES")
-    notes = (sp.get("notes") or "").strip()
-    if notes:
-        for row in notes.split("\n"):
-            _emit(f"  {row}")
-    elif not clean:
-        _emit("  (empty)")
 
     # ════════════════════════════════════════════════════════════════════════
     # BODY CHART SUMMARY

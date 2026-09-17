@@ -70,7 +70,11 @@ class KBPanel(Gtk.ScrolledWindow):
         self.set_hexpand(True)
         self.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.add_css_class("kb-panel")
-        self.set_visible(False)
+        # No set_visible(False) here: app.py mounts this inside a shared
+        # Gtk.Stack (self.side_panel_stack, alongside the notes panel) and
+        # controls overall show/hide at the STACK's visibility, not this
+        # widget's own — a Gtk.Stack child must stay widget-visible=True to
+        # ever be selectable as the visible child at all.
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         content.set_margin_top(8)
