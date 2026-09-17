@@ -43,7 +43,7 @@ from .objective.region_section import RegionTabContent
 from .objective.region_topbar import RegionTopbar
 from .objective.objective_nav import ObjectiveNav
 from .objective.kb_panel import KBPanel
-from .objective.kb_loader import get_registry
+from .objective.kb_loader import get_registry, is_global_db_field
 from .objective.kb_db_screen import KBDBWindow
 from .search import build_index, find_by_field_id, find_by_anchor_id
 from .search_widget import SearchModal
@@ -283,37 +283,53 @@ class TrialWindow(Gtk.ApplicationWindow):
         content_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         content_column.set_hexpand(True)
 
-        # -- Ctrl+K knowledge-base panel: right-hand side, hidden until
-        # toggled, shown across every tab (mirrors the TUI's KBPanel being
-        # mounted once at AssessmentView level, not per-section). Content
-        # only updates while in Objective mode (see _on_focus_changed) —
-        # matches the TUI, where the focus hook lives on
-        # ObjectiveAssessmentView, not the whole app.
+        # -- Ctrl+K knowledge-base panel and F10 notes panel: right-hand
+        # side, hidden until toggled, shown across every tab (mirrors the
+        # TUI's KBPanel being mounted once at AssessmentView level, not
+        # per-section). Content only updates while in Objective mode (see
+        # _on_focus_changed) — matches the TUI, where the focus hook lives
+        # on ObjectiveAssessmentView, not the whole app.
         #
-        # content_column/kb_panel share a Gtk.Paned rather than plain Box
-        # slots: a plain Box honours each child's minimum size literally, so
-        # giving the panel a ~50%-of-window width floor (KBPanel.KB_PANEL_WIDTH)
-        # forced the WHOLE WINDOW wider than the screen once the panel was
-        # toggled on (confirmed live — windowed mode grew past screen width,
+        # KB and notes share ONE slot (self.side_panel_stack) rather than
+        # each getting their own paned end child: per direct feedback, the
+        # user is content not having both open at once — opening one should
+        # just replace whichever was showing in that same location, exactly
+        # like a Gtk.Stack's single visible-child model already does. The
+        # stack's own visibility is the "panel hidden entirely" toggle;
+        # which named child is current is the "which panel" toggle — see
+        # _show_side_panel/_hide_side_panel.
+        #
+        # content_column/side_panel_stack share a Gtk.Paned rather than
+        # plain Box slots: a plain Box honours each child's minimum size
+        # literally, so giving the panel a ~50%-of-window width floor
+        # forced the WHOLE WINDOW wider than the screen once toggled on
+        # (confirmed live — windowed mode grew past screen width,
         # fullscreen cut off the sidebar). A Paned's divider is draggable and
         # only enforces each side's own small natural minimum, so the window
         # never has to grow to fit it — the panel gets its nominal share when
         # there's room and shrinks (draggable, not just automatic) when there
         # isn't, with no horizontal scrolling either way.
         self.kb_panel = KBPanel()
+        self.notes_overlay = NotesOverlay()
+        self.notes_overlay.connect_changed(self._on_notes_changed)
+        self.side_panel_stack = Gtk.Stack()
+        self.side_panel_stack.set_transition_type(Gtk.StackTransitionType.NONE)
+        self.side_panel_stack.add_named(self.kb_panel, "kb")
+        self.side_panel_stack.add_named(self.notes_overlay, "notes")
+        self.side_panel_stack.set_visible(False)
         self.main_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self.main_paned.set_hexpand(True)
         self.main_paned.set_start_child(content_column)
         self.main_paned.set_resize_start_child(True)
         self.main_paned.set_shrink_start_child(True)
-        self.main_paned.set_end_child(self.kb_panel)
-        # resize=True: the KB panel's pixel width should track window size
+        self.main_paned.set_end_child(self.side_panel_stack)
+        # resize=True: the side panel's pixel width should track window size
         # (a fixed-pixel-forever setting made it a barely-usable ~170px
         # sliver in fullscreen on a large monitor, since content absorbed
         # all of the extra fullscreen space and the panel got none of it).
         # The panel's *proportion* of the window is what should stay
         # roughly constant, not its absolute pixel count — see
-        # _toggle_kb_panel, which sets the actual position as a fraction of
+        # _show_side_panel, which sets the actual position as a fraction of
         # the paned's real current width every time the panel is shown,
         # rather than a single pixel value guessed at construction time
         # (before the window has real geometry) that never gets revisited.
@@ -411,11 +427,6 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.stack.add_named(self.grid_overview, "grid_overview")
 
         content_column.append(self.stack)
-
-        # -- F10 notes overlay: freeform notes, hidden until toggled --------
-        self.notes_overlay = NotesOverlay()
-        self.notes_overlay.connect_changed(self._on_notes_changed)
-        content_column.append(self.notes_overlay)
 
         # -- bottom bar: save status only (hotkey hints removed — they
         # duplicated the sidebar tabs, and their combined ~1660px natural
@@ -690,12 +701,7 @@ class TrialWindow(Gtk.ApplicationWindow):
         handler, which always sets kb.display = True on click regardless of
         the panel's current toggle state)."""
         self.kb_panel.update(region_id, field_id)
-        if not self.kb_panel.get_visible():
-            self.kb_panel.set_visible(True)
-            paned_width = self.main_paned.get_width()
-            if paned_width > 0:
-                content_width = round(paned_width * (1 - self._KB_PANEL_FRACTION))
-                self.main_paned.set_position(content_width)
+        self._show_side_panel("kb")
 
     def _on_region_toggled(self, _bar, region_id: str, active: bool) -> None:
         regions = list(self._active_regions)
@@ -1085,24 +1091,52 @@ class TrialWindow(Gtk.ApplicationWindow):
 
         GonioImportWizard(self, results, _after_wizard).present()
 
+    def _showing_side_panel(self, name: str) -> bool:
+        return (self.side_panel_stack.get_visible()
+                and self.side_panel_stack.get_visible_child_name() == name)
+
+    def _show_side_panel(self, name: str) -> None:
+        """Show the named side panel ("kb" or "notes") in the shared slot
+        next to content_column, replacing whichever panel (if any) was
+        showing there — the user is deliberately fine with never having
+        both open at once, so one slot with a Gtk.Stack picking the visible
+        child is simpler than two independently-toggled panels."""
+        already_visible = self.side_panel_stack.get_visible()
+        self.side_panel_stack.set_visible_child_name(name)
+        self.side_panel_stack.set_visible(True)
+        if not already_visible:
+            paned_width = self.main_paned.get_width()
+            # get_width() can be 0 before the window's first real layout
+            # pass (e.g. toggled a frame after construction, before present()
+            # has fully settled) — skip the recompute rather than set a
+            # position derived from that, which is what forced the toplevel
+            # to grow past the screen in an earlier version of this method.
+            if paned_width > 0:
+                content_width = round(paned_width * (1 - self._KB_PANEL_FRACTION))
+                self.main_paned.set_position(content_width)
+
+    def _hide_side_panel(self) -> None:
+        self.side_panel_stack.set_visible(False)
+
     def _toggle_notes(self) -> None:
         """F10 — matches main.py's action_toggle_notes: hiding refocuses the
         active section's first field so hotkeys work immediately, exactly as
-        the TUI does after dismissing the overlay."""
-        visible = self.notes_overlay.get_visible()
-        self.notes_overlay.set_visible(not visible)
-        if visible:
+        the TUI does after dismissing the overlay. Now shares the KB panel's
+        slot (see _show_side_panel) rather than a fixed bottom overlay."""
+        if self._showing_side_panel("notes"):
+            self._hide_side_panel()
             name = _SECTION_ID_TO_NAME.get(self._current_section_id())
             if name:
                 self._sections_by_name[name].focus_first_field()
         else:
+            self._show_side_panel("notes")
             self.notes_overlay.grab_focus()
 
     def _show_notes(self) -> None:
-        """Unconditionally show + focus the notes overlay — used by search
+        """Unconditionally show + focus the notes panel — used by search
         jump (a scratchpad_text hit), unlike _toggle_notes (F10) which flips
         whatever the current state is."""
-        self.notes_overlay.set_visible(True)
+        self._show_side_panel("notes")
         self.notes_overlay.grab_focus()
 
     def _on_notes_changed(self, _buffer) -> None:
@@ -1304,26 +1338,33 @@ class TrialWindow(Gtk.ApplicationWindow):
         KBDBWindow(self).present()
 
     def _toggle_kb_panel(self) -> None:
-        """Ctrl+K — matches the TUI's KBPanel toggle."""
-        showing = not self.kb_panel.get_visible()
-        self.kb_panel.set_visible(showing)
-        if showing:
-            paned_width = self.main_paned.get_width()
-            # get_width() can be 0 before the window's first real layout
-            # pass (e.g. toggled a frame after construction, before present()
-            # has fully settled) — skip the recompute rather than set a
-            # position derived from that, which is what forced the toplevel
-            # to grow past the screen in an earlier version of this method.
-            if paned_width > 0:
-                content_width = round(paned_width * (1 - self._KB_PANEL_FRACTION))
-                self.main_paned.set_position(content_width)
+        """Ctrl+K — matches the TUI's KBPanel toggle. Shares the notes
+        panel's slot (see _show_side_panel) — toggling KB while notes is
+        showing replaces it, rather than either stacking or refusing."""
+        if self._showing_side_panel("kb"):
+            self._hide_side_panel()
+        else:
+            self._show_side_panel("kb")
 
     def _on_widget_focused(self, widget) -> None:
-        """Per-widget focus hook driving the KB panel — only resolves while
-        in Objective mode and only while the panel is actually visible,
-        matching the TUI's on_descendant_focus (scoped to
-        ObjectiveAssessmentView, and a no-op guard on panel.display)."""
-        if not self._in_objective_mode or not self.kb_panel.get_visible():
+        """Per-widget focus hook driving the KB panel — only while the KB
+        panel is actually the one showing in the shared side-panel slot,
+        matching the TUI's on_descendant_focus (a no-op guard on
+        panel.display). Deliberately does NOT auto-switch the slot away
+        from notes to KB on focus alone — only an explicit Ctrl+K/Ctrl+D/
+        Regional-Differential click does that (see _show_side_panel call
+        sites) — otherwise typing in the notes panel while a KB-yielding
+        field elsewhere still has focus would keep yanking the slot back
+        to KB out from under the user.
+
+        Region-scoped lookup (the original TUI behaviour) stays gated to
+        Objective mode, since it has no meaning outside an active region.
+        Global DB fields (is_global_db_field()) resolve regardless of mode —
+        added 2026-09-16 so assessment-side sections (currently just
+        medical.py's Spondyloarthropathy Screen) get live Ctrl+K lookups too,
+        the same way Neurological/Sensory/CRPS already do on the objective
+        side."""
+        if not self._showing_side_panel("kb"):
             return
         field_id = getattr(widget, "field_id", None)
         if field_id is None:
@@ -1331,6 +1372,12 @@ class TrialWindow(Gtk.ApplicationWindow):
         if field_id.startswith("st_"):
             field_id = field_id[3:]
         registry = get_registry()
+        if is_global_db_field(field_id):
+            if registry.resolve("_global", field_id) is not None:
+                self.kb_panel.update("_global", field_id)
+            return
+        if not self._in_objective_mode:
+            return
         for region_id in self._active_regions:
             entry = registry.resolve(region_id, field_id)
             if entry is not None:

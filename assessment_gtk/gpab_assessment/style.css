@@ -249,9 +249,11 @@ entry {
     border-radius: 6px;
     padding: 4px;
 }
-.notes-overlay {
-    border-top: 2px solid alpha(currentColor, 0.3);
-    padding-top: 4px;
+/* F10 notes panel (notes_overlay.py) — shares the Ctrl+K side-panel slot,
+   same border-left/background treatment as .kb-panel below. */
+.notes-panel {
+    border-left: 1px solid alpha(currentColor, 0.2);
+    background: alpha(currentColor, 0.03);
 }
 
 .dx-temporal-btn:checked {
