@@ -51,7 +51,7 @@ from .grid_overview import (
     GridOverviewPage, SUBJ_GRID_DATA, OBJ_GRID_DATA,
     section_to_cursor, _section_has_data,
 )
-from .widgets import add_focus_listener
+from .widgets import add_focus_listener, GOAL_TYPE_FIELDS
 from .nav import SectionNav
 from .topbar import SubsectionNavBar
 from .footer import FooterBar
@@ -1549,8 +1549,19 @@ class TrialWindow(Gtk.ApplicationWindow):
             finally:
                 dest._loading = False
 
+    def _sync_goal_types(self, source, dest) -> None:
+        """Copy the goal_type_* toggles from source to dest (Consent <->
+        Subjective). Only changed values are written, and set_value() never
+        emits "changed", so this can't loop or trigger a save by itself."""
+        for fid in GOAL_TYPE_FIELDS:
+            value = getattr(source, fid).value
+            btn = getattr(dest, fid)
+            if btn.value != value:
+                btn.set_value(value)
+
     def _on_consent_changed(self) -> None:
         self._sync_goals(self.consent.consent_goals, self.subjective, self.functional)
+        self._sync_goal_types(self.consent, self.subjective)
         self._schedule_save()
 
     def _on_session_timer_alert(self, pulses: int) -> None:
@@ -1594,6 +1605,7 @@ class TrialWindow(Gtk.ApplicationWindow):
 
     def _on_subjective_changed(self) -> None:
         self._sync_goals(self.subjective.goals, self.consent, self.functional)
+        self._sync_goal_types(self.subjective, self.consent)
         self._schedule_save()
 
     def _on_functional_goal_changed(self) -> None:

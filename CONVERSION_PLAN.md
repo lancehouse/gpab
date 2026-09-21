@@ -318,6 +318,41 @@ decisions still needed from the user before building, not something to decide un
 3. Misfire protection so an accidental drag-that-starts-as-a-scroll doesn't turn into a bulk edit,
    and so the gesture coexists cleanly with the tab's own normal scroll behavior on the same surface.
 
+**3. Other Ctrl+K candidates found in the existing KB pool while wiring medical.py's SpA flags
+(2026-09-16) — deliberately not built now, `medical.py`-only per user instruction; other sections
+not reviewed for this yet.** Checked every `medical.py` field id (`rf_*`, `cvd_*`, `comorbid_*`,
+`diff_as_*`, `diff_aaa_*`, `diff_vc_*`, `img_*`) against `clinical_kb.db`'s `test_field_map` —
+none has an existing field-mapped entry (`diff_spa_*`, added same day, is the only medical.py
+content in that table). But the KB does already hold unmapped, content-only material that's an
+obvious future match:
+- **Ankylosing Spondylitis condition (id 22, "Ankylosing Spondylitis / Axial Spondyloarthropathy")**
+  is already Tier-1 validated CPR content in the KB (`msk_test_clusters_comprehensive.csv`), with a
+  cluster ("AS Clinical Assessment Cluster — BASMI + SIJ + Chest") — but `validate_kb.py` lists it
+  among the 30 CPR-panel clusters with **zero field-mapped tests**. Wiring `medical.py`'s existing
+  `diff_as_*` flags (or the AS cluster's own BASMI/SIJ/chest-expansion tests) to it would need new
+  `test_field_map` rows authored in `~/Projects/kb`, same effort as the SCREEN'D'EM work just done —
+  not a flip-a-switch case like the others below.
+- **Rheumatoid Arthritis (id 13) and Gout (id 39)** conditions also exist in the KB with no
+  `medical.py` field mapped to either — `comorbid_inflammatory`/`comorbid_fibromyalgia`-type flags
+  are plausible candidates but would need the same new-authoring pass.
+- **`red_flag` and `clinical_concept` tables** hold real, relevant content (e.g. red_flag row 5:
+  "Pulsatile abdominal mass (suspect AAA)", directly on point for `diff_aaa_pulsating`) but have
+  **no `pab_field_id` column at all** and no code path resolves them today — `kb_db.py` only ever
+  queries `test_field_map`. Wiring these in would need a genuinely new resolution mechanism, not
+  just new CSV rows, so it's a bigger lift than either point above.
+
+### History-implied barrier query flags (raised 2026-09-19 — not started)
+
+Idea from the Subjective goal-orientation work (`goal_type_*`, Crombez et al 2012): Barriers
+toggles could take on a distinct "history implies a barrier — please check this" colour/state,
+driven automatically from what's already been recorded elsewhere (e.g. treatment-seeking or
+social-validation goal orientation ↔ `bx_belief_cure_focus` / `bx_belief_further_tx`). Kept
+**separate and un-linked for now** on purpose — the goal-orientation flags are descriptive
+only. Barriers already has `update_cross_refs()` + `_xref_badge()` plumbing to build on. Needs a
+new toggle state/colour in `widgets.py`/`style.css` (centralised, per the standing rules), not a
+per-section one-off, and needs the user to decide which history items imply which barrier
+before any mapping is written (flag, don't guess clinical content).
+
 ## Standing rules for every phase
 
 1. **Verify, don't eyeball.** Every section gets a `collect()`/`load()` round-trip diff against

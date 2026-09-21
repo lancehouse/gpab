@@ -448,3 +448,32 @@ Parts 0–C are independently useful even if D slips.
 
 Nothing is blocked on further input — this plan is ready to implement in a
 fresh session, Part 0 first.
+
+## Addendum (2026-09-18) — TILT mode
+
+The goniometer app gained a second measurement mode, TILT (a gravity-
+referenced standing angle — e.g. shoulder flexion held vertically — instead
+of MOTION's baseline-relative movement tracking; see the phone app's
+`SessionState.kt`). This plan predates it and only describes MOTION's
+integration; TILT's is a small, separate addition on top of the same
+pipeline, not a redesign:
+
+- `Measurement` (`matcher.py`) gained `mode` plus `absolute_*` fields,
+  populated only for TILT — a TILT measurement's `primary_range_deg` stays
+  at 0.0 and is never read, so an older consumer that ignores `mode` sees an
+  obviously-wrong 0 rather than a plausible-looking wrong sweep value.
+- `format_measurement_value()` branches on `mode`: TILT prints
+  `"<peak> ; <other reading> ; ..."` — no `(lo->hi)` bracket, since a
+  gravity-referenced angle isn't a swept range (§C's format above is
+  MOTION-only).
+- `load_gonio_bundle()` (`importer.py`) reads the TILT fields when
+  `mode == "TILT"`, MOTION's fields otherwise — same function, same
+  manifest, no separate loader.
+- Matching, grouping, wizard review, chart extraction, and the bodychart
+  side (Part D) are all mode-agnostic already — they work from `label` +
+  `rom_type` (or the rendered chart PNG), never from mode-specific fields,
+  so nothing there needed to change.
+- `assessment_gtk/scripts/test_gonio_tilt_import.py` exercises the full
+  pipeline (load → match → format → apply → extract charts → archive)
+  against a synthetic bundle under a `TESTGONIO` patient code, since this
+  was built with no real TILT session data available to test against yet.

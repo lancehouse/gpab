@@ -2906,6 +2906,9 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     f("goal_2", s)
     f("goal_3", s)
     f("goal_4", s)
+    f("goal_type_treatment_seeking", s)
+    f("goal_type_self_sufficiency", s)
+    f("goal_type_social_validation", s)
     _emit_yaml_subs_md("subjective", s, clean, _emit, sub)
 
     # ════════════════════════════════════════════════════════════════════════
@@ -4277,6 +4280,9 @@ LABELS: dict[str, str] = {
     "goal_2":                           "SMART Goal 2",
     "goal_3":                           "SMART Goal 3",
     "goal_4":                           "SMART Goal 4",
+    "goal_type_treatment_seeking":      "Goal orientation: Treatment-seeking",
+    "goal_type_self_sufficiency":       "Goal orientation: Self-sufficiency",
+    "goal_type_social_validation":      "Goal orientation: Social validation",
     # ── 07 Barriers & Treatment ───────────────────────────────────────────────
     "b_noci_disease":                   "Barrier: Disease/pathology",
     "b_noci_pacing":                    "Barrier: Pacing issues",
@@ -4670,6 +4676,9 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     f("goal_2", s)
     f("goal_3", s)
     f("goal_4", s)
+    f("goal_type_treatment_seeking", s)
+    f("goal_type_self_sufficiency", s)
+    f("goal_type_social_validation", s)
     _emit_yaml_subs_raw("subjective", s, clean, _emit, sub)
 
     # ════════════════════════════════════════════════════════════════════════
