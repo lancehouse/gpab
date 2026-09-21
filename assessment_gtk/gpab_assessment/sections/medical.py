@@ -234,6 +234,25 @@ class MedicalSection(Gtk.Box, SectionBase):
         self.append(self._likelihood("Likelihood:", "diff_as_likelihood"))
         self.append(_field_row("Action:", self._text("diff_as_action")))
 
+        self.append(_subheader("Spondyloarthropathy Screen (SCREEN'D'EM):"))
+        self.append(self._btn_row(
+            self._flag("Skin — psoriasis / rash", "diff_spa_skin_psoriasis"),
+            self._flag("Colitis / Crohn's", "diff_spa_ibd"),
+            self._flag("Relatives — RA/PsA/AS family hx", "diff_spa_family_history"),
+        ))
+        self.append(self._btn_row(
+            self._flag("Eyes — uveitis / iritis", "diff_spa_eye_inflammation"),
+            self._flag("Early morning stiffness >30 min", "diff_spa_morning_stiffness"),
+            self._flag("Nails — pitting / thickening", "diff_spa_nail_changes"),
+        ))
+        self.append(self._btn_row(
+            self._flag("Dactylitis (sausage digit)", "diff_spa_dactylitis"),
+            self._flag("Enthesitis (Achilles/plantar/patellar)", "diff_spa_enthesitis"),
+            self._flag("Better with exercise, NSAID-responsive", "diff_spa_exercise_response"),
+        ))
+        self.append(self._likelihood("Likelihood:", "diff_spa_likelihood"))
+        self.append(_field_row("Action:", self._text("diff_spa_action")))
+
         self.append(_subheader("Abdominal Aortic Aneurysm:"))
         self.append(self._btn_row(
             self._flag("Pulsating lumbar / groin pain", "diff_aaa_pulsating"),

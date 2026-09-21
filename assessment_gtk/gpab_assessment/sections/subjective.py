@@ -28,6 +28,7 @@ from ..widgets import (
     field_left_slot, make_subsection_header as _header,
     field_row_pair as _field_row_pair,
     field_row as _field_row,
+    add_goal_orientation_block,
 )
 from .yaml_subsection import YamlSubsectionGtk
 
@@ -277,6 +278,11 @@ class SubjectiveSection(Gtk.Box, SectionBase):
             self.goals.append(ta)
         self._jump_targets["goals"] = self.goals[0].textview
 
+        # Goal orientation toggles — shared block (widgets.py), mirrored live to
+        # Consent by app.py's _sync_goal_types. This section owns persistence.
+        for fid, btn in add_goal_orientation_block(self).items():
+            setattr(self, fid, btn)
+
         # -- Suicide / Self-Harm Risk ----------------------------------------------
         self.append(_header("Suicide / Self-Harm Risk", "subj_suicide"))
         self.self_harm_risk = FlagButton("Thoughts of self-harm or suicide", "self_harm_risk")
@@ -300,6 +306,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         "course_improving", "course_worsening", "course_stable", "course_fluctuating",
         "behaviour_boom_bust", "behaviour_avoidance", "behaviour_endurance", "behaviour_flareups",
         "mood_influences", "self_harm_risk",
+        "goal_type_treatment_seeking", "goal_type_self_sufficiency", "goal_type_social_validation",
     ]
     _TEXT_ATTRS = [
         "onset", "duration", "context_at_onset", "previous_episodes", "previous_treatment",

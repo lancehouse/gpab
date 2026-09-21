@@ -17,7 +17,10 @@ this directory.
   `~/PAB-assessment-gtk/` (via `scripts/copy_dev_session.sh`) still works if you want a disposable
   copy, but isn't required.
 - The `assessment/` and `bodychart/` folders in this clone are reference copies — `assessment/`
-  stays untouched (the TUI source this app ports from and stays schema-compatible with);
+  is mostly kept untouched (the TUI source this app ports from and stays schema-compatible with),
+  though as of 2026-09-15 specific files in it may be edited on an incremental, as-needed basis
+  when gpab genuinely depends on the change (see `../CLAUDE.md`'s isolation guarantee section for
+  the full rule and reasoning — this is not a blanket green light);
   `bodychart/` is deliberately vendored and locally modified (see `../CLAUDE.md`'s Phase 6 note)
   to launch this app directly. All of this app's own code lives in `assessment_gtk/`, imported via
   `pab_path_bootstrap.py` pointing at *this clone's* `assessment/`, never `~/Projects/pab/assessment/`.

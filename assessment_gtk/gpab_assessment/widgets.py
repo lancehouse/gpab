@@ -134,6 +134,47 @@ def make_subgroup_header(text: str) -> Gtk.Label:
     return lbl
 
 
+GOAL_TYPE_FIELDS = (
+    "goal_type_treatment_seeking",
+    "goal_type_self_sufficiency",
+    "goal_type_social_validation",
+)
+
+
+def add_goal_orientation_block(parent: Gtk.Box) -> dict[str, "CheckButton"]:
+    """Append the goal-orientation toggles (which goal the patient ranks
+    first — Crombez et al 2012, Clin J Pain 28(6):475-483, doi
+    10.1097/AJP.0b013e3182385392) to `parent` and return {field_id: button}.
+
+    ONE definition shared by Subjective (the persisted copy) and Consent
+    (a live mirror, same as the SMART goals text above it) so the two can't
+    drift apart. CheckButton, not FlagButton: FlagButton paints Yes in the
+    danger colour, which would read self-sufficiency (the protective one) as
+    a warning. Descriptive only — no scoring, no alerts.
+    """
+    parent.append(make_subgroup_header("Goal orientation — patient's top-priority goal:"))
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4, homogeneous=True)
+    buttons = {
+        "goal_type_treatment_seeking": CheckButton("Treatment-seeking", "goal_type_treatment_seeking"),
+        "goal_type_self_sufficiency": CheckButton("Self-sufficiency", "goal_type_self_sufficiency"),
+        "goal_type_social_validation": CheckButton("Social validation", "goal_type_social_validation"),
+    }
+    for w in buttons.values():
+        row.append(w)
+    parent.append(row)
+    note = Gtk.Label(label=(
+        "Treatment-seeking: finding a health professional who can cure it. "
+        "Self-sufficiency: learning to get on with life despite it. "
+        "Social validation: convincing doctors and others it is a real problem."
+    ))
+    note.add_css_class("reference-note")
+    note.set_halign(Gtk.Align.START)
+    note.set_xalign(0.0)
+    note.set_wrap(True)
+    parent.append(note)
+    return buttons
+
+
 def make_subsection_header(text: str, anchor_id: str | None = None) -> Gtk.Label:
     """The "— History —" / "— Behaviour —" style subsection divider.
 

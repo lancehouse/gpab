@@ -35,10 +35,18 @@ guarantee below for exactly what that does and doesn't change.
   `origin`, is a private GitHub backup (`github.com/lancehouse/gpab`) and nothing else — it cannot
   push to, pull from, or otherwise affect the real `pab` or `kb` repos. (`git remote -v` should
   show only that `origin` — anything else is unexpected; confirm before doing anything risky.)
-- `assessment/` in this clone is a **read-only reference copy** — the actual TUI source, kept so
-  the conversion has something authoritative to port from and compare against. Never edit it; if a
-  fix is needed, it needs to happen in the real `~/Projects/pab` separately, by hand, later — not
-  here.
+- `assessment/` in this clone was a **fully read-only reference copy** until 2026-09-15, when that
+  blanket prohibition was relaxed: gpab is the real, ongoing app now, not a conversion-in-progress
+  artifact, so files it genuinely depends on for correctness may be edited directly in this clone
+  on an incremental, as-needed basis — decided when adding SpA/SCREEN'D'EM differential-screening
+  report fields, which required editing `pab_assessment/storage.py`'s report generation (see git
+  history around that date for the first such edit). This is not a green light to rewrite
+  `assessment/` freely — most of it is still kept purely for reference/comparison against the TUI
+  and isn't expected to need changes; edit only the specific file a specific piece of work actually
+  requires, when it actually requires it. Any such edit stays local to this clone only, same as
+  `bodychart/`'s prior divergence (see below): it is never copied back to `~/Projects/pab`, and
+  `~/Projects/pab` itself is still never touched under any circumstance (see the rule above this
+  one, unchanged).
 - `bodychart/` was also a read-only reference copy until 2026-08-23, when `integration.c` and
   `meson.build` were deliberately modified (see `CONVERSION_PLAN.md` Phase 6) so this clone's own
   `bodychart` build launches `gpab` in place of the old embedded TUI. This is a vendored,

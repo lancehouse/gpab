@@ -152,6 +152,13 @@ def load_gonio_bundle(zip_path: Path) -> tuple[str, list[Measurement], Path]:
     and it carries the min/max + marks_deg that format_measurement_value()
     needs for the richer field string. A schema-1 bundle simply has no
     marks_deg, so the formatter falls back to the range-only form.
+
+    ``mode`` (bundle_schema >= 3; absent on an older bundle, which is always
+    MOTION) selects which set of fields is read: MOTION gets the
+    primary_range_deg/min/max/marks_deg block as before; TILT gets
+    absolute_peak_deg/absolute_start_deg/absolute_readings_deg instead, and
+    primary_range_deg is left at 0.0 (never populated for TILT — see
+    Measurement's own docstring for why that's deliberate, not an oversight).
     """
     with zipfile.ZipFile(zip_path) as zf:
         manifest = json.loads(zf.read("manifest.json"))
@@ -161,6 +168,25 @@ def load_gonio_bundle(zip_path: Path) -> tuple[str, list[Measurement], Path]:
         rom_type = str(m.get("rom_type") or "AROM").upper()
         if rom_type not in ("AROM", "PROM"):
             rom_type = "AROM"
+        mode = str(m.get("mode") or "MOTION").upper()
+        if mode not in ("MOTION", "TILT"):
+            mode = "MOTION"
+
+        if mode == "TILT":
+            measurements.append(Measurement(
+                index=i,
+                label=m.get("label") or "",
+                primary_range_deg=0.0,
+                rom_type=rom_type,
+                mode=mode,
+                absolute_peak_deg=_opt_float(m.get("absolute_peak_deg")),
+                absolute_peak_user_selected=bool(m.get("absolute_peak_user_selected") or False),
+                absolute_start_deg=_opt_float(m.get("absolute_start_deg")),
+                absolute_readings_deg=[float(x) for x in (m.get("absolute_readings_deg") or []) if x is not None],
+                chart_png=m.get("chart_png"),
+            ))
+            continue
+
         # marks_deg length is == mark_count in the manifest; a slot is null
         # only when a corrupt/hand-edited session pointed a mark outside its
         # sample stream. Drop nulls here — the formatter lists whatever real
@@ -171,6 +197,7 @@ def load_gonio_bundle(zip_path: Path) -> tuple[str, list[Measurement], Path]:
             label=m.get("label") or "",
             primary_range_deg=float(m.get("primary_range_deg") or 0.0),
             rom_type=rom_type,
+            mode=mode,
             min_deg=_opt_float(m.get("min_deg")),
             max_deg=_opt_float(m.get("max_deg")),
             deficit_to_full_deg=_opt_float(m.get("deficit_to_full_deg")),

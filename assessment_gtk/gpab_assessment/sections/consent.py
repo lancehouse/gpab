@@ -16,6 +16,7 @@ from ..widgets import (
     CheckButton, FlagButton, AutoTextView, TouchEntry,
     make_subsection_header as _header,
     field_row as _field_row,
+    add_goal_orientation_block, GOAL_TYPE_FIELDS,
 )
 
 
@@ -101,6 +102,12 @@ class ConsentSection(Gtk.Box, SectionBase):
         # something the chart watcher itself touches.
         self.goals = self.consent_goals
 
+        # Goal-orientation toggles — mirror only, like the goals above: not in
+        # collect(); Subjective owns the saved copy (goal_type_* keys) and
+        # app.py's _sync_goal_types keeps the two live-connected.
+        for fid, btn in add_goal_orientation_block(self).items():
+            setattr(self, fid, btn)
+
         # -- Beliefs --------------------------------------------------------
         self.append(_header("Beliefs", "cs_beliefs"))
         belief_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4, homogeneous=True)
@@ -135,6 +142,8 @@ class ConsentSection(Gtk.Box, SectionBase):
         ]
         for cb in self._checkbuttons:
             cb.connect("changed", self._field_changed)
+        for fid in GOAL_TYPE_FIELDS:
+            getattr(self, fid).connect("changed", self._field_changed)
 
         self.preferred_name.connect("changed", self._field_changed)
 
@@ -161,6 +170,8 @@ class ConsentSection(Gtk.Box, SectionBase):
         )
         for cb in below_framing_checkbuttons:
             cb.connect("changed", self._below_framing_field_changed)
+        for fid in GOAL_TYPE_FIELDS:
+            getattr(self, fid).connect("changed", self._below_framing_field_changed)
 
         for ta in (
             self.reason_for_attending,
@@ -242,11 +253,13 @@ class ConsentSection(Gtk.Box, SectionBase):
             self._update_status()
 
     def load_goals(self, subjective_data: dict) -> None:
-        """Mirror goal_1..4 from the Subjective section's data (display only)."""
+        """Mirror goal_1..4 and goal_type_* from the Subjective section's data (display only)."""
         self._loading = True
         try:
             for i, ta in enumerate(self.consent_goals, start=1):
                 ta.text = subjective_data.get(f"goal_{i}", "")
+            for fid in GOAL_TYPE_FIELDS:
+                getattr(self, fid).set_value(subjective_data.get(fid))
         finally:
             self._loading = False
 

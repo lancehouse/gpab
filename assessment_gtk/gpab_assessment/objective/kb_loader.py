@@ -79,6 +79,24 @@ _GLOBAL_DB_FIELDS = {
     "crps_sg_colour_asymm", "crps_sg_oedema", "crps_sg_sweat_chng",
     "crps_sg_sweat_asymm", "crps_sg_rom_dec", "crps_sg_weakness",
     "crps_sg_tremor", "crps_sg_dystonia", "crps_sg_trophic",
+    # Medical section (sections/medical.py) — Differential Screening,
+    # Spondyloarthropathy Screen (SCREEN'D'EM), added 2026-09-16 with the
+    # matching clinical_kb.db test_field_map rows (source/msk_clusters_pab.csv
+    # in ~/Projects/kb, standalone tests — no condition/cluster — same
+    # pattern as CRPS above). Not region-scoped: this block sits in the
+    # assessment-side Medical section, which has no active-region concept at
+    # all (unlike the objective tabs _GLOBAL_DB_FIELDS otherwise serves).
+    "diff_spa_skin_psoriasis", "diff_spa_ibd", "diff_spa_family_history",
+    "diff_spa_eye_inflammation", "diff_spa_morning_stiffness",
+    "diff_spa_nail_changes", "diff_spa_dactylitis", "diff_spa_enthesitis",
+    "diff_spa_exercise_response",
+    # Subjective / Consent SMART Goals — goal-orientation toggles (fibromyalgia
+    # goal subtypes, Crombez et al 2012), added 2026-09-19 with the matching
+    # standalone test_field_map rows in ~/Projects/kb (same pattern as SpA
+    # above). Not region-scoped; the same three field ids are used by the
+    # live-mirrored buttons in both sections, so Ctrl+K resolves from either.
+    "goal_type_treatment_seeking", "goal_type_self_sufficiency",
+    "goal_type_social_validation",
 }
 
 

@@ -42,17 +42,36 @@ class Measurement:
     (importer.load_gonio_bundle) fills the rest. Everything past ``rom_type``
     is defaulted so a flat-format load still constructs, and every consumer
     that only reads ``primary_range_deg`` keeps working unchanged.
+
+    ``mode`` is "MOTION" (baseline-relative sweep — the original, and the
+    only mode the flat format or a schema<3 bundle ever produces) or "TILT"
+    (gravity-referenced angle — see the phone app's SessionState.kt). The
+    two modes are mutually exclusive in which fields they populate:
+    MOTION uses primary_range_deg/min_deg/max_deg/marks_deg/etc.; TILT uses
+    only the absolute_* fields below, and format_measurement_value() branches
+    on ``mode`` to format one or the other. A TILT measurement's
+    primary_range_deg stays at its dataclass default (0.0) — never read for
+    that mode — rather than being repurposed to carry a TILT value, so an
+    older consumer that ignores ``mode`` and reads primary_range_deg
+    unconditionally gets an obviously-wrong 0, not a plausible-looking wrong
+    number silently mistaken for a MOTION sweep.
     """
     index: int
     label: str
     primary_range_deg: float
     rom_type: str = "AROM"  # "AROM" or "PROM" — see importer.load_gonio_measurements
-    # ── from the .gonio.zip manifest only (bundle_schema >= 1) ──────────────
+    mode: str = "MOTION"  # "MOTION" or "TILT" — manifest schema >= 3; absent (schema 1/2, or the flat format) defaults to "MOTION"
+    # ── MOTION only, from the .gonio.zip manifest (bundle_schema >= 1) ──────
     min_deg: float | None = None            # primary-channel low vs baseline (signed)
     max_deg: float | None = None            # primary-channel high vs baseline (signed)
     deficit_to_full_deg: float | None = None
     mark_count: int = 0
     marks_deg: list[float] = dataclass_field(default_factory=list)  # manifest schema 2+; null slots dropped on load
+    # ── TILT only, from the .gonio.zip manifest (bundle_schema >= 3) ────────
+    absolute_peak_deg: float | None = None       # the reported headline figure — pinned by the therapist, or auto-picked
+    absolute_peak_user_selected: bool = False    # schema >= 4 — True if the therapist pinned it via "Set as main" rather than it being auto-picked
+    absolute_start_deg: float | None = None      # schema >= 5 — the reading at Start, or None if Start was deleted in the app
+    absolute_readings_deg: list[float] = dataclass_field(default_factory=list)  # every surviving reading, capture order
     chart_png: str | None = None            # zip-relative path, or None
 
 
@@ -178,7 +197,7 @@ def format_measurement_value(m: Measurement) -> str:
     three always agree. Repeats of the same field are ' // '-joined by
     group_resolved(); this formats one contribution only.
 
-    Format (user, 2026-09-07 — see gpab/GONIO_INTEGRATION_PLAN.md §C):
+    Format, MOTION (user, 2026-09-07 — see gpab/GONIO_INTEGRATION_PLAN.md §C):
       marks present         "110 (-8->102) ; 43 ; 98"
       min/max, no marks      "110 (-8->102)"
       neither (schema-1      "110"
@@ -187,7 +206,39 @@ def format_measurement_value(m: Measurement) -> str:
 
     '->' is literal ASCII. No degree symbol. lo/hi are signed and may be
     negative. Every printed number is round()ed exactly once here.
+
+    Format, TILT (user, 2026-09-18): NOT the MOTION shape above — a
+    gravity-referenced angle is a single absolute reading, not a swept
+    range, so there is no "(lo->hi)" bracket to print (see Measurement's own
+    docstring for why that distinction matters). Also NOT converted to a
+    "degrees of flexion achieved" figure — the app's own primary/headline
+    reading is the source of truth for what number a measurement means, by
+    explicit user decision (2026-09-18): whatever mode/convention the app
+    displays as primary is exactly what lands in the patient record, gpab
+    doesn't reinterpret it. If that mounting convention ever needs to change
+    (e.g. so the number reads as a standard flexion angle), it changes in
+    the app (SensorFusion.kt's gravityInclinationDeg), not here.
+      other readings too    "150 ; 180 ; 165 ; 150"
+      only one reading       "150"
+    The first number is always absolute_peak_deg (the therapist-pinned or
+    auto-picked headline). The rest are absolute_readings_deg in capture
+    order, UNMODIFIED — including a repeat of the peak's own value, same as
+    MOTION's own marks_deg is never deduped against min_deg/max_deg above —
+    so the true sequence of attempts (which may have been improving OR
+    declining) is never reordered or silently thinned.
     """
+    if m.mode == "TILT":
+        peak = round(m.absolute_peak_deg or 0.0)
+        if not m.absolute_readings_deg:
+            return str(peak)
+        # Every reading, in capture order — including one that equals the
+        # peak, same as MOTION's own marks_deg never dedupes against
+        # min_deg/max_deg above. That keeps the sequence honest: "180 ; 165 ;
+        # 150" (peak last, attempts improving) reads differently from
+        # "150 ; 165 ; 180" (peak first, attempts declining), and only the
+        # unmodified capture order preserves which one actually happened.
+        return str(peak) + "".join(f" ; {round(x)}" for x in m.absolute_readings_deg)
+
     rng = round(m.primary_range_deg)
     if m.min_deg is None or m.max_deg is None:
         return str(rng)
