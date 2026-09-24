@@ -186,6 +186,16 @@ subsections:
       #    Digit-only strings: ≤2 digits → hours only; 3 digits → h + mm
       #    (e.g. "645" → 6h45m); 4 digits → hhmm.
       #
+      #    AM/PM GUESS for an hour 5–12 typed with no leading zero (a
+      #    leading zero, e.g. "09:00", is always taken literally as AM):
+      #    TIB_start and SOL default to PM ("10:00" → 22:00) since bedtime
+      #    and sleep-onset are usually evening; FWT and TOB default to AM
+      #    ("10:00" stays 10:00) since wake-up and getting-up are usually
+      #    morning. Applying one blanket default to every clock field used
+      #    to silently read a bare "10:00" final-wake-up as 22:00 (10pm),
+      #    inflating sleep efficiency — see _parse_clock()'s pm_default
+      #    param and its two call sites in calc_sleep_efficiency().
+      #
       # 3. MIDNIGHT CROSSING for clock times (time_kind: clock)
       #    A sleep diary always spans one night. When TOB < TIB_start the
       #    subject went to bed before midnight and rose after it.

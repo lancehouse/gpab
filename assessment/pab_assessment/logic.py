@@ -19,7 +19,7 @@ def _extract_time_token(s: str) -> str:
     return m.group() if m else ""
 
 
-def _parse_clock(s: str) -> int | None:
+def _parse_clock(s: str, pm_default: bool = True) -> int | None:
     """Parse a clock-time string to minutes since midnight, or None.
 
     Accepts: '22:30', '2230', '645', '6:45', '0645'.
@@ -27,10 +27,21 @@ def _parse_clock(s: str) -> int | None:
     Returns None if out of range or unparseable.
 
     Sleep-diary PM convention (applied when h is in range 5–12):
-      No leading zero  →  PM assumed  (9:00 → 21:00, 10:00 → 22:00, 900 → 21:00)
-      Leading zero     →  AM literal  (09:00 → 09:00, 0900 → 09:00)
+      No leading zero  →  PM assumed IF pm_default, else AM literal
+                           (pm_default: 9:00 → 21:00, 10:00 → 22:00, 900 → 21:00
+                            not pm_default: 9:00 → 09:00, 10:00 → 10:00)
+      Leading zero     →  AM literal regardless of pm_default
+                           (09:00 → 09:00, 0900 → 09:00)
     Hours 1–4 are always treated as AM (post-midnight sleep times; nobody has a
     2 pm bedtime). Hours 0 and 13–23 are always literal 24 h.
+
+    pm_default distinguishes "usually-evening" fields (time to bed, time to
+    attempt sleep, time to actual sleep, WASO clock time — pm_default=True,
+    the default) from "usually-morning" fields (final wake-up, time out of
+    bed — call with pm_default=False). Applying the PM guess uniformly to
+    every clock field used to silently read a bare "10:00" final-wake-up as
+    22:00 (10pm), inflating sleep efficiency — see calc_sleep_efficiency()'s
+    two call sites for the fix.
     """
     if not s:
         return None
@@ -54,7 +65,7 @@ def _parse_clock(s: str) -> int | None:
         else:
             h, mn = int(d[:2]), int(d[2:])
             leading_zero = d[0] == '0'
-    if 5 <= h <= 12 and not leading_zero:
+    if 5 <= h <= 12 and not leading_zero and pm_default:
         h = (h + 12) % 24  # 12 wraps to 0 (midnight)
     if h > 23 or mn > 59:
         return None
@@ -131,8 +142,8 @@ def calc_sleep_efficiency(
     be post-midnight; add 1440 min so all arithmetic stays monotonic.
     Duration fields (WASO_dur, WOOB, WIBA) are never adjusted.
     """
-    tib_start = _parse_clock(sleep_time_to_bed)
-    tob       = _parse_clock(sleep_time_out_of_bed)
+    tib_start = _parse_clock(sleep_time_to_bed)                       # usually PM
+    tob       = _parse_clock(sleep_time_out_of_bed, pm_default=False)  # usually AM
     if tib_start is None or tob is None:
         return ""
     if tob < tib_start:
@@ -143,8 +154,8 @@ def calc_sleep_efficiency(
     if tib <= 0:
         return ""
 
-    sol = _parse_clock(sleep_onset_time)
-    fwt = _parse_clock(sleep_final_wakeup)
+    sol = _parse_clock(sleep_onset_time)                              # usually PM
+    fwt = _parse_clock(sleep_final_wakeup, pm_default=False)          # usually AM
 
     tst = None
     if sol is not None and fwt is not None:
