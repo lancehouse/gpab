@@ -91,31 +91,35 @@ def calc_sleep_efficiency(
 ) -> str:
     """Return sleep efficiency as 'NN%', or '' if there isn't enough data.
 
-    Core concept: SE = time asleep / time in bed. WOOB (time awake fully out
-    of bed) only ever shrinks TIB, the denominator — it never reduces how
-    much sleep is credited, so more WOOB always raises (or leaves unchanged)
-    SE, never lowers it.
+    Core concept: SE = time asleep / time in bed. WIBA (awake in bed) and
+    WOOB (awake out of bed) are two separate, additive wakeful periods —
+    e.g. "awake for 100 min, 50 of it pacing outside the bed" is WIBA=50 +
+    WOOB=50, not one substituting for the other. Both reduce how much
+    sleep is credited; WOOB additionally shrinks the "in bed" denominator
+    itself, since that time wasn't spent in bed at all:
 
-        GROSS = TOB - TIB_start                (the whole diary window)
-        TIB   = GROSS - WOOB                    (denominator)
+        TIB = (TOB - TIB_start) - WOOB
 
         TST — two alternative paths, tried in this order:
             A. Clock-time path (preferred): SOL and FWT both given
                    TST = (FWT - SOL) - WASO_dur
-               (already WOOB-independent — clock times bracket sleep
-               directly, so nothing further to subtract here)
             B. Duration fallback: SOL and/or FWT missing, but WIBA and/or
-               WOOB given — assume every minute not accounted for by WIBA
-               was asleep. WIBA is subtracted from GROSS, not from the
-               already-WOOB-shrunk TIB, so WOOB can't also eat into the
-               numerator (that bug — WOOB *lowering* SE whenever WIBA was
-               also present — is exactly what this path fixes):
-                   TST = min(GROSS - WIBA, TIB)
-               (clamped to TIB so a pathological input — e.g. WOOB larger
-               than the "GROSS - WIBA" figure — can never report more sleep
-               than the subject was actually in bed for)
+               WOOB given — assume every TIB minute not accounted for by
+               WIBA was asleep:
+                   TST = TIB - WIBA
 
         SE = TST / TIB * 100
+
+    A given WIBA duration always costs the same number of minutes off TST
+    regardless of WOOB — it is never silently cancelled out by adding WOOB
+    (that was a real bug: subtracting WIBA from the WOOB-*independent*
+    gross window, then clamping to TIB, made SE jump straight to 100%
+    whenever WOOB happened to be >= WIBA, erasing the WIBA penalty
+    entirely). What WOOB *does* do is make a wakeful period more efficient
+    than it would be if the same total wake time had all been spent lying
+    in bed instead — e.g. 50 WIBA + 50 WOOB scores higher than 100 WIBA +
+    0 WOOB, because the WOOB portion shrinks TIB rather than counting
+    against it twice.
 
     Minimum required data: TIB_start + TOB, AND EITHER (SOL + FWT) OR
     (WIBA and/or WOOB — either one alone is enough to use path B; with
@@ -134,12 +138,8 @@ def calc_sleep_efficiency(
     if tob < tib_start:
         tob += 1440
 
-    gross = tob - tib_start
-    if gross <= 0:
-        return ""
-
     woob = _parse_duration(sleep_awake_out_bed)
-    tib = gross - (woob or 0)
+    tib = (tob - tib_start) - (woob or 0)
     if tib <= 0:
         return ""
 
@@ -157,7 +157,7 @@ def calc_sleep_efficiency(
     else:
         wiba = _parse_duration(sleep_awake_in_bed)
         if wiba is not None or woob is not None:
-            tst = min(gross - (wiba or 0), tib)
+            tst = tib - (wiba or 0)
 
     if tst is None or tst < 0:
         return ""

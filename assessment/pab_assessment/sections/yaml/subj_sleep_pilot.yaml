@@ -133,32 +133,36 @@ subsections:
 
       # ── Calculated: Sleep Efficiency ──────────────────────────────────────
       #
-      # Core concept:  SE = time asleep / time in bed. WOOB only ever
-      # shrinks the denominator (TIB) — it never reduces how much sleep is
-      # credited, so more WOOB always raises (or leaves unchanged) SE, never
-      # lowers it. This applies uniformly in both TST paths below.
+      # Core concept:  SE = time asleep / time in bed. WIBA (awake in bed)
+      # and WOOB (awake out of bed) are two separate, additive wakeful
+      # periods — "awake 100 min, 50 of it pacing outside the bed" is
+      # WIBA=50 + WOOB=50, not one substituting for the other. Both reduce
+      # how much sleep is credited; WOOB additionally shrinks the "in bed"
+      # denominator itself, since that time wasn't spent in bed at all.
       #
-      #   GROSS = TOB − TIB_start                (the whole diary window)
-      #   Time In Bed  TIB = GROSS − WOOB          (denominator)
+      #   Time In Bed  TIB = (TOB − TIB_start) − WOOB
       #
       #   Total Sleep Time TST — two alternative paths, tried in this order:
       #     A. Clock-time path (preferred, more precise) — used when both
       #        SOL and FWT are given:
       #          TST = (FWT − SOL) − WASO_dur
-      #        (already WOOB-independent — clock times bracket sleep
-      #        directly, so there's nothing further to subtract here)
       #     B. Duration fallback — used when SOL and/or FWT is missing, but
-      #        WIBA and/or WOOB is given. Assumes every minute not accounted
-      #        for by WIBA was spent asleep. WIBA is subtracted from GROSS,
-      #        NOT from the already-WOOB-shrunk TIB — subtracting from TIB
-      #        instead would let WOOB eat into the numerator too and
-      #        *lower* SE whenever WIBA was also present, the opposite of
-      #        the intended effect. Clamped to TIB as a guard rail (a
-      #        pathological input can never report more sleep than the
-      #        subject was actually in bed for):
-      #          TST = min(GROSS − WIBA, TIB)
+      #        WIBA and/or WOOB is given. Assumes every TIB minute not
+      #        accounted for by WIBA was spent asleep:
+      #          TST = TIB − WIBA
       #
       #   Sleep Efficiency  SE = TST / TIB × 100  [%]
+      #
+      # A given WIBA duration always costs the same number of minutes off
+      # TST regardless of WOOB — it is never silently cancelled out by
+      # adding WOOB (a real bug this once had: subtracting WIBA from a
+      # WOOB-*independent* gross window, then clamping to TIB, made SE jump
+      # straight to 100% whenever WOOB happened to be ≥ WIBA, erasing the
+      # WIBA penalty entirely). What WOOB *does* do is make a wakeful
+      # period more efficient than if the same total wake time had all
+      # been spent lying in bed instead — e.g. 50 WIBA + 50 WOOB scores
+      # higher than 100 WIBA + 0 WOOB, because the WOOB portion shrinks TIB
+      # rather than counting against it twice.
       #
       # Minimum required data: TIB_start + TOB, AND EITHER (SOL + FWT) OR
       # (WIBA and/or WOOB — either alone is enough to use path B; with
