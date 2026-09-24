@@ -133,31 +133,38 @@ subsections:
 
       # ── Calculated: Sleep Efficiency ──────────────────────────────────────
       #
-      # Core concept:  SE = time asleep / time in bed
+      # Core concept:  SE = time asleep / time in bed. WOOB only ever
+      # shrinks the denominator (TIB) — it never reduces how much sleep is
+      # credited, so more WOOB always raises (or leaves unchanged) SE, never
+      # lowers it. This applies uniformly in both TST paths below.
       #
-      #   Time In Bed  TIB = (TOB − TIB_start) − WOOB
-      #     (WOOB is time spent fully out of bed during the night — e.g. a
-      #      bathroom trip — so it's excluded from TIB entirely, same as if
-      #      the subject had never been "in bed" for that stretch. This
-      #      *raises* SE relative to not subtracting it, since it shrinks
-      #      only the denominator: the same TST is then divided by a smaller
-      #      TIB.)
+      #   GROSS = TOB − TIB_start                (the whole diary window)
+      #   Time In Bed  TIB = GROSS − WOOB          (denominator)
       #
       #   Total Sleep Time TST — two alternative paths, tried in this order:
       #     A. Clock-time path (preferred, more precise) — used when both
       #        SOL and FWT are given:
       #          TST = (FWT − SOL) − WASO_dur
-      #     B. Duration fallback — used when SOL and/or FWT is missing but
-      #        WIBA (time awake in bed) is given. Assumes every minute of
-      #        TIB not accounted for by WIBA was spent asleep:
-      #          TST = TIB − WIBA
+      #        (already WOOB-independent — clock times bracket sleep
+      #        directly, so there's nothing further to subtract here)
+      #     B. Duration fallback — used when SOL and/or FWT is missing, but
+      #        WIBA and/or WOOB is given. Assumes every minute not accounted
+      #        for by WIBA was spent asleep. WIBA is subtracted from GROSS,
+      #        NOT from the already-WOOB-shrunk TIB — subtracting from TIB
+      #        instead would let WOOB eat into the numerator too and
+      #        *lower* SE whenever WIBA was also present, the opposite of
+      #        the intended effect. Clamped to TIB as a guard rail (a
+      #        pathological input can never report more sleep than the
+      #        subject was actually in bed for):
+      #          TST = min(GROSS − WIBA, TIB)
       #
       #   Sleep Efficiency  SE = TST / TIB × 100  [%]
       #
       # Minimum required data: TIB_start + TOB, AND EITHER (SOL + FWT) OR
-      # (WIBA). WASO_dur and WOOB are always optional (default 0 if blank).
-      # Missing everything needed for TST (path A and B both unavailable)
-      # → return "".
+      # (WIBA and/or WOOB — either alone is enough to use path B; with
+      # neither, there's nothing to assume "the rest" was asleep relative
+      # to, so the result is blank rather than a meaningless 100%).
+      # WASO_dur is always optional (default 0 if blank).
       #
       # IMPLEMENTATION NOTES for calc_sleep_efficiency() in logic.py:
       #
