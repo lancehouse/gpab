@@ -133,10 +133,42 @@ subsections:
 
       # ── Calculated: Sleep Efficiency ──────────────────────────────────────
       #
-      # Formula:
-      #   Total Sleep Time  TST = (FWT − SOL) − WASO_dur
-      #   Time In Bed       TIB = (TOB − TIB_start) − WOOB
-      #   Sleep Efficiency   SE = TST / TIB × 100  [%]
+      # Core concept:  SE = time asleep / time in bed. WIBA (awake in bed)
+      # and WOOB (awake out of bed) are two separate, additive wakeful
+      # periods — "awake 100 min, 50 of it pacing outside the bed" is
+      # WIBA=50 + WOOB=50, not one substituting for the other. Both reduce
+      # how much sleep is credited; WOOB additionally shrinks the "in bed"
+      # denominator itself, since that time wasn't spent in bed at all.
+      #
+      #   Time In Bed  TIB = (TOB − TIB_start) − WOOB
+      #
+      #   Total Sleep Time TST — two alternative paths, tried in this order:
+      #     A. Clock-time path (preferred, more precise) — used when both
+      #        SOL and FWT are given:
+      #          TST = (FWT − SOL) − WASO_dur
+      #     B. Duration fallback — used when SOL and/or FWT is missing, but
+      #        WIBA and/or WOOB is given. Assumes every TIB minute not
+      #        accounted for by WIBA was spent asleep:
+      #          TST = TIB − WIBA
+      #
+      #   Sleep Efficiency  SE = TST / TIB × 100  [%]
+      #
+      # A given WIBA duration always costs the same number of minutes off
+      # TST regardless of WOOB — it is never silently cancelled out by
+      # adding WOOB (a real bug this once had: subtracting WIBA from a
+      # WOOB-*independent* gross window, then clamping to TIB, made SE jump
+      # straight to 100% whenever WOOB happened to be ≥ WIBA, erasing the
+      # WIBA penalty entirely). What WOOB *does* do is make a wakeful
+      # period more efficient than if the same total wake time had all
+      # been spent lying in bed instead — e.g. 50 WIBA + 50 WOOB scores
+      # higher than 100 WIBA + 0 WOOB, because the WOOB portion shrinks TIB
+      # rather than counting against it twice.
+      #
+      # Minimum required data: TIB_start + TOB, AND EITHER (SOL + FWT) OR
+      # (WIBA and/or WOOB — either alone is enough to use path B; with
+      # neither, there's nothing to assume "the rest" was asleep relative
+      # to, so the result is blank rather than a meaningless 100%).
+      # WASO_dur is always optional (default 0 if blank).
       #
       # IMPLEMENTATION NOTES for calc_sleep_efficiency() in logic.py:
       #
@@ -154,6 +186,16 @@ subsections:
       #    Digit-only strings: ≤2 digits → hours only; 3 digits → h + mm
       #    (e.g. "645" → 6h45m); 4 digits → hhmm.
       #
+      #    AM/PM GUESS for an hour 5–12 typed with no leading zero (a
+      #    leading zero, e.g. "09:00", is always taken literally as AM):
+      #    TIB_start and SOL default to PM ("10:00" → 22:00) since bedtime
+      #    and sleep-onset are usually evening; FWT and TOB default to AM
+      #    ("10:00" stays 10:00) since wake-up and getting-up are usually
+      #    morning. Applying one blanket default to every clock field used
+      #    to silently read a bare "10:00" final-wake-up as 22:00 (10pm),
+      #    inflating sleep efficiency — see _parse_clock()'s pm_default
+      #    param and its two call sites in calc_sleep_efficiency().
+      #
       # 3. MIDNIGHT CROSSING for clock times (time_kind: clock)
       #    A sleep diary always spans one night. When TOB < TIB_start the
       #    subject went to bed before midnight and rose after it.
@@ -163,12 +205,14 @@ subsections:
       #      → TOB_adj = 405 + 1440 = 1845 min
       #      → TIB = 1845 − 1320 − WOOB  ✓ (not 405 − 1320 = negative)
       #    Apply the same adjustment to SOL, FWT, WASO_clock when < TIB_start.
-      #    Duration fields (time_kind: duration) are NEVER adjusted.
+      #    Duration fields (time_kind: duration — WASO_dur, WOOB, WIBA) are
+      #    NEVER adjusted.
       #
       # 4. OUTPUT
-      #    Return "" if any of the six required inputs is blank/unparseable.
-      #    Otherwise return "NN%" (integer, rounded). Store as plain string
-      #    in JSON — the unit "%" is display-only in the TUI.
+      #    Return "" if TIB_start/TOB is missing, or if neither TST path
+      #    (A or B above) has enough data. Otherwise return "NN%" (integer,
+      #    rounded). Store as plain string in JSON — the unit "%" is
+      #    display-only in the TUI.
       #
       # The loader renders this as a read-only Input (greyed out) that
       # recomputes whenever any field listed in `inputs` changes.
@@ -180,10 +224,11 @@ subsections:
         unit: "%"
         formula_fn: calc_sleep_efficiency
         inputs:
-          - sleep_onset_time       # SOL
-          - sleep_waso_duration    # WASO_dur
-          - sleep_final_wakeup     # FWT
           - sleep_time_to_bed      # TIB_start
+          - sleep_onset_time       # SOL
+          - sleep_final_wakeup     # FWT
+          - sleep_waso_duration    # WASO_dur
+          - sleep_awake_in_bed     # WIBA
           - sleep_awake_out_bed    # WOOB
           - sleep_time_out_of_bed  # TOB
 

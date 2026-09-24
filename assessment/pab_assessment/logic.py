@@ -19,7 +19,7 @@ def _extract_time_token(s: str) -> str:
     return m.group() if m else ""
 
 
-def _parse_clock(s: str) -> int | None:
+def _parse_clock(s: str, pm_default: bool = True) -> int | None:
     """Parse a clock-time string to minutes since midnight, or None.
 
     Accepts: '22:30', '2230', '645', '6:45', '0645'.
@@ -27,10 +27,21 @@ def _parse_clock(s: str) -> int | None:
     Returns None if out of range or unparseable.
 
     Sleep-diary PM convention (applied when h is in range 5–12):
-      No leading zero  →  PM assumed  (9:00 → 21:00, 10:00 → 22:00, 900 → 21:00)
-      Leading zero     →  AM literal  (09:00 → 09:00, 0900 → 09:00)
+      No leading zero  →  PM assumed IF pm_default, else AM literal
+                           (pm_default: 9:00 → 21:00, 10:00 → 22:00, 900 → 21:00
+                            not pm_default: 9:00 → 09:00, 10:00 → 10:00)
+      Leading zero     →  AM literal regardless of pm_default
+                           (09:00 → 09:00, 0900 → 09:00)
     Hours 1–4 are always treated as AM (post-midnight sleep times; nobody has a
     2 pm bedtime). Hours 0 and 13–23 are always literal 24 h.
+
+    pm_default distinguishes "usually-evening" fields (time to bed, time to
+    attempt sleep, time to actual sleep, WASO clock time — pm_default=True,
+    the default) from "usually-morning" fields (final wake-up, time out of
+    bed — call with pm_default=False). Applying the PM guess uniformly to
+    every clock field used to silently read a bare "10:00" final-wake-up as
+    22:00 (10pm), inflating sleep efficiency — see calc_sleep_efficiency()'s
+    two call sites for the fix.
     """
     if not s:
         return None
@@ -54,7 +65,7 @@ def _parse_clock(s: str) -> int | None:
         else:
             h, mn = int(d[:2]), int(d[2:])
             leading_zero = d[0] == '0'
-    if 5 <= h <= 12 and not leading_zero:
+    if 5 <= h <= 12 and not leading_zero and pm_default:
         h = (h + 12) % 24  # 12 wraps to 0 (midnight)
     if h > 23 or mn > 59:
         return None
@@ -81,49 +92,85 @@ def _parse_duration(s: str) -> int | None:
 
 
 def calc_sleep_efficiency(
-    sleep_onset_time: str,
-    sleep_waso_duration: str,
-    sleep_final_wakeup: str,
     sleep_time_to_bed: str,
+    sleep_onset_time: str,
+    sleep_final_wakeup: str,
+    sleep_waso_duration: str,
+    sleep_awake_in_bed: str,
     sleep_awake_out_bed: str,
     sleep_time_out_of_bed: str,
 ) -> str:
-    """Return sleep efficiency as 'NN%', or '' if any required input is missing.
+    """Return sleep efficiency as 'NN%', or '' if there isn't enough data.
 
-    Formula:
-        TST = (FWT - SOL) - WASO_dur
+    Core concept: SE = time asleep / time in bed. WIBA (awake in bed) and
+    WOOB (awake out of bed) are two separate, additive wakeful periods —
+    e.g. "awake for 100 min, 50 of it pacing outside the bed" is WIBA=50 +
+    WOOB=50, not one substituting for the other. Both reduce how much
+    sleep is credited; WOOB additionally shrinks the "in bed" denominator
+    itself, since that time wasn't spent in bed at all:
+
         TIB = (TOB - TIB_start) - WOOB
-        SE  = TST / TIB * 100
+
+        TST — two alternative paths, tried in this order:
+            A. Clock-time path (preferred): SOL and FWT both given
+                   TST = (FWT - SOL) - WASO_dur
+            B. Duration fallback: SOL and/or FWT missing, but WIBA and/or
+               WOOB given — assume every TIB minute not accounted for by
+               WIBA was asleep:
+                   TST = TIB - WIBA
+
+        SE = TST / TIB * 100
+
+    A given WIBA duration always costs the same number of minutes off TST
+    regardless of WOOB — it is never silently cancelled out by adding WOOB
+    (that was a real bug: subtracting WIBA from the WOOB-*independent*
+    gross window, then clamping to TIB, made SE jump straight to 100%
+    whenever WOOB happened to be >= WIBA, erasing the WIBA penalty
+    entirely). What WOOB *does* do is make a wakeful period more efficient
+    than it would be if the same total wake time had all been spent lying
+    in bed instead — e.g. 50 WIBA + 50 WOOB scores higher than 100 WIBA +
+    0 WOOB, because the WOOB portion shrinks TIB rather than counting
+    against it twice.
+
+    Minimum required data: TIB_start + TOB, AND EITHER (SOL + FWT) OR
+    (WIBA and/or WOOB — either one alone is enough to use path B; with
+    neither, there is nothing to assume "the rest" was asleep relative to,
+    so the result is blank rather than defaulting to a meaningless 100%).
+    WASO_dur is always optional (default 0 if blank).
 
     Midnight crossing: clock times that fall before TIB_start are assumed to
     be post-midnight; add 1440 min so all arithmetic stays monotonic.
+    Duration fields (WASO_dur, WOOB, WIBA) are never adjusted.
     """
-    tib_start = _parse_clock(sleep_time_to_bed)
-    sol       = _parse_clock(sleep_onset_time)
-    fwt       = _parse_clock(sleep_final_wakeup)
-    tob       = _parse_clock(sleep_time_out_of_bed)
-    waso_dur  = _parse_duration(sleep_waso_duration)
-    woob      = _parse_duration(sleep_awake_out_bed)
-
-    if any(v is None for v in (tib_start, sol, fwt, tob)):
+    tib_start = _parse_clock(sleep_time_to_bed)                       # usually PM
+    tob       = _parse_clock(sleep_time_out_of_bed, pm_default=False)  # usually AM
+    if tib_start is None or tob is None:
         return ""
-    if waso_dur is None:
-        waso_dur = 0
-    if woob is None:
-        woob = 0
-
-    # Midnight crossing for clock times
-    if sol < tib_start:
-        sol += 1440
-    if fwt < tib_start:
-        fwt += 1440
     if tob < tib_start:
         tob += 1440
 
-    tst = (fwt - sol) - waso_dur
-    tib = (tob - tib_start) - woob
+    woob = _parse_duration(sleep_awake_out_bed)
+    tib = (tob - tib_start) - (woob or 0)
+    if tib <= 0:
+        return ""
 
-    if tib <= 0 or tst < 0:
+    sol = _parse_clock(sleep_onset_time)                              # usually PM
+    fwt = _parse_clock(sleep_final_wakeup, pm_default=False)          # usually AM
+
+    tst = None
+    if sol is not None and fwt is not None:
+        if sol < tib_start:
+            sol += 1440
+        if fwt < tib_start:
+            fwt += 1440
+        waso_dur = _parse_duration(sleep_waso_duration) or 0
+        tst = (fwt - sol) - waso_dur
+    else:
+        wiba = _parse_duration(sleep_awake_in_bed)
+        if wiba is not None or woob is not None:
+            tst = tib - (wiba or 0)
+
+    if tst is None or tst < 0:
         return ""
 
     se = max(0, min(100, round(tst / tib * 100)))
