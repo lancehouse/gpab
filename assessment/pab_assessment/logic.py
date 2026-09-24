@@ -81,49 +81,68 @@ def _parse_duration(s: str) -> int | None:
 
 
 def calc_sleep_efficiency(
-    sleep_onset_time: str,
-    sleep_waso_duration: str,
-    sleep_final_wakeup: str,
     sleep_time_to_bed: str,
+    sleep_onset_time: str,
+    sleep_final_wakeup: str,
+    sleep_waso_duration: str,
+    sleep_awake_in_bed: str,
     sleep_awake_out_bed: str,
     sleep_time_out_of_bed: str,
 ) -> str:
-    """Return sleep efficiency as 'NN%', or '' if any required input is missing.
+    """Return sleep efficiency as 'NN%', or '' if there isn't enough data.
 
-    Formula:
-        TST = (FWT - SOL) - WASO_dur
+    Core concept: SE = time asleep / time in bed.
+
         TIB = (TOB - TIB_start) - WOOB
-        SE  = TST / TIB * 100
+            WOOB (time fully out of bed during the night) is excluded from
+            TIB entirely — it shrinks only the denominator, which *raises*
+            SE relative to not subtracting it at all.
+
+        TST — two alternative paths, tried in this order:
+            A. Clock-time path (preferred): SOL and FWT both given
+                   TST = (FWT - SOL) - WASO_dur
+            B. Duration fallback: SOL and/or FWT missing, WIBA given —
+               assume every TIB minute not covered by WIBA was asleep
+                   TST = TIB - WIBA
+
+        SE = TST / TIB * 100
+
+    Minimum required data: TIB_start + TOB, AND EITHER (SOL + FWT) OR WIBA.
+    WASO_dur and WOOB are always optional (default 0 if blank).
 
     Midnight crossing: clock times that fall before TIB_start are assumed to
     be post-midnight; add 1440 min so all arithmetic stays monotonic.
+    Duration fields (WASO_dur, WOOB, WIBA) are never adjusted.
     """
     tib_start = _parse_clock(sleep_time_to_bed)
-    sol       = _parse_clock(sleep_onset_time)
-    fwt       = _parse_clock(sleep_final_wakeup)
     tob       = _parse_clock(sleep_time_out_of_bed)
-    waso_dur  = _parse_duration(sleep_waso_duration)
-    woob      = _parse_duration(sleep_awake_out_bed)
-
-    if any(v is None for v in (tib_start, sol, fwt, tob)):
+    if tib_start is None or tob is None:
         return ""
-    if waso_dur is None:
-        waso_dur = 0
-    if woob is None:
-        woob = 0
-
-    # Midnight crossing for clock times
-    if sol < tib_start:
-        sol += 1440
-    if fwt < tib_start:
-        fwt += 1440
     if tob < tib_start:
         tob += 1440
 
-    tst = (fwt - sol) - waso_dur
+    woob = _parse_duration(sleep_awake_out_bed) or 0
     tib = (tob - tib_start) - woob
+    if tib <= 0:
+        return ""
 
-    if tib <= 0 or tst < 0:
+    sol = _parse_clock(sleep_onset_time)
+    fwt = _parse_clock(sleep_final_wakeup)
+
+    tst = None
+    if sol is not None and fwt is not None:
+        if sol < tib_start:
+            sol += 1440
+        if fwt < tib_start:
+            fwt += 1440
+        waso_dur = _parse_duration(sleep_waso_duration) or 0
+        tst = (fwt - sol) - waso_dur
+    else:
+        wiba = _parse_duration(sleep_awake_in_bed)
+        if wiba is not None:
+            tst = tib - wiba
+
+    if tst is None or tst < 0:
         return ""
 
     se = max(0, min(100, round(tst / tib * 100)))
