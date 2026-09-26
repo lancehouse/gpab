@@ -442,6 +442,9 @@ static json_object *notes_to_json(AppState *app,
         if (n->voice_note[0])
             json_object_object_add(o, "voice_note",
                                    json_object_new_string(n->voice_note));
+        if (n->chart_note_text[0])
+            json_object_object_add(o, "chart_note_text",
+                                   json_object_new_string(n->chart_note_text));
 
         /* Spatial association: region the note dot sits in */
         const char *region_label = "";
@@ -713,10 +716,28 @@ static const char *js(json_object *o, const char *k)
 
 /* Forward declaration for note text regeneration */
 extern const char *QUALITY_SHORT_EXTERN[];
+
+/* One shared copy for this file (persistence_load's load loop and
+ * persistence_reload_chart_note_overrides() below both need it) — was
+ * previously a load()-local static, duplicated here rather than pulled
+ * from window.c's own QUALITY_SHORT[] (that cross-file duplication is
+ * pre-existing, not introduced by this change; left alone for now). */
+static const char *const NOTE_QUALITY_SHORT[NOTE_QUALITY_COUNT] = {
+    "Throb","Press","Ache","Stab",
+    "Tight","Burn","Freez","Elec",
+    "Shot","P+N","Numb","Itch"
+};
+
 static void regen_note_text(NoteAnnotation *n, const char *const *qs)
 {
     char line2[128] = {0};
-    if (n->voice_note[0]) {
+    if (n->chart_note_text[0]) {
+        /* Clinician's own Assessment-side wording wins over everything else,
+         * same precedence voice_note already had over the short codes. */
+        snprintf(line2, sizeof(line2), "%.44s%s",
+                 n->chart_note_text,
+                 strlen(n->chart_note_text) > 44 ? "…" : "");
+    } else if (n->voice_note[0]) {
         snprintf(line2, sizeof(line2), "%.44s%s",
                  n->voice_note,
                  strlen(n->voice_note) > 44 ? "…" : "");
@@ -1007,11 +1028,7 @@ gboolean persistence_load(AppState *app, const char *path)
     }
 
     /* Notes — need quality strings for text regeneration */
-    static const char *qs[NOTE_QUALITY_COUNT] = {
-        "Throb","Press","Ache","Stab",
-        "Tight","Burn","Freez","Elec",
-        "Shot","P+N","Numb","Itch"
-    };
+    const char *const *qs = NOTE_QUALITY_SHORT;
     json_object *notes_arr;
     if (json_object_object_get_ex(subj, "notes", &notes_arr)) {
         int n = (int)json_object_array_length(notes_arr);
@@ -1070,6 +1087,9 @@ gboolean persistence_load(AppState *app, const char *path)
             }
             /* Voice transcript — absent in sessions recorded before voice support */
             g_strlcpy(na->voice_note, js(o, "voice_note"), sizeof(na->voice_note));
+            /* gpab Assessment override — absent unless the clinician has typed
+             * into the "Brief (chart-facing)" box for this note */
+            g_strlcpy(na->chart_note_text, js(o, "chart_note_text"), sizeof(na->chart_note_text));
             regen_note_text(na, qs);
             app->note_count++;
         }
@@ -1329,6 +1349,49 @@ gboolean persistence_write_session_current(AppState *app)
     return ok;
 }
 
+/* Picks up gpab-side edits to a note's "Brief (chart-facing)" box — the only
+ * field in _session.json that gpab writes (everything else in this file
+ * remains bodychart-owned, see bodychart/CLAUDE.md). Reload here rather than
+ * a full persistence_load(): this runs mid-session, on the live AppState,
+ * and must not disturb undo history, in-progress strokes, or anything else
+ * — only chart_note_text (matched by stable_id) and the derived na->text are
+ * touched. Without this, gpab's write would be silently lost the next time
+ * window_autosave()'s 30s timer serializes bodychart's own (stale, unaware
+ * of the edit) in-memory copy over it — the same race persistence_reload_
+ * assessment() above already exists to avoid, just for a field that's
+ * actually live now (see that function's docstring-equivalent comment). */
+static void persistence_reload_chart_note_overrides(AppState *app)
+{
+    if (!app->session_file[0]) return;
+
+    json_object *root = json_object_from_file(app->session_file);
+    if (!root) return;
+
+    json_object *subj = json_object_object_get(root, "subjective");
+    json_object *notes_arr = subj ? json_object_object_get(subj, "notes") : NULL;
+    if (!notes_arr) { json_object_put(root); return; }
+
+    int n = (int)json_object_array_length(notes_arr);
+    for (int i = 0; i < n; i++) {
+        json_object *o = json_object_array_get_idx(notes_arr, i);
+        int sid = ji(o, "stable_id", -1);
+        if (sid < 0) continue;
+        const char *override_text = js(o, "chart_note_text");
+
+        for (int ni = 0; ni < app->note_count; ni++) {
+            NoteAnnotation *na = &app->notes[ni];
+            if (na->stable_id != sid) continue;
+            if (strcmp(na->chart_note_text, override_text) != 0) {
+                g_strlcpy(na->chart_note_text, override_text, sizeof(na->chart_note_text));
+                regen_note_text(na, NOTE_QUALITY_SHORT);
+            }
+            break;
+        }
+    }
+
+    json_object_put(root);
+}
+
 /* ── File Watcher for Session JSON (integration with physio-assessment) ────── */
 
 static void on_session_file_changed(GFileMonitor *m, GFile *f, GFile *other,
@@ -1342,6 +1405,7 @@ static void on_session_file_changed(GFileMonitor *m, GFile *f, GFile *other,
     if (age_us < 2000000) return;  /* ignore our own writes (within 2 seconds) */
 
     persistence_reload_assessment(app);
+    persistence_reload_chart_note_overrides(app);
     if (app->toolbar_update_cb) app->toolbar_update_cb(app);
     canvas_invalidate(app);
 }

@@ -61,6 +61,17 @@ class _NoteSlot(Gtk.Box):
             self.header_label.set_halign(Gtk.Align.START)
         self.append(self.header_label)
 
+        if full:
+            # Round-trips to the bodychart pin label (chart_note_text) — see
+            # storage_bridge.write_chart_note_texts() and bodychart/src/
+            # persistence.c's regen_note_text(). Overflow/misc slots have no
+            # single stable_id of their own to write back to, so they don't
+            # get this row.
+            self.brief = AutoTextView(f"note_{index}_brief", min_lines=1)
+            self.append(_field_row("Brief (chart-facing):", self.brief))
+        else:
+            self.brief = None
+
         self.loc = AutoTextView(f"note_{index}_loc", min_lines=2)
         self.append(_field_row("Location & distribution:", self.loc))
         self.nat = AutoTextView(f"note_{index}_nat", min_lines=2)
@@ -76,6 +87,8 @@ class _NoteSlot(Gtk.Box):
             self.ease = None
 
     def text_widgets(self):
+        if self.full:
+            yield "brief", self.brief
         yield "loc", self.loc
         yield "nat", self.nat
         if self.full:
@@ -92,6 +105,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.set_margin_end(8)
         self._loading = False
         self._on_changed = None
+        self._on_chart_note_changed = None
         self.session_file = ""
         self._slot_to_stable_id: dict[int, int] = {}
         # Anchor key -> widget to focus, for Alt+letter subsection jumps
@@ -342,6 +356,15 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         for slot in self._note_slots:
             for _, w in slot.text_widgets():
                 w.textview.get_buffer().connect("changed", self._field_changed)
+            if slot.full:
+                # Additional to the generic _field_changed wiring above (which
+                # still fires for "brief" too, saving it into _assessment.json
+                # as usual) — this one pushes the edit into _session.json so
+                # bodychart's own pin label picks it up. See
+                # storage_bridge.write_chart_note_texts().
+                slot.brief.textview.get_buffer().connect(
+                    "changed", self._on_brief_changed, slot
+                )
         self.misc_loc.textview.get_buffer().connect("changed", self._field_changed)
         self.misc_nat.textview.get_buffer().connect("changed", self._field_changed)
 
@@ -353,6 +376,22 @@ class SubjectiveSection(Gtk.Box, SectionBase):
 
     def set_on_changed(self, callback) -> None:
         self._on_changed = callback
+
+    def _on_brief_changed(self, _buf, slot: "_NoteSlot") -> None:
+        if self._loading:
+            return
+        sid = self._slot_to_stable_id.get(slot.index)
+        if sid is None or self._on_chart_note_changed is None:
+            return
+        self._on_chart_note_changed(sid, slot.brief.text)
+
+    def set_on_chart_note_changed(self, callback) -> None:
+        """callback(stable_id: int, text: str) — called whenever a note's
+        Brief (chart-facing) box changes, in addition to the normal
+        set_on_changed() autosave path. app.py wires this to its own
+        debounced write into _session.json (separate timer, separate file —
+        see storage_bridge.write_chart_note_texts())."""
+        self._on_chart_note_changed = callback
 
     # ------------------------------------------------------------------
     # Dynamic note slots — reuses pab_assessment.mapping.build_prefill unchanged
@@ -376,6 +415,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
             if not slot.get_visible():
                 continue
             live_note_fields[str(sid)] = {
+                "brief": slot.brief.text if slot.full else "",
                 "loc": slot.loc.text,
                 "nat": slot.nat.text,
                 "agg": slot.agg.text if slot.full else "",
@@ -457,6 +497,12 @@ class SubjectiveSection(Gtk.Box, SectionBase):
                 slot.header_label.set_label(f"Note {num} — {region}")
                 slot.agg.text = saved.get("agg", "")
                 slot.ease.text = saved.get("ease", "")
+                # Sticky same as loc/nat above: prefer whatever's already
+                # displayed/saved over a fresh read of chart_note_text, so a
+                # chart-file poll tick never fights with what the clinician
+                # is mid-typing here (this widget is also the one *writing*
+                # chart_note_text — see _on_brief_changed below).
+                slot.brief.text = saved.get("brief") or note.get("brief") or ""
             else:
                 slot.header_label.set_label(f"Misc symptoms ({num})")
 
@@ -501,6 +547,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
             if not slot.get_visible():
                 continue
             note_fields[str(sid)] = {
+                "brief": slot.brief.text if slot.full else "",
                 "loc": slot.loc.text,
                 "nat": slot.nat.text,
                 "agg": slot.agg.text if slot.full else "",

@@ -37,6 +37,20 @@ Sidebar switches content via `g_sidebar_content_stack` (`"sx"` / `"obj"` / `"rpt
 This app writes `_session.json` only. Never touch `_assessment.json` or `_objective.json` —
 those are owned by the TUI. Shared schema changes require a version bump in both apps.
 
+**One deliberate, narrow exception (2026-09-26, testing on `dev`/`gpabd` only):** gpab now
+also writes into `_session.json`, but only ever one field — `subjective.notes[i].chart_note_text`,
+the clinician's freeform override for a note's on-chart pin label, edited from gpab's Subjective
+section ("Brief (chart-facing)" box per note) and pushed back here so the two stay in sync (see
+`gpab_assessment/storage_bridge.py`'s `write_chart_note_texts()`). This app's own file-watcher
+(`persistence_monitor_start`/`on_session_file_changed`) picks the change up live via a new
+`persistence_reload_chart_note_overrides()` (parallel to the existing, otherwise-dead
+`persistence_reload_assessment()`) and `regen_note_text()` now prefers `chart_note_text` over
+`voice_note` over the short quality codes. Nothing else about `_session.json` ownership changes —
+gpab still never writes strokes, clusters, zones, or anything else in this file, and this one
+field's write is a narrow, surgical read-modify-write that round-trips everything else byte-for-
+byte (see that function's docstring for the known, narrow, pre-existing-pattern race with this
+app's own 30s JSON-only autosave tick that this doesn't fully close).
+
 Key fields written on every significant change (stroke committed, overlay changed, region changed):
 
 ```json

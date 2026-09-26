@@ -52,6 +52,13 @@ typedef struct {
     LabelAnchor  label;           /* draggable text-box position */
     char         text[256];       /* '\n'-delimited, 2 lines */
     char         voice_note[256]; /* verbatim voice transcript; empty if not used */
+    char         chart_note_text[256]; /* clinician override typed in gpab's Assessment
+                                         * "Brief (chart-facing)" box; empty if not used.
+                                         * Written by gpab into _session.json (new as of
+                                         * this field — see persistence.c's
+                                         * persistence_reload_chart_note_overrides());
+                                         * takes priority over voice_note in
+                                         * regen_note_text() when present. */
 } NoteAnnotation;
 
 typedef struct {

@@ -1132,6 +1132,12 @@ static void wizard_commit(WizardData *wd)
         /* Copy voice transcript (empty string if voice was not used) */
         g_strlcpy(na->voice_note, wd->voice_text, sizeof(na->voice_note));
 
+        /* A brand-new note never has a gpab chart-note-text override yet —
+         * zero defensively in case this array slot held a since-cleared
+         * note (app->note_count can be reset to 0 without clearing struct
+         * contents, e.g. canvas.c's clear-all path). */
+        na->chart_note_text[0] = '\0';
+
         /* Build display text line 2 — prefer voice transcript over short codes */
         char line2[128] = {0};
         if (na->voice_note[0]) {

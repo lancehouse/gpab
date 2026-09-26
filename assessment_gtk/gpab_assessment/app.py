@@ -24,7 +24,7 @@ from gi.repository import Gtk, Gdk, GLib, Gio  # noqa: E402
 from .storage_bridge import (
     load_assessment_block, save_sections, SECTION_KEYS,
     load_objective_block, save_objective_sections, OBJECTIVE_SECTION_KEYS,
-    generate_all_reports_final, load_session_json,
+    generate_all_reports_final, load_session_json, write_chart_note_texts,
 )
 from .sections.consent import ConsentSection
 from .sections.subjective import SubjectiveSection
@@ -178,6 +178,8 @@ class TrialWindow(Gtk.ApplicationWindow):
         self._closing = False  # re-entrancy guard — see _on_close_request
         self._save_source_id: int | None = None       # debounce for _assessment.json
         self._save_source_id_obj: int | None = None    # debounce for _objective.json (separate file, separate timer — matches TUI's AssessmentView/ObjectiveAssessmentView split)
+        self._save_source_id_chart_notes: int | None = None  # debounce for _session.json's chart_note_text (separate file again — see write_chart_note_texts())
+        self._pending_chart_note_updates: dict[int, str] = {}  # stable_id -> text, accumulated between debounce fires
         self._is_fullscreen = False
         self._loading_notes = False
 
@@ -438,6 +440,7 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.consent.set_on_changed(self._on_consent_changed)
         self.consent.set_on_below_framing_changed(self.session_timer_widget.on_field_edit)
         self.subjective.set_on_changed(self._on_subjective_changed)
+        self.subjective.set_on_chart_note_changed(self._schedule_save_chart_note)
         self.medical.set_on_changed(self._on_medical_changed)
         self.pain_classification.set_on_changed(self._schedule_save)
         self.outcome_measures.set_on_changed(self._schedule_save)
@@ -1490,6 +1493,10 @@ class TrialWindow(Gtk.ApplicationWindow):
             GLib.source_remove(self._save_source_id_obj)
             self._save_source_id_obj = None
             self._do_save_obj()
+        if self._save_source_id_chart_notes is not None:
+            GLib.source_remove(self._save_source_id_chart_notes)
+            self._save_source_id_chart_notes = None
+            self._do_save_chart_notes()
 
         self._chart_watcher.stop()
         self._report_timer.stop()
@@ -1721,6 +1728,33 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.save_status.set_label("saved" if ok else "SAVE FAILED")
         if ok:
             self._push_region_tests_to_pain_classification()
+        return GLib.SOURCE_REMOVE
+
+    # ------------------------------------------------------------------
+    # Chart-note write-back — third file, third debounce timer, matching the
+    # "separate debounced save timers per JSON file" convention above. This
+    # one writes to _session.json, bodychart's own file, for the first time
+    # (previously read-only from this app's side) — see
+    # storage_bridge.write_chart_note_texts() and bodychart/src/
+    # persistence.c's persistence_reload_chart_note_overrides() for the
+    # other half of this round trip, including the known narrow race with
+    # bodychart's own 30s autosave that this doesn't fully close.
+    # ------------------------------------------------------------------
+
+    def _schedule_save_chart_note(self, stable_id: int, text: str) -> None:
+        self._pending_chart_note_updates[stable_id] = text
+        if self._save_source_id_chart_notes is not None:
+            GLib.source_remove(self._save_source_id_chart_notes)
+        self._save_source_id_chart_notes = GLib.timeout_add(
+            AUTOSAVE_DEBOUNCE_MS, self._do_save_chart_notes
+        )
+
+    def _do_save_chart_notes(self) -> bool:
+        self._save_source_id_chart_notes = None
+        updates = self._pending_chart_note_updates
+        self._pending_chart_note_updates = {}
+        if updates:
+            write_chart_note_texts(self.session_file, updates)
         return GLib.SOURCE_REMOVE
 
 
