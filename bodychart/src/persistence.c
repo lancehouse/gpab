@@ -721,30 +721,36 @@ extern const char *QUALITY_SHORT_EXTERN[];
  * persistence_reload_chart_note_overrides() below both need it) — was
  * previously a load()-local static, duplicated here rather than pulled
  * from window.c's own QUALITY_SHORT[] (that cross-file duplication is
- * pre-existing, not introduced by this change; left alone for now). */
+ * pre-existing, not introduced by this change; left alone for now).
+ * Full clinical words, not actually abbreviated any more (2026-09-26) —
+ * kept the name for the same reason window.c's copy did, see there. */
 static const char *const NOTE_QUALITY_SHORT[NOTE_QUALITY_COUNT] = {
-    "Throb","Press","Ache","Stab",
-    "Tight","Burn","Freez","Elec",
-    "Shot","P+N","Numb","Itch"
+    "Throbbing", "Pressure",  "Aching",     "Stabbing",
+    "Tight",     "Burning",   "Freezing",   "Electrical",
+    "Shooting",  "Pins & Needles", "Numbness", "Itching"
 };
 
 static void regen_note_text(NoteAnnotation *n, const char *const *qs)
 {
-    char line2[128] = {0};
+    /* Body is word-wrapped to several rows as needed by canvas.c's
+     * draw_note_screen() now, so it no longer needs the old tight 44-char
+     * truncation — just a generous cap so an extreme entry still ends
+     * cleanly rather than overflowing n->text. */
+    char line2[200] = {0};
     if (n->chart_note_text[0]) {
         /* Clinician's own Assessment-side wording wins over everything else,
-         * same precedence voice_note already had over the short codes. */
-        snprintf(line2, sizeof(line2), "%.44s%s",
+         * same precedence voice_note already had over the quality words. */
+        snprintf(line2, sizeof(line2), "%.180s%s",
                  n->chart_note_text,
-                 strlen(n->chart_note_text) > 44 ? "…" : "");
+                 strlen(n->chart_note_text) > 180 ? "…" : "");
     } else if (n->voice_note[0]) {
-        snprintf(line2, sizeof(line2), "%.44s%s",
+        snprintf(line2, sizeof(line2), "%.180s%s",
                  n->voice_note,
-                 strlen(n->voice_note) > 44 ? "…" : "");
+                 strlen(n->voice_note) > 180 ? "…" : "");
     } else {
-        char qual_buf[64] = {0};
+        char qual_buf[160] = {0};
         for (int q = 0; q < n->quality_count; q++) {
-            if (q > 0) strncat(qual_buf, "+",
+            if (q > 0) strncat(qual_buf, ", ",
                                sizeof(qual_buf) - strlen(qual_buf) - 1);
             strncat(qual_buf, qs[n->qualities[q]],
                     sizeof(qual_buf) - strlen(qual_buf) - 1);
@@ -756,8 +762,8 @@ static void regen_note_text(NoteAnnotation *n, const char *const *qs)
 
     snprintf(n->text, sizeof(n->text), "(%d)%s %s %d-%d/10\n%s",
              n->number,
-             n->temporal == 0 ? "Con" : "Int",
-             n->depth    == 0 ? "Sup" : "Dep",
+             n->temporal == 0 ? "Constant" : "Intermittent",
+             n->depth    == 0 ? "Superficial" : "Deep",
              n->low_intensity, n->high_intensity,
              line2);
 }

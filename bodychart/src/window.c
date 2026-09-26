@@ -1104,10 +1104,15 @@ static void on_wizard_destroy(GtkWidget *w, gpointer d)
     g_free(d);
 }
 
+/* Full clinical words, not actually abbreviated any more (2026-09-26) — kept
+ * the name QUALITY_SHORT to avoid touching every call site/comment that
+ * references it. "Shot" -> "Shooting" etc. was the reported problem: too
+ * cryptic on the chart itself. Matches mapping.py's _QUALITY_TERMS wording
+ * on the gpab side (kept in sync by convention, not by a shared source). */
 static const char *QUALITY_SHORT[NOTE_QUALITY_COUNT] = {
-    "Throb", "Press", "Ache",  "Stab",
-    "Tight", "Burn",  "Freez", "Elec",
-    "Shot",  "P+N",   "Numb",  "Itch"
+    "Throbbing", "Pressure",  "Aching",     "Stabbing",
+    "Tight",     "Burning",   "Freezing",   "Electrical",
+    "Shooting",  "Pins & Needles", "Numbness", "Itching"
 };
 
 static void wizard_commit(WizardData *wd)
@@ -1138,16 +1143,20 @@ static void wizard_commit(WizardData *wd)
          * contents, e.g. canvas.c's clear-all path). */
         na->chart_note_text[0] = '\0';
 
-        /* Build display text line 2 — prefer voice transcript over short codes */
-        char line2[128] = {0};
+        /* Build display body — prefer voice transcript over quality words.
+         * Body is word-wrapped to several rows as needed by canvas.c's
+         * draw_note_screen(), so it no longer needs the old tight 44-char
+         * truncation — just a generous cap so an extreme entry still ends
+         * cleanly rather than overflowing na->text. */
+        char line2[200] = {0};
         if (na->voice_note[0]) {
-            snprintf(line2, sizeof(line2), "%.44s%s",
+            snprintf(line2, sizeof(line2), "%.180s%s",
                      na->voice_note,
-                     strlen(na->voice_note) > 44 ? "…" : "");
+                     strlen(na->voice_note) > 180 ? "…" : "");
         } else {
-            char qual_buf[64] = {0};
+            char qual_buf[160] = {0};
             for (int i = 0; i < na->quality_count; i++) {
-                if (i > 0) strncat(qual_buf, "+",
+                if (i > 0) strncat(qual_buf, ", ",
                                    sizeof(qual_buf) - strlen(qual_buf) - 1);
                 strncat(qual_buf, QUALITY_SHORT[na->qualities[i]],
                         sizeof(qual_buf) - strlen(qual_buf) - 1);
@@ -1156,11 +1165,12 @@ static void wizard_commit(WizardData *wd)
                 strncat(qual_buf, "?", sizeof(qual_buf) - strlen(qual_buf) - 1);
             g_strlcpy(line2, qual_buf, sizeof(line2));
         }
-        /* Line 1: number + temporal + depth + intensity; line 2: descriptor */
+        /* Line 1 (header, never wrapped): number + temporal + depth +
+         * intensity; body (line 2+, word-wrapped): descriptor */
         snprintf(na->text, sizeof(na->text), "(%d)%s %s %d-%d/10\n%s",
                  na->number,
-                 na->temporal == 0 ? "Con" : "Int",
-                 na->depth    == 0 ? "Sup" : "Dep",
+                 na->temporal == 0 ? "Constant" : "Intermittent",
+                 na->depth    == 0 ? "Superficial" : "Deep",
                  na->low_intensity, na->high_intensity,
                  line2);
         app->note_count++;

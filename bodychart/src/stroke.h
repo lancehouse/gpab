@@ -50,7 +50,13 @@ typedef struct {
     int          low_intensity;   /* 0-10, first selected */
     int          high_intensity;  /* 0-10, second selected */
     LabelAnchor  label;           /* draggable text-box position */
-    char         text[256];       /* '\n'-delimited, 2 lines */
+    char         text[400];       /* '\n'-delimited: header line + a body that
+                                    * canvas.c's draw_note_screen() word-wraps
+                                    * to several rows as needed (was a fixed
+                                    * 2-line/256-byte layout; widened when the
+                                    * quality codes and chart_note_text/
+                                    * voice_note became full words instead of
+                                    * abbreviations, see window.c/persistence.c) */
     char         voice_note[256]; /* verbatim voice transcript; empty if not used */
     char         chart_note_text[256]; /* clinician override typed in gpab's Assessment
                                          * "Brief (chart-facing)" box; empty if not used.
