@@ -54,6 +54,70 @@ def load_session_json(session_file: str) -> dict:
         return {}
 
 
+def write_chart_note_texts(session_file: str, updates: dict[int, str]) -> bool:
+    """Write clinician-edited "Brief (chart-facing)" text back into the
+    sibling _session.json — bodychart's own file, which this app has never
+    written to before this feature. {stable_id: text} — only the matching
+    notes' "chart_note_text" key is touched; everything else in the file is
+    round-tripped byte-for-byte (as parsed/re-dumped JSON). An empty string
+    removes the key entirely, matching bodychart's own serializer (which
+    only writes chart_note_text/voice_note when non-empty).
+
+    Deliberately re-reads the file fresh right before writing (not any
+    previously cached copy) to keep the window during which bodychart's own
+    30s autosave could clobber this narrow — see persistence.c's
+    persistence_reload_chart_note_overrides() for the other half of this
+    (bodychart reloading our write before its own next autosave tick), and
+    that function's comment for the known, pre-existing, narrow race this
+    doesn't fully close.
+
+    Returns False (and writes nothing) if the file is missing or unparseable
+    — never partially writes a corrupt file over a good one.
+    """
+    path = Path(session_file)
+    if not path.exists() or not updates:
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+
+    subj = data.get("subjective")
+    if not isinstance(subj, dict):
+        return False
+    notes = subj.get("notes")
+    if not isinstance(notes, list):
+        return False
+
+    touched = False
+    for note in notes:
+        if not isinstance(note, dict):
+            continue
+        try:
+            sid = int(note.get("stable_id", -1))
+        except (TypeError, ValueError):
+            continue
+        if sid not in updates:
+            continue
+        text = updates[sid]
+        if text:
+            note["chart_note_text"] = text
+        else:
+            note.pop("chart_note_text", None)
+        touched = True
+
+    if not touched:
+        return False
+
+    try:
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    except Exception:
+        return False
+    return True
+
+
 def load_assessment_block(session_file: str) -> dict:
     """Read the 'assessment' block from the sibling _assessment.json file.
 
@@ -176,6 +240,7 @@ __all__ = [
     "assessment_path",
     "objective_path",
     "load_session_json",
+    "write_chart_note_texts",
     "load_assessment_block",
     "save_sections",
     "load_objective_block",

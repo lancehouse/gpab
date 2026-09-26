@@ -944,6 +944,68 @@ static void draw_note_connector(cairo_t *cr,
 
 /* Render one note annotation: spot dot, connector, 2-line label box.
  * spot_sx/sy and label_sx/sy are screen-space. */
+/* Body text (everything after the header's '\n') now holds full clinical
+ * words rather than short codes — e.g. "Shooting, Burning" or a clinician's
+ * own freeform wording — so it's word-wrapped to several rows instead of
+ * being drawn (or silently overflowing) as one ever-widening line. Greedy
+ * word-wrap: keep adding words to the current row while it fits
+ * NOTE_LABEL_MAX_WIDTH; start a new row when it doesn't. Capped at
+ * NOTE_LABEL_MAX_BODY_ROWS rows — added 2026-09-26 alongside the words
+ * themselves no longer being abbreviated, see window.c/persistence.c. */
+#define NOTE_LABEL_MAX_WIDTH     220.0
+#define NOTE_LABEL_MAX_BODY_ROWS 4
+
+static int wrap_note_body(cairo_t *cr, const char *body,
+                           char rows_out[NOTE_LABEL_MAX_BODY_ROWS][128])
+{
+    if (!body || !body[0]) return 0;
+
+    char buf[200];
+    g_strlcpy(buf, body, sizeof(buf));
+
+    int n = 0;
+    char cur[128] = {0};
+    char *saveptr = NULL;
+    char *word = strtok_r(buf, " ", &saveptr);
+    gboolean truncated = FALSE;
+
+    while (word) {
+        char trial[128];
+        if (cur[0])
+            snprintf(trial, sizeof(trial), "%s %s", cur, word);
+        else
+            snprintf(trial, sizeof(trial), "%s", word);
+
+        cairo_text_extents_t te;
+        cairo_text_extents(cr, trial, &te);
+
+        if ((te.width - te.x_bearing) <= NOTE_LABEL_MAX_WIDTH || !cur[0]) {
+            g_strlcpy(cur, trial, sizeof(cur));
+        } else if (n < NOTE_LABEL_MAX_BODY_ROWS) {
+            g_strlcpy(rows_out[n++], cur, 128);
+            g_strlcpy(cur, word, sizeof(cur));
+        } else {
+            truncated = TRUE;
+            break;
+        }
+        word = strtok_r(NULL, " ", &saveptr);
+    }
+    if (cur[0] && n < NOTE_LABEL_MAX_BODY_ROWS) {
+        g_strlcpy(rows_out[n++], cur, 128);
+    } else if (cur[0]) {
+        truncated = TRUE;
+    }
+    if (word) truncated = TRUE;   /* strtok_r had more left when we broke out */
+
+    if (truncated && n > 0) {
+        size_t l = strlen(rows_out[n - 1]);
+        /* "…" is a 3-byte UTF-8 sequence; keep room for it */
+        if (l > 124) l = 124;
+        g_strlcpy(rows_out[n - 1] + l, "…", 128 - l);
+    }
+    return n;
+}
+
 static void draw_note_screen(cairo_t *cr, const NoteAnnotation *na,
                               double spot_sx, double spot_sy,
                               double label_sx, double label_sy)
@@ -956,26 +1018,34 @@ static void draw_note_screen(cairo_t *cr, const NoteAnnotation *na,
                            CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     cairo_set_font_size(cr, fsz);
 
-    /* Split text on '\n' into up to 2 lines */
-    char line1[128] = {0}, line2[128] = {0};
+    /* Header is line 1, always unwrapped; everything after the first '\n'
+     * is the body, word-wrapped below. */
+    char header[128] = {0};
     const char *nl = strchr(na->text, '\n');
+    char body_rows[NOTE_LABEL_MAX_BODY_ROWS][128] = {{0}};
+    int n_body = 0;
     if (nl) {
         int len1 = (int)(nl - na->text);
-        if (len1 >= (int)sizeof(line1)) len1 = (int)sizeof(line1) - 1;
-        memcpy(line1, na->text, (size_t)len1);
-        snprintf(line2, sizeof(line2), "%s", nl + 1);
+        if (len1 >= (int)sizeof(header)) len1 = (int)sizeof(header) - 1;
+        memcpy(header, na->text, (size_t)len1);
+        n_body = wrap_note_body(cr, nl + 1, body_rows);
     } else {
-        snprintf(line1, sizeof(line1), "%s", na->text);
+        snprintf(header, sizeof(header), "%s", na->text);
     }
 
-    cairo_text_extents_t e1, e2;
-    cairo_text_extents(cr, line1, &e1);
-    cairo_text_extents(cr, line2[0] ? line2 : " ", &e2);
-
-    double line_h = -e1.y_bearing;            /* ascent */
+    cairo_text_extents_t eh;
+    cairo_text_extents(cr, header, &eh);
+    double line_h = -eh.y_bearing;            /* ascent */
     double gap    = 2.0;
-    double bw = fmax(e1.width - e1.x_bearing, e2.width - e2.x_bearing) + 2.0 * pad;
-    double bh = (line2[0] ? (line_h * 2.0 + gap) : line_h) + 2.0 * pad;
+
+    double bw = eh.width - eh.x_bearing;
+    for (int i = 0; i < n_body; i++) {
+        cairo_text_extents_t te;
+        cairo_text_extents(cr, body_rows[i], &te);
+        bw = fmax(bw, te.width - te.x_bearing);
+    }
+    bw += 2.0 * pad;
+    double bh = (line_h * (1 + n_body) + gap * n_body) + 2.0 * pad;
 
     /* Label box is drawn with its reference point as its left-baseline */
     double box_lx = label_sx;
@@ -1005,13 +1075,15 @@ static void draw_note_screen(cairo_t *cr, const NoteAnnotation *na,
 
     /* Text lines */
     cairo_set_source_rgba(cr, 0.05, 0.05, 0.05, 1.0);
-    cairo_move_to(cr, box_lx + pad - e1.x_bearing,
+    cairo_move_to(cr, box_lx + pad - eh.x_bearing,
                       box_ly + pad + line_h);
-    cairo_show_text(cr, line1);
-    if (line2[0]) {
-        cairo_move_to(cr, box_lx + pad - e2.x_bearing,
-                          box_ly + pad + line_h * 2.0 + gap);
-        cairo_show_text(cr, line2);
+    cairo_show_text(cr, header);
+    for (int i = 0; i < n_body; i++) {
+        cairo_text_extents_t te;
+        cairo_text_extents(cr, body_rows[i], &te);
+        cairo_move_to(cr, box_lx + pad - te.x_bearing,
+                          box_ly + pad + line_h * (2.0 + i) + gap * (i + 1));
+        cairo_show_text(cr, body_rows[i]);
     }
 
     cairo_restore(cr);

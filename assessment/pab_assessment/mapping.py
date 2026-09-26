@@ -196,6 +196,12 @@ def build_prefill(session_json: dict[str, Any]) -> dict[str, Any]:
             "nature":                _fmt_nature(note, assoc_cls),
             "aggravating_factors":   "",
             "easing_factors":        "",
+            # Clinician's own wording for the on-chart pin label — round-trips
+            # both ways (see bodychart/src/persistence.c's chart_note_text /
+            # regen_note_text()). Purely passed through here, never derived;
+            # gpab writes edits back into _session.json via
+            # storage_bridge.write_chart_note_texts().
+            "brief":                 str(note.get("chart_note_text", "")),
         })
 
     # Misc clusters (no nearby note) — exclude type 5 (SYMPTOM_TICK = zone clear marker)

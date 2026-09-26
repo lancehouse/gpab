@@ -61,6 +61,17 @@ class _NoteSlot(Gtk.Box):
             self.header_label.set_halign(Gtk.Align.START)
         self.append(self.header_label)
 
+        if full:
+            # Round-trips to the bodychart pin label (chart_note_text) — see
+            # storage_bridge.write_chart_note_texts() and bodychart/src/
+            # persistence.c's regen_note_text(). Overflow/misc slots have no
+            # single stable_id of their own to write back to, so they don't
+            # get this row.
+            self.brief = AutoTextView(f"note_{index}_brief", min_lines=1)
+            self.append(_field_row("Brief (chart-facing):", self.brief))
+        else:
+            self.brief = None
+
         self.loc = AutoTextView(f"note_{index}_loc", min_lines=2)
         self.append(_field_row("Location & distribution:", self.loc))
         self.nat = AutoTextView(f"note_{index}_nat", min_lines=2)
@@ -76,6 +87,8 @@ class _NoteSlot(Gtk.Box):
             self.ease = None
 
     def text_widgets(self):
+        if self.full:
+            yield "brief", self.brief
         yield "loc", self.loc
         yield "nat", self.nat
         if self.full:
@@ -92,6 +105,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.set_margin_end(8)
         self._loading = False
         self._on_changed = None
+        self._on_chart_note_changed = None
         self.session_file = ""
         self._slot_to_stable_id: dict[int, int] = {}
         # Anchor key -> widget to focus, for Alt+letter subsection jumps
@@ -130,7 +144,17 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.misc_slot.append(_field_row("Location & distribution:", self.misc_loc))
         self.misc_nat = AutoTextView("misc_nat", min_lines=2)
         self.misc_slot.append(_field_row("Nature:", self.misc_nat))
-        self.misc_slot.set_visible(False)
+        self.misc_agg = AutoTextView("misc_agg", min_lines=2)
+        self.misc_slot.append(_field_row("Aggravating factors:", self.misc_agg))
+        self.misc_ease = AutoTextView("misc_ease", min_lines=2)
+        self.misc_slot.append(_field_row("Easing factors:", self.misc_ease))
+        # Always present (unlike the per-note slots, which only appear once
+        # the body chart has a note to drive them) — Aggravating/Easing here
+        # have no body-chart source at all, so the clinician needs to be able
+        # to start typing them before any chart notes exist. No stable_id to
+        # write back to either — Misc isn't tied to one chart location, so
+        # unlike the per-note "Brief (chart-facing)" box, there's nothing
+        # here that round-trips to bodychart.
         self.append(self.misc_slot)
 
         self.no_notes_msg = Gtk.Label(label="(No body chart notes placed)")
@@ -342,8 +366,19 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         for slot in self._note_slots:
             for _, w in slot.text_widgets():
                 w.textview.get_buffer().connect("changed", self._field_changed)
+            if slot.full:
+                # Additional to the generic _field_changed wiring above (which
+                # still fires for "brief" too, saving it into _assessment.json
+                # as usual) — this one pushes the edit into _session.json so
+                # bodychart's own pin label picks it up. See
+                # storage_bridge.write_chart_note_texts().
+                slot.brief.textview.get_buffer().connect(
+                    "changed", self._on_brief_changed, slot
+                )
         self.misc_loc.textview.get_buffer().connect("changed", self._field_changed)
         self.misc_nat.textview.get_buffer().connect("changed", self._field_changed)
+        self.misc_agg.textview.get_buffer().connect("changed", self._field_changed)
+        self.misc_ease.textview.get_buffer().connect("changed", self._field_changed)
 
     def _field_changed(self, *_args) -> None:
         if self._loading:
@@ -353,6 +388,22 @@ class SubjectiveSection(Gtk.Box, SectionBase):
 
     def set_on_changed(self, callback) -> None:
         self._on_changed = callback
+
+    def _on_brief_changed(self, _buf, slot: "_NoteSlot") -> None:
+        if self._loading:
+            return
+        sid = self._slot_to_stable_id.get(slot.index)
+        if sid is None or self._on_chart_note_changed is None:
+            return
+        self._on_chart_note_changed(sid, slot.brief.text)
+
+    def set_on_chart_note_changed(self, callback) -> None:
+        """callback(stable_id: int, text: str) — called whenever a note's
+        Brief (chart-facing) box changes, in addition to the normal
+        set_on_changed() autosave path. app.py wires this to its own
+        debounced write into _session.json (separate timer, separate file —
+        see storage_bridge.write_chart_note_texts())."""
+        self._on_chart_note_changed = callback
 
     # ------------------------------------------------------------------
     # Dynamic note slots — reuses pab_assessment.mapping.build_prefill unchanged
@@ -376,14 +427,16 @@ class SubjectiveSection(Gtk.Box, SectionBase):
             if not slot.get_visible():
                 continue
             live_note_fields[str(sid)] = {
+                "brief": slot.brief.text if slot.full else "",
                 "loc": slot.loc.text,
                 "nat": slot.nat.text,
                 "agg": slot.agg.text if slot.full else "",
                 "ease": slot.ease.text if slot.full else "",
             }
-        if self.misc_slot.get_visible():
-            live_note_fields["misc_loc"] = self.misc_loc.text
-            live_note_fields["misc_nat"] = self.misc_nat.text
+        live_note_fields["misc_loc"] = self.misc_loc.text
+        live_note_fields["misc_nat"] = self.misc_nat.text
+        live_note_fields["misc_agg"] = self.misc_agg.text
+        live_note_fields["misc_ease"] = self.misc_ease.text
 
         prefill = build_prefill(session_json)
         self._loading = True
@@ -427,15 +480,18 @@ class SubjectiveSection(Gtk.Box, SectionBase):
                         break
                 if focus_sid is not None:
                     break
-            if focus_sid is None and self.misc_slot.get_visible():
+            if focus_sid is None:
                 if self.misc_loc.textview is focused:
                     focus_sid, focus_attr = "misc", "loc"
                 elif self.misc_nat.textview is focused:
                     focus_sid, focus_attr = "misc", "nat"
+                elif self.misc_agg.textview is focused:
+                    focus_sid, focus_attr = "misc", "agg"
+                elif self.misc_ease.textview is focused:
+                    focus_sid, focus_attr = "misc", "ease"
 
         for slot in self._note_slots:
             slot.set_visible(False)
-        self.misc_slot.set_visible(False)
         self._slot_to_stable_id.clear()
 
         notes = prefill.get("notes", [])
@@ -457,22 +513,39 @@ class SubjectiveSection(Gtk.Box, SectionBase):
                 slot.header_label.set_label(f"Note {num} — {region}")
                 slot.agg.text = saved.get("agg", "")
                 slot.ease.text = saved.get("ease", "")
+                # Sticky same as loc/nat above: prefer whatever's already
+                # displayed/saved over a fresh read of chart_note_text, so a
+                # chart-file poll tick never fights with what the clinician
+                # is mid-typing here (this widget is also the one *writing*
+                # chart_note_text — see _on_brief_changed below).
+                slot.brief.text = saved.get("brief") or note.get("brief") or ""
             else:
                 slot.header_label.set_label(f"Misc symptoms ({num})")
 
             slot.loc.text = loc
             slot.nat.text = nat
 
+        # Misc is always present now (Aggravating/Easing have no body-chart
+        # source at all, so the clinician must be able to start typing them
+        # before any chart notes exist — see __init__). Location/Nature keep
+        # the same sticky-prefill behaviour as every note slot; Aggravating/
+        # Easing are purely clinician-entered, same as a note's own agg/ease.
         misc = prefill.get("misc", {})
         misc_loc = saved_note_fields.get("misc_loc") or misc.get("location_distribution", "")
         misc_nat = saved_note_fields.get("misc_nat") or misc.get("nature", "")
-        if misc_loc or misc_nat:
-            self.misc_slot.set_visible(True)
-            self.misc_loc.text = misc_loc
-            self.misc_nat.text = misc_nat
+        misc_agg = saved_note_fields.get("misc_agg", "")
+        misc_ease = saved_note_fields.get("misc_ease", "")
+        self.misc_loc.text = misc_loc
+        self.misc_nat.text = misc_nat
+        self.misc_agg.text = misc_agg
+        self.misc_ease.text = misc_ease
 
-        if focus_sid == "misc" and self.misc_slot.get_visible():
-            (self.misc_loc if focus_attr == "loc" else self.misc_nat).grab_focus()
+        if focus_sid == "misc":
+            _MISC_FOCUS = {
+                "loc": self.misc_loc, "nat": self.misc_nat,
+                "agg": self.misc_agg, "ease": self.misc_ease,
+            }
+            _MISC_FOCUS[focus_attr].grab_focus()
         elif focus_sid is not None:
             for i, sid in self._slot_to_stable_id.items():
                 if str(sid) != focus_sid:
@@ -483,7 +556,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
                         break
                 break
 
-        has_content = bool(notes) or bool(misc_loc or misc_nat)
+        has_content = bool(notes) or bool(misc_loc or misc_nat or misc_agg or misc_ease)
         self.no_notes_msg.set_visible(not has_content)
 
     # ------------------------------------------------------------------
@@ -501,6 +574,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
             if not slot.get_visible():
                 continue
             note_fields[str(sid)] = {
+                "brief": slot.brief.text if slot.full else "",
                 "loc": slot.loc.text,
                 "nat": slot.nat.text,
                 "agg": slot.agg.text if slot.full else "",
@@ -508,9 +582,10 @@ class SubjectiveSection(Gtk.Box, SectionBase):
             }
         data["note_fields"] = note_fields
 
-        misc_visible = self.misc_slot.get_visible()
-        data["misc_loc"] = self.misc_loc.text if misc_visible else ""
-        data["misc_nat"] = self.misc_nat.text if misc_visible else ""
+        data["misc_loc"] = self.misc_loc.text
+        data["misc_nat"] = self.misc_nat.text
+        data["misc_agg"] = self.misc_agg.text
+        data["misc_ease"] = self.misc_ease.text
 
         for attr in self._TEXT_ATTRS:
             if attr.startswith("goal_"):
@@ -539,7 +614,23 @@ class SubjectiveSection(Gtk.Box, SectionBase):
                     except Exception:
                         prefill = {}
 
-            self._rebuild_note_slots(subjective.get("note_fields", {}), prefill)
+            # note_fields alone isn't the full "saved" picture — misc_loc/
+            # misc_nat/misc_agg/misc_ease live as top-level keys on
+            # `subjective`, not nested inside note_fields (see collect()).
+            # Pre-existing gap, found while adding misc_agg/misc_ease: this
+            # merge was missing entirely, so a reload always dropped
+            # whatever was saved in the Misc box and fell straight back to
+            # freshly-derived chart data (or, for the two new fields, which
+            # have no chart-derived fallback at all, silently came back
+            # blank on every app restart even after being saved). Matches
+            # the shape refresh_from_chart() already builds for its own
+            # (in-session, non-reload) rebuild call below.
+            saved_fields = dict(subjective.get("note_fields", {}))
+            saved_fields["misc_loc"] = subjective.get("misc_loc", "")
+            saved_fields["misc_nat"] = subjective.get("misc_nat", "")
+            saved_fields["misc_agg"] = subjective.get("misc_agg", "")
+            saved_fields["misc_ease"] = subjective.get("misc_ease", "")
+            self._rebuild_note_slots(saved_fields, prefill)
 
             for attr in self._TOGGLE_ATTRS:
                 getattr(self, attr).set_value(subjective.get(attr))

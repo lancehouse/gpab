@@ -2796,8 +2796,10 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     f("body_chart_completed", s)
     note_fields = s.get("note_fields") or {}
     for sid, nf in note_fields.items():
-        if any(nf.get(k, "").strip() for k in ("loc", "nat", "agg", "ease")):
+        if any(nf.get(k, "").strip() for k in ("brief", "loc", "nat", "agg", "ease")):
             _emit(f"**Note {int(sid) + 1}:**  ")
+            if nf.get("brief", "").strip():
+                _emit(f"  Brief (chart-facing): {nf['brief'].strip()}  ")
             if nf.get("loc", "").strip():
                 _emit(f"  Location: {nf['loc'].strip()}  ")
             if nf.get("nat", "").strip():
@@ -2807,12 +2809,16 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
             if nf.get("ease", "").strip():
                 _emit(f"  Easing: {nf['ease'].strip()}  ")
             _emit("")
-    if s.get("misc_loc", "").strip() or s.get("misc_nat", "").strip():
+    if any(s.get(k, "").strip() for k in ("misc_loc", "misc_nat", "misc_agg", "misc_ease")):
         _emit("**Misc symptoms (no note):**  ")
         if s.get("misc_loc", "").strip():
             _emit(f"  Location: {s['misc_loc'].strip()}  ")
         if s.get("misc_nat", "").strip():
             _emit(f"  Nature: {s['misc_nat'].strip()}  ")
+        if s.get("misc_agg", "").strip():
+            _emit(f"  Aggravating: {s['misc_agg'].strip()}  ")
+        if s.get("misc_ease", "").strip():
+            _emit(f"  Easing: {s['misc_ease'].strip()}  ")
         _emit("")
 
     sub("History")
@@ -4568,17 +4574,17 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     f("body_chart_completed", s)
     note_fields_r = s.get("note_fields") or {}
     for sid, nf in note_fields_r.items():
-        if any(nf.get(k, "").strip() for k in ("loc", "nat", "agg", "ease")):
+        if any(nf.get(k, "").strip() for k in ("brief", "loc", "nat", "agg", "ease")):
             _emit(f"  Note {int(sid) + 1}:")
-            for key, label in (("loc","Location"),("nat","Nature"),("agg","Aggravating"),("ease","Easing")):
+            for key, label in (("brief","Brief (chart-facing)"),("loc","Location"),("nat","Nature"),("agg","Aggravating"),("ease","Easing")):
                 val = nf.get(key, "").strip()
                 if val or not clean:
                     _emit(f"    {label}:")
                     for row in (val or "(empty)").split("\n"):
                         _emit(f"      {row}")
-    if s.get("misc_loc","").strip() or s.get("misc_nat","").strip():
+    if any(s.get(k, "").strip() for k in ("misc_loc", "misc_nat", "misc_agg", "misc_ease")):
         _emit("  Misc symptoms (no note):")
-        for key, label in (("misc_loc","Location"),("misc_nat","Nature")):
+        for key, label in (("misc_loc","Location"),("misc_nat","Nature"),("misc_agg","Aggravating"),("misc_ease","Easing")):
             val = s.get(key,"").strip()
             if val or not clean:
                 _emit(f"    {label}:")
