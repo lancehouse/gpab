@@ -172,6 +172,7 @@ void sticky_note_commit_launch_fields(const StickyNoteLaunchWidgets *w)
 
 typedef struct {
     GtkOverlay *overlay;
+    GtkFixed   *stage;                /* stationary — see sticky_note_attach_bodychart() */
     GtkWidget  *box;
     double      x, y;                 /* current top-left; persisted on drag-end */
     double      drag_start_x, drag_start_y;
@@ -282,19 +283,6 @@ static void draw_sticky_text(GtkDrawingArea *area, cairo_t *cr,
     }
 }
 
-static gboolean on_sticky_get_child_position(GtkOverlay *overlay, GtkWidget *widget,
-                                              GdkRectangle *alloc, gpointer user_data)
-{
-    (void)overlay;
-    StickyNoteWidgetState *st = user_data;
-    if (widget != st->box) return FALSE;
-    alloc->x = (int)st->x;
-    alloc->y = (int)st->y;
-    alloc->width = STICKY_NOTE_W;
-    alloc->height = STICKY_NOTE_H;
-    return TRUE;
-}
-
 static void on_sticky_drag_begin(GtkGestureDrag *g, double sx, double sy, gpointer data)
 {
     (void)g; (void)sx; (void)sy;
@@ -317,7 +305,7 @@ static void on_sticky_drag_update(GtkGestureDrag *g, double dx, double dy, gpoin
 
     st->x = nx;
     st->y = ny;
-    gtk_widget_queue_allocate(GTK_WIDGET(st->overlay));
+    gtk_fixed_move(st->stage, st->box, st->x, st->y);
 }
 
 static void on_sticky_drag_end(GtkGestureDrag *g, double dx, double dy, gpointer data)
@@ -373,13 +361,30 @@ void sticky_note_attach_bodychart(GtkOverlay *overlay)
                                     g_strdup(d.text), g_free);
     gtk_box_append(GTK_BOX(box), area);
 
+    /* Stage: a stationary, full-overlay-sized GtkFixed hosting `box` as its
+     * only child, positioned via gtk_fixed_put/move. The drag gesture is
+     * attached to the STAGE (which never moves), not to `box` (which
+     * does) — attaching it to box instead hits a documented GTK4 feedback
+     * bug: each drag-update's dx/dy gets measured against box's CURRENT
+     * (already-partway-moved) position, under-reporting motion every
+     * event and converging to roughly half the actual drag distance, with
+     * visible jitter as it oscillates — exactly what was reported after
+     * the first version of this landed. can_target(FALSE) on the stage
+     * lets clicks in the empty surrounding area fall through to whatever
+     * canvas/sidebar content is underneath; `box` keeps its own default
+     * can_target (TRUE) as the one actual interactive child. */
+    GtkWidget *stage = gtk_fixed_new();
+    gtk_widget_set_can_target(stage, FALSE);
+    gtk_widget_set_hexpand(stage, TRUE);
+    gtk_widget_set_vexpand(stage, TRUE);
+    gtk_fixed_put(GTK_FIXED(stage), box, st->x, st->y);
+    st->stage = GTK_FIXED(stage);
+
     GtkGesture *drag = gtk_gesture_drag_new();
     g_signal_connect(drag, "drag-begin",  G_CALLBACK(on_sticky_drag_begin),  st);
     g_signal_connect(drag, "drag-update", G_CALLBACK(on_sticky_drag_update), st);
     g_signal_connect(drag, "drag-end",    G_CALLBACK(on_sticky_drag_end),    st);
-    gtk_widget_add_controller(box, GTK_EVENT_CONTROLLER(drag));
+    gtk_widget_add_controller(stage, GTK_EVENT_CONTROLLER(drag));
 
-    g_signal_connect(overlay, "get-child-position",
-                     G_CALLBACK(on_sticky_get_child_position), st);
-    gtk_overlay_add_overlay(overlay, box);
+    gtk_overlay_add_overlay(overlay, stage);
 }

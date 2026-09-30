@@ -167,14 +167,32 @@ class StickyNoteWidget(Gtk.Box):
         self._area.set_draw_func(self._draw_text)
         self.append(self._area)
 
+        # Stage: a stationary, full-overlay-sized Gtk.Fixed hosting this
+        # note as its only child, positioned via Fixed.put/move. The drag
+        # gesture is attached to the STAGE (which never moves), not to
+        # this widget (which does) — attaching it here instead hits a
+        # documented GTK4 feedback bug: each drag-update's dx/dy gets
+        # measured against this widget's CURRENT (already-partway-moved)
+        # position, under-reporting motion every event and converging to
+        # roughly half the actual drag distance, with visible jitter as it
+        # oscillates — exactly what was reported after the first version of
+        # this landed. can_target(False) on the stage lets clicks in the
+        # empty surrounding area fall through to whatever's underneath
+        # (same pattern as app.py's own timer_flash_box); this widget keeps
+        # its own can_target True as the one actual interactive child.
+        self._stage = Gtk.Fixed()
+        self._stage.set_can_target(False)
+        self._stage.set_hexpand(True)
+        self._stage.set_vexpand(True)
+        self._stage.put(self, 0, 0)
+
         drag = Gtk.GestureDrag()
         drag.connect("drag-begin", self._on_drag_begin)
         drag.connect("drag-update", self._on_drag_update)
         drag.connect("drag-end", self._on_drag_end)
-        self.add_controller(drag)
+        self._stage.add_controller(drag)
 
-        overlay.connect("get-child-position", self._on_get_child_position)
-        overlay.add_overlay(self)
+        overlay.add_overlay(self._stage)
 
     # ------------------------------------------------------------------
     # Drawing — auto-shrinking font so the text always fits the fixed box
@@ -216,18 +234,9 @@ class StickyNoteWidget(Gtk.Box):
             cr.show_text(line)
 
     # ------------------------------------------------------------------
-    # Positioning — GtkOverlay's get-child-position gives pixel-perfect
-    # free placement, same technique as bodychart/src/sticky_note.c.
+    # Positioning — see the stage comment in __init__ for why the gesture
+    # lives on the stationary Gtk.Fixed rather than on this widget.
     # ------------------------------------------------------------------
-
-    def _on_get_child_position(self, _overlay, widget, allocation) -> bool:
-        if widget is not self:
-            return False
-        allocation.x = int(self._x)
-        allocation.y = int(self._y)
-        allocation.width = NOTE_W
-        allocation.height = NOTE_H
-        return True
 
     def _on_drag_begin(self, _gesture, _start_x, _start_y) -> None:
         self._drag_start_x = self._x
@@ -243,7 +252,7 @@ class StickyNoteWidget(Gtk.Box):
         if win_h > NOTE_H:
             ny = max(0.0, min(ny, win_h - NOTE_H))
         self._x, self._y = nx, ny
-        self._overlay.queue_allocate()
+        self._stage.move(self, self._x, self._y)
 
     def _on_drag_end(self, _gesture, _dx, _dy) -> None:
         if self._current_location:
@@ -277,5 +286,5 @@ class StickyNoteWidget(Gtk.Box):
             return
         self._x = float(loc_data.get("x", 40.0))
         self._y = float(loc_data.get("y", 40.0))
-        self._overlay.queue_allocate()
+        self._stage.move(self, self._x, self._y)
         self.set_visible(True)
