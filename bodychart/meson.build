@@ -26,6 +26,7 @@ sources = files(
   'src/session.c',
   'src/settings.c',
   'src/persistence.c',
+  'src/sticky_note.c',
   'src/integration.c',
   'src/py_embed.c',
   'src/obj_chart.c',
