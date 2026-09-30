@@ -20,6 +20,7 @@ widget construction and never re-read.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import gi
@@ -29,7 +30,17 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Gtk, Gdk, Graphene  # noqa: E402
 
-_STICKY_NOTE_PATH = Path.home() / ".local" / "share" / "pab" / "sticky_note.json"
+# GPAB_STICKY_NOTE_PATH override exists purely for isolated testing — this
+# file is a real, live, cross-session clinician preference (not per-patient
+# data), so a test run against any disposable session would otherwise still
+# read/write the SAME shared global file a concurrently-running real gpabd/
+# bodychart session is using. Added after exactly that nearly clobbered a
+# real dragged position during testing — see git history. Unset in normal
+# use, so this changes nothing for the real app.
+_STICKY_NOTE_PATH = Path(os.environ.get(
+    "GPAB_STICKY_NOTE_PATH",
+    str(Path.home() / ".local" / "share" / "pab" / "sticky_note.json"),
+))
 
 NOTE_W = 190
 NOTE_H = 190
@@ -298,6 +309,16 @@ class StickyNoteWidget(Gtk.Box):
     def _on_drag_end(self, _gesture, _dx, _dy) -> None:
         if self._current_location:
             save_sticky_note_position(self._current_location, self._x, self._y)
+            # Keep the in-memory copy in sync too — self._data was loaded
+            # once at construction and is what set_context() re-reads on
+            # every tab/mode switch (subjective <-> objective share this
+            # one widget instance). Without this, the position written to
+            # disk above was correct, but switching away and back would
+            # still reposition from the STALE startup value, snapping the
+            # note back to wherever it started — reported as "I can drag it
+            # out of the way, but it realigns when I switch tabs."
+            self._data[self._current_location]["x"] = self._x
+            self._data[self._current_location]["y"] = self._y
 
     def _on_close_clicked(self, _btn) -> None:
         if self._current_location:

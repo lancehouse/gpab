@@ -15,6 +15,19 @@
 
 static void sticky_note_path(char *buf, size_t len)
 {
+    /* GPAB_STICKY_NOTE_PATH override exists purely for isolated testing —
+     * this file is a real, live, cross-session clinician preference (not
+     * per-patient data), so a test run against any disposable session
+     * would otherwise still read/write the SAME shared global file a
+     * concurrently-running real gpabd/bodychart session is using. Added
+     * after exactly that nearly clobbered a real dragged position during
+     * testing — see git history. Unset in normal use, so this changes
+     * nothing for the real app. */
+    const char *override = g_getenv("GPAB_STICKY_NOTE_PATH");
+    if (override && override[0]) {
+        snprintf(buf, len, "%s", override);
+        return;
+    }
     snprintf(buf, len, "%s/.local/share/pab/sticky_note.json", g_get_home_dir());
 }
 
