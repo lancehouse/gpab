@@ -21,13 +21,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Callable
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gtk, Gdk, GObject  # noqa: E402
+gi.require_version("Graphene", "1.0")
+from gi.repository import Gtk, Gdk, Graphene  # noqa: E402
 
 _STICKY_NOTE_PATH = Path.home() / ".local" / "share" / "pab" / "sticky_note.json"
 
@@ -149,8 +149,8 @@ class StickyNoteWidget(Gtk.Box):
         self._current_location: str | None = None
         self._x = 0.0
         self._y = 0.0
-        self._drag_start_x = 0.0
-        self._drag_start_y = 0.0
+        self._grab_dx = 0.0   # press point, offset from this widget's own top-left
+        self._grab_dy = 0.0
 
         top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         close_btn = Gtk.Button(label="×")
@@ -167,32 +167,25 @@ class StickyNoteWidget(Gtk.Box):
         self._area.set_draw_func(self._draw_text)
         self.append(self._area)
 
-        # Stage: a stationary, full-overlay-sized Gtk.Fixed hosting this
-        # note as its only child, positioned via Fixed.put/move. The drag
-        # gesture is attached to the STAGE (which never moves), not to
-        # this widget (which does) — attaching it here instead hits a
-        # documented GTK4 feedback bug: each drag-update's dx/dy gets
-        # measured against this widget's CURRENT (already-partway-moved)
-        # position, under-reporting motion every event and converging to
-        # roughly half the actual drag distance, with visible jitter as it
-        # oscillates — exactly what was reported after the first version of
-        # this landed. can_target(False) on the stage lets clicks in the
-        # empty surrounding area fall through to whatever's underneath
-        # (same pattern as app.py's own timer_flash_box); this widget keeps
-        # its own can_target True as the one actual interactive child.
-        self._stage = Gtk.Fixed()
-        self._stage.set_can_target(False)
-        self._stage.set_hexpand(True)
-        self._stage.set_vexpand(True)
-        self._stage.put(self, 0, 0)
-
         drag = Gtk.GestureDrag()
         drag.connect("drag-begin", self._on_drag_begin)
         drag.connect("drag-update", self._on_drag_update)
         drag.connect("drag-end", self._on_drag_end)
-        self._stage.add_controller(drag)
+        self.add_controller(drag)
 
-        overlay.add_overlay(self._stage)
+        # This widget is a direct GtkOverlay child, sized/positioned only
+        # to its own NOTE_W x NOTE_H rect via get-child-position — nothing
+        # else in the overlay claims the rest of that plane, so clicks
+        # outside the note fall through to whatever's underneath with no
+        # extra plumbing needed. (An earlier attempt wrapped this in an
+        # always-full-size Gtk.Fixed with can_target(False), meaning to let
+        # clicks pass through its empty area — that broke input to the
+        # note entirely instead: GTK4 blocks picking for a widget's whole
+        # subtree when can_target is False, not just the widget's own
+        # empty area, so the note and its close button became unreachable
+        # too. Reverted.)
+        overlay.connect("get-child-position", self._on_get_child_position)
+        overlay.add_overlay(self)
 
     # ------------------------------------------------------------------
     # Drawing — auto-shrinking font so the text always fits the fixed box
@@ -234,17 +227,60 @@ class StickyNoteWidget(Gtk.Box):
             cr.show_text(line)
 
     # ------------------------------------------------------------------
-    # Positioning — see the stage comment in __init__ for why the gesture
-    # lives on the stationary Gtk.Fixed rather than on this widget.
+    # Positioning
     # ------------------------------------------------------------------
 
-    def _on_drag_begin(self, _gesture, _start_x, _start_y) -> None:
-        self._drag_start_x = self._x
-        self._drag_start_y = self._y
+    def _on_get_child_position(self, _overlay, widget, allocation) -> bool:
+        # Confirmed via live testing (not guessed): PyGObject marshals this
+        # signal's GdkRectangle* out-param as a plain 4th positional arg to
+        # mutate in place, same as the C signature — NOT as a return value
+        # (a "return a Gdk.Rectangle" version raised a TypeError about a
+        # 4th argument being passed where only 3 were expected).
+        if widget is not self:
+            return False
+        allocation.x = int(self._x)
+        allocation.y = int(self._y)
+        allocation.width = NOTE_W
+        allocation.height = NOTE_H
+        return True
 
-    def _on_drag_update(self, _gesture, dx, dy) -> None:
-        nx = self._drag_start_x + dx
-        ny = self._drag_start_y + dy
+    def _on_drag_begin(self, _gesture, start_x, start_y) -> None:
+        # start_x/y: press point, offset from this widget's own top-left,
+        # in this widget's local coordinates — stays valid as a "grab
+        # offset" for the rest of the gesture regardless of where this
+        # widget later moves to (unlike GTK's own cumulative dx/dy, see
+        # drag-update below).
+        self._grab_dx = start_x
+        self._grab_dy = start_y
+
+    def _on_drag_update(self, gesture, _dx, _dy) -> None:
+        # GTK's own cumulative dx/dy (relative to drag-begin, in this
+        # widget's LOCAL frame) is unusable here: this widget is the same
+        # one being repositioned every update, via get-child-position
+        # above. GTK re-derives each event's local coordinates from the
+        # widget's CURRENT (already-partway-moved) allocation, so the
+        # reported delta under-counts real pointer motion every frame —
+        # converges to roughly half the actual drag distance with visible
+        # jitter as it oscillates (reported after both the first, naive
+        # version of this and a since-reverted "stationary Gtk.Fixed
+        # stage" attempt — see __init__'s comment for why that one broke
+        # input to the note entirely instead of just fixing the jitter).
+        #
+        # Fix: recompute this widget's ABSOLUTE position fresh on every
+        # event, via a true geometric transform (compute_point, not a
+        # cached delta), so there is nothing to accumulate and nothing
+        # that can drift.
+        ok, cur_x, cur_y = gesture.get_point(None)
+        if not ok:
+            return
+        local_pt = Graphene.Point()
+        local_pt.init(cur_x, cur_y)
+        ok, overlay_pt = self.compute_point(self._overlay, local_pt)
+        if not ok:
+            return
+
+        nx = overlay_pt.x - self._grab_dx
+        ny = overlay_pt.y - self._grab_dy
         win_w = self._overlay.get_width()
         win_h = self._overlay.get_height()
         if win_w > NOTE_W:
@@ -252,7 +288,7 @@ class StickyNoteWidget(Gtk.Box):
         if win_h > NOTE_H:
             ny = max(0.0, min(ny, win_h - NOTE_H))
         self._x, self._y = nx, ny
-        self._stage.move(self, self._x, self._y)
+        self._overlay.queue_allocate()
 
     def _on_drag_end(self, _gesture, _dx, _dy) -> None:
         if self._current_location:
@@ -286,5 +322,5 @@ class StickyNoteWidget(Gtk.Box):
             return
         self._x = float(loc_data.get("x", 40.0))
         self._y = float(loc_data.get("y", 40.0))
-        self._stage.move(self, self._x, self._y)
+        self._overlay.queue_allocate()
         self.set_visible(True)

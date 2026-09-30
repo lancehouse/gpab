@@ -172,10 +172,9 @@ void sticky_note_commit_launch_fields(const StickyNoteLaunchWidgets *w)
 
 typedef struct {
     GtkOverlay *overlay;
-    GtkFixed   *stage;                /* stationary — see sticky_note_attach_bodychart() */
     GtkWidget  *box;
     double      x, y;                 /* current top-left; persisted on drag-end */
-    double      drag_start_x, drag_start_y;
+    double      grab_dx, grab_dy;     /* press point, offset from box's own top-left */
     char        location[16];
 } StickyNoteWidgetState;
 
@@ -283,20 +282,65 @@ static void draw_sticky_text(GtkDrawingArea *area, cairo_t *cr,
     }
 }
 
+static gboolean on_sticky_get_child_position(GtkOverlay *overlay, GtkWidget *widget,
+                                              GdkRectangle *alloc, gpointer user_data)
+{
+    (void)overlay;
+    StickyNoteWidgetState *st = user_data;
+    if (widget != st->box) return FALSE;
+    alloc->x = (int)st->x;
+    alloc->y = (int)st->y;
+    alloc->width = STICKY_NOTE_W;
+    alloc->height = STICKY_NOTE_H;
+    return TRUE;
+}
+
 static void on_sticky_drag_begin(GtkGestureDrag *g, double sx, double sy, gpointer data)
 {
-    (void)g; (void)sx; (void)sy;
+    (void)g;
     StickyNoteWidgetState *st = data;
-    st->drag_start_x = st->x;
-    st->drag_start_y = st->y;
+    /* sx,sy: press point, offset from box's own top-left, in box-local
+     * coordinates — stays valid as a "grab offset" for the rest of the
+     * gesture regardless of where box later moves to (unlike GTK's own
+     * cumulative dx/dy, see drag-update below). */
+    st->grab_dx = sx;
+    st->grab_dy = sy;
 }
 
 static void on_sticky_drag_update(GtkGestureDrag *g, double dx, double dy, gpointer data)
 {
-    (void)g;
+    /* GTK's own cumulative dx/dy (relative to drag-begin, in box's LOCAL
+     * frame) is unusable here: box is the same widget being repositioned
+     * every update, via get-child-position below. GTK re-derives each
+     * event's local coordinates from box's CURRENT (already-partway-moved)
+     * allocation, so the reported delta under-counts real pointer motion
+     * every frame — converges to roughly half the actual drag distance
+     * with visible jitter as it oscillates (reported after both the first,
+     * naive version of this and a since-reverted "stationary GtkFixed
+     * stage" attempt — that one fixed the jitter but broke input to the
+     * note entirely, because can_target(FALSE) on a container in GTK4
+     * blocks picking for its whole subtree, not just the container's own
+     * empty area — so it's back to a direct GtkOverlay child, correct
+     * click-through by construction since box only ever occupies its own
+     * small rect and nothing else claims the rest of the overlay).
+     *
+     * Fix: recompute box's ABSOLUTE position fresh on every event, via a
+     * true geometric transform (gtk_widget_compute_point, not a cached
+     * delta), so there is nothing to accumulate and nothing that can drift. */
+    (void)dx; (void)dy;
     StickyNoteWidgetState *st = data;
-    double nx = st->drag_start_x + dx;
-    double ny = st->drag_start_y + dy;
+
+    double cur_x, cur_y;
+    if (!gtk_gesture_get_point(GTK_GESTURE(g), NULL, &cur_x, &cur_y))
+        return;
+
+    graphene_point_t local_pt = GRAPHENE_POINT_INIT((float)cur_x, (float)cur_y);
+    graphene_point_t overlay_pt;
+    if (!gtk_widget_compute_point(st->box, GTK_WIDGET(st->overlay), &local_pt, &overlay_pt))
+        return;
+
+    double nx = overlay_pt.x - st->grab_dx;
+    double ny = overlay_pt.y - st->grab_dy;
 
     int win_w = gtk_widget_get_width(GTK_WIDGET(st->overlay));
     int win_h = gtk_widget_get_height(GTK_WIDGET(st->overlay));
@@ -305,7 +349,7 @@ static void on_sticky_drag_update(GtkGestureDrag *g, double dx, double dy, gpoin
 
     st->x = nx;
     st->y = ny;
-    gtk_fixed_move(st->stage, st->box, st->x, st->y);
+    gtk_widget_queue_allocate(GTK_WIDGET(st->overlay));
 }
 
 static void on_sticky_drag_end(GtkGestureDrag *g, double dx, double dy, gpointer data)
@@ -361,30 +405,19 @@ void sticky_note_attach_bodychart(GtkOverlay *overlay)
                                     g_strdup(d.text), g_free);
     gtk_box_append(GTK_BOX(box), area);
 
-    /* Stage: a stationary, full-overlay-sized GtkFixed hosting `box` as its
-     * only child, positioned via gtk_fixed_put/move. The drag gesture is
-     * attached to the STAGE (which never moves), not to `box` (which
-     * does) — attaching it to box instead hits a documented GTK4 feedback
-     * bug: each drag-update's dx/dy gets measured against box's CURRENT
-     * (already-partway-moved) position, under-reporting motion every
-     * event and converging to roughly half the actual drag distance, with
-     * visible jitter as it oscillates — exactly what was reported after
-     * the first version of this landed. can_target(FALSE) on the stage
-     * lets clicks in the empty surrounding area fall through to whatever
-     * canvas/sidebar content is underneath; `box` keeps its own default
-     * can_target (TRUE) as the one actual interactive child. */
-    GtkWidget *stage = gtk_fixed_new();
-    gtk_widget_set_can_target(stage, FALSE);
-    gtk_widget_set_hexpand(stage, TRUE);
-    gtk_widget_set_vexpand(stage, TRUE);
-    gtk_fixed_put(GTK_FIXED(stage), box, st->x, st->y);
-    st->stage = GTK_FIXED(stage);
-
     GtkGesture *drag = gtk_gesture_drag_new();
     g_signal_connect(drag, "drag-begin",  G_CALLBACK(on_sticky_drag_begin),  st);
     g_signal_connect(drag, "drag-update", G_CALLBACK(on_sticky_drag_update), st);
     g_signal_connect(drag, "drag-end",    G_CALLBACK(on_sticky_drag_end),    st);
-    gtk_widget_add_controller(stage, GTK_EVENT_CONTROLLER(drag));
+    gtk_widget_add_controller(box, GTK_EVENT_CONTROLLER(drag));
 
-    gtk_overlay_add_overlay(overlay, stage);
+    /* box is a direct GtkOverlay child, sized/positioned only to its own
+     * 190x190 rect via get-child-position — nothing else in the overlay
+     * claims the rest of that plane, so clicks outside the note fall
+     * through to the canvas/sidebar beneath it with no extra plumbing
+     * needed (no can_target tricks — see drag-update's comment for why an
+     * earlier attempt at those broke input to the note entirely). */
+    g_signal_connect(overlay, "get-child-position",
+                     G_CALLBACK(on_sticky_get_child_position), st);
+    gtk_overlay_add_overlay(overlay, box);
 }
