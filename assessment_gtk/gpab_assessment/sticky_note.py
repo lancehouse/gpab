@@ -168,6 +168,11 @@ class StickyNoteWidget(Gtk.Box):
         self.append(self._area)
 
         drag = Gtk.GestureDrag()
+        # GtkGestureSingle handles mouse AND touch by default (touch_only
+        # only needs setting when mouse should be EXCLUDED, never for touch
+        # to be included) — this app runs on a touchscreen laptop, so made
+        # explicit here rather than leaving it an unstated default.
+        drag.set_touch_only(False)
         drag.connect("drag-begin", self._on_drag_begin)
         drag.connect("drag-update", self._on_drag_update)
         drag.connect("drag-end", self._on_drag_end)

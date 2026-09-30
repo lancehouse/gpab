@@ -406,6 +406,11 @@ void sticky_note_attach_bodychart(GtkOverlay *overlay)
     gtk_box_append(GTK_BOX(box), area);
 
     GtkGesture *drag = gtk_gesture_drag_new();
+    /* GtkGestureSingle handles mouse AND touch by default (touch_only only
+     * needs setting when mouse should be EXCLUDED, never for touch to be
+     * included) — this app runs on a touchscreen laptop, so made explicit
+     * here rather than leaving it an unstated default. */
+    gtk_gesture_single_set_touch_only(GTK_GESTURE_SINGLE(drag), FALSE);
     g_signal_connect(drag, "drag-begin",  G_CALLBACK(on_sticky_drag_begin),  st);
     g_signal_connect(drag, "drag-update", G_CALLBACK(on_sticky_drag_update), st);
     g_signal_connect(drag, "drag-end",    G_CALLBACK(on_sticky_drag_end),    st);
