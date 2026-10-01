@@ -7,6 +7,7 @@
 #include "persistence.h"
 #include "report.h"
 #include "integration.h"
+#include "sticky_note.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -886,6 +887,16 @@ static void apply_css(void)
         "#launch-btn-dim { font-size: 14px; min-height: 48px;"
         "  background: #252535; color: #556; border: 1px solid #334;"
         "  border-radius: 6px; }"
+        "#launch-checkbox { color: #bcd; font-size: 12px; }"
+
+        /* ── Sticky note (reminder to self) — classic yellow Post-it look,
+         * deliberately unaffected by the dark bodychart-app theme. ── */
+        ".sticky-note { background: #fff59d; border: 2px solid #e6d570;"
+        "  border-radius: 2px; box-shadow: 3px 3px 8px rgba(0,0,0,0.45); }"
+        ".sticky-note-close { min-height: 20px; min-width: 20px; padding: 0;"
+        "  margin: 2px; background: transparent; border: none;"
+        "  color: #7a6a20; font-size: 14px; font-weight: bold; }"
+        ".sticky-note-close:hover { background: #e6d570; border-radius: 3px; }"
 
         /* ── Note wizard ── */
         "#wiz-title { font-size: 15px; font-weight: bold; color: #ddd;"
@@ -2606,6 +2617,7 @@ typedef struct {
     GtkWidget      *label_entry;
     GtkWidget      *open_btn;
     char            selected_path[512];
+    StickyNoteLaunchWidgets sticky;
 } LaunchData;
 
 static void launch_commit_new(GtkButton *btn, gpointer data)
@@ -2615,6 +2627,7 @@ static void launch_commit_new(GtkButton *btn, gpointer data)
     const char *id  = gtk_editable_get_text(GTK_EDITABLE(ld->id_entry));
     const char *lbl = gtk_editable_get_text(GTK_EDITABLE(ld->label_entry));
     if (!id || id[0] == '\0') id = "XX";
+    sticky_note_commit_launch_fields(&ld->sticky);
     persistence_build_paths(ld->app, id, lbl);
     persistence_monitor_start(ld->app);
     GtkWidget *launch_win = ld->window;
@@ -2630,6 +2643,7 @@ static void launch_commit_open(GtkButton *btn, gpointer data)
     (void)btn;
     LaunchData *ld = data;
     if (!ld->selected_path[0]) return;
+    sticky_note_commit_launch_fields(&ld->sticky);
     if (!persistence_load(ld->app, ld->selected_path)) return;
     persistence_monitor_start(ld->app);
     GtkWidget *launch_win = ld->window;
@@ -2692,7 +2706,10 @@ void window_show_launch(AppState *app, GtkApplication *gapp)
     gtk_widget_add_css_class(ld->window, "bodychart-app");
     gtk_widget_set_name(ld->window, "launch-win");
     gtk_window_set_title(GTK_WINDOW(ld->window), "PhysioChart");
-    gtk_window_set_default_size(GTK_WINDOW(ld->window), 460, 560);
+    /* 560 -> 650: made room for the sticky-note field + checkbox row added
+     * below (non-resizable dialog, so this has to grow rather than the
+     * new content silently clipping/squeezing the recent-sessions list). */
+    gtk_window_set_default_size(GTK_WINDOW(ld->window), 460, 650);
     gtk_window_set_resizable(GTK_WINDOW(ld->window), FALSE);
 
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
@@ -2735,6 +2752,11 @@ void window_show_launch(AppState *app, GtkApplication *gapp)
     /* Enter in ID field → focus label field; Enter in label field → start session */
     g_signal_connect(ld->id_entry,    "activate", G_CALLBACK(on_id_entry_activate), ld);
     g_signal_connect(ld->label_entry, "activate", G_CALLBACK(launch_commit_new),    ld);
+
+    /* Sticky note (reminder to self) — global, not per-session; see
+     * sticky_note.h. Saved on either commit path below, whichever the
+     * clinician actually uses to proceed past this dialog. */
+    sticky_note_build_launch_fields(outer, &ld->sticky);
 
     /* New session button */
     GtkWidget *new_btn = gtk_button_new_with_label("New Session");
@@ -2908,8 +2930,14 @@ void window_create(AppState *app, GtkApplication *gtk_app)
     g_signal_connect(app->window, "close-request",
                      G_CALLBACK(on_main_window_close), app);
 
+    /* GtkOverlay wraps the whole window content so the floating sticky note
+     * (see sticky_note.c) can float freely on top of the sidebar+canvas,
+     * positioned by pixel rather than constrained to the box layout. */
+    GtkWidget *overlay = gtk_overlay_new();
+    gtk_window_set_child(GTK_WINDOW(app->window), overlay);
+
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_window_set_child(GTK_WINDOW(app->window), hbox);
+    gtk_overlay_set_child(GTK_OVERLAY(overlay), hbox);
 
     gtk_box_append(GTK_BOX(hbox), build_sidebar(app));
 
@@ -2917,6 +2945,8 @@ void window_create(AppState *app, GtkApplication *gtk_app)
     gtk_widget_set_hexpand(canvas, TRUE);
     gtk_widget_set_vexpand(canvas, TRUE);
     gtk_box_append(GTK_BOX(hbox), canvas);
+
+    sticky_note_attach_bodychart(GTK_OVERLAY(overlay));
 
     GtkEventController *key_ctrl = gtk_event_controller_key_new();
     gtk_widget_add_controller(app->window, key_ctrl);

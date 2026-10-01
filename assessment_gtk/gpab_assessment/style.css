@@ -496,6 +496,32 @@ entry {
     background: #f9a825;
 }
 
+/* Floating "reminder to self" sticky note (sticky_note.py) — classic
+   yellow Post-it look, deliberately independent of this app's own theme
+   (light or dark), matching bodychart's identical rule for its own copy
+   of this widget. */
+.sticky-note {
+    background-color: #fff59d;
+    border: 2px solid #e6d570;
+    border-radius: 2px;
+    box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.45);
+}
+.sticky-note-close {
+    min-height: 20px;
+    min-width: 20px;
+    padding: 0;
+    margin: 2px;
+    background: transparent;
+    border: none;
+    color: #7a6a20;
+    font-size: 14px;
+    font-weight: bold;
+}
+.sticky-note-close:hover {
+    background: #e6d570;
+    border-radius: 3px;
+}
+
 /* Ctrl+S spell-check modal (spellcheck_modal.py). .spellcheck-top-suggestion
    is deliberately much larger than the rest of the numbered list — meant to
    be readable at a glance while moving quickly through a pass, not read

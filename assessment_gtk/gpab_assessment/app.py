@@ -52,6 +52,7 @@ from .grid_overview import (
     section_to_cursor, _section_has_data,
 )
 from .widgets import add_focus_listener, GOAL_TYPE_FIELDS
+from .sticky_note import StickyNoteWidget
 from .nav import SectionNav
 from .topbar import SubsectionNavBar
 from .footer import FooterBar
@@ -213,6 +214,14 @@ class TrialWindow(Gtk.ApplicationWindow):
         self._timer_flash_box.set_can_target(False)
         self._timer_flash_box.set_opacity(0)
         root_overlay.add_overlay(self._timer_flash_box)
+
+        # Floating "reminder to self" sticky note (see sticky_note.py) —
+        # shown for the "subjective"/"objective" locations only; bodychart
+        # draws its own copy of the "bodychart" location. Reuses this same
+        # root_overlay (registers its own get-child-position handler,
+        # alongside nothing else needing one here) rather than adding a
+        # second overlay just for this.
+        self._sticky_note = StickyNoteWidget(root_overlay)
 
         # -- top bar: the ONE persistent bar, shown on every sidebar tab
         # (there is no separate app-title bar — that wasted a second row of
@@ -597,6 +606,22 @@ class TrialWindow(Gtk.ApplicationWindow):
             })
         elif name == "crps":
             self.crps.update_cross_refs({"sensory": self.sensory.collect()})
+
+        self._update_sticky_note(section_id)
+
+    def _update_sticky_note(self, section_id: str) -> None:
+        """"subjective" location while specifically on 02_subjective (not
+        just anywhere in Assessment mode); "objective" location for the
+        whole of Objective mode (mirrors how region_topbar is shown for
+        all of Objective mode, not just the region-variable tabs — see
+        _show_section's own docstring). Neither -> hidden."""
+        if self._in_objective_mode:
+            location = "objective"
+        elif section_id == "02_subjective":
+            location = "subjective"
+        else:
+            location = None
+        self._sticky_note.set_context(location)
 
     # ------------------------------------------------------------------
     # Region toggling — mirrors objective_view.py's _mount_region /
