@@ -72,6 +72,12 @@ static json_object *strokes_to_json(StrokeList *sl)
         json_object_object_add(s, "wide",  json_object_new_boolean(sk->wide_mode));
         if (sk->draw_zoom > 0.0)
             json_object_object_add(s, "draw_zoom", json_object_new_double(sk->draw_zoom));
+        /* Only ever set on Objective pencil marks (see stroke.h) — omitted
+         * entirely for Subjective strokes/pencil marks, which never have
+         * a colour override, so their JSON shape is unchanged. */
+        if (sk->obj_pencil_color_type >= 0)
+            json_object_object_add(s, "obj_color",
+                json_object_new_int(sk->obj_pencil_color_type));
         json_object *pts = json_object_new_array();
         for (size_t j = 0; j < sk->n_pts; j++) {
             json_object *pt = json_object_new_array();
@@ -157,12 +163,15 @@ static json_object *obj_zones_to_json(AppState *app)
         json_object *o = json_object_new_object();
         json_object_object_add(o, "type", json_object_new_int((int)z->type));
         json_object_object_add(o, "view", json_object_new_int(z->view));
+        if (z->draw_zoom > 0.0)
+            json_object_object_add(o, "draw_zoom", json_object_new_double(z->draw_zoom));
         json_object *pts = json_object_new_array();
         double cbx = 0.0, cby = 0.0;
         for (int j = 0; j < z->n; j++) {
             json_object *pt = json_object_new_array();
             json_object_array_add(pt, json_object_new_double(z->bx[j]));
             json_object_array_add(pt, json_object_new_double(z->by[j]));
+            json_object_array_add(pt, json_object_new_double(z->bp[j]));
             json_object_array_add(pts, pt);
             cbx += z->bx[j];
             cby += z->by[j];
@@ -790,17 +799,25 @@ static void load_obj_data(AppState *app, json_object *obj_j)
             int view = ji(o, "view", 0);
             if (type < 0 || type >= OBJ_ZONE_COUNT) continue;
             ObjZone *z = obj_zone_new((ObjZoneType)type, view);
+            z->draw_zoom = jd(o, "draw_zoom", 0.0);
             json_object *pts;
             if (json_object_object_get_ex(o, "pts", &pts)) {
                 int np = (int)json_object_array_length(pts);
                 for (int j = 0; j < np; j++) {
                     json_object *pt = json_object_array_get_idx(pts, j);
-                    if (json_object_array_length(pt) >= 2) {
+                    int plen = (int)json_object_array_length(pt);
+                    if (plen >= 2) {
                         float bx = (float)json_object_get_double(
                                        json_object_array_get_idx(pt, 0));
                         float by = (float)json_object_get_double(
                                        json_object_array_get_idx(pt, 1));
-                        obj_zone_add_pt(z, bx, by);
+                        /* Pressure is new (2026-10-02) — a zone saved
+                         * before this field existed has only [bx, by];
+                         * default to a flat 1.0 so it still loads and
+                         * renders (just without width variation). */
+                        float bp = (plen >= 3) ? (float)json_object_get_double(
+                                       json_object_array_get_idx(pt, 2)) : 1.0f;
+                        obj_zone_add_pt(z, bx, by, bp);
                     }
                 }
             }
@@ -868,6 +885,9 @@ static void load_obj_data(AppState *app, json_object *obj_j)
             Stroke *sk = stroke_new((SymptomType)type, view);
             sk->wide_mode = wide;
             sk->draw_zoom = draw_zoom_val;
+            int color_src = ji(s, "obj_color", -1);
+            sk->obj_pencil_color_type =
+                (color_src >= 0 && color_src < OBJ_ZONE_COUNT) ? color_src : -1;
             if (sid >= 0) {
                 sk->id = sid;
                 if (sid >= app->next_stroke_id) app->next_stroke_id = sid + 1;

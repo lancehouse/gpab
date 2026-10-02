@@ -4,8 +4,12 @@
 
 typedef struct _AppState AppState;   /* full definition in canvas.h */
 
-#define MAX_OBJ_ZONES    60
-#define MAX_OBJ_ZONE_PTS 512
+/* Raised 2026-10-02 (were 60 / 512) when zones became freehand pencil
+ * strokes instead of a few lasso loops per session — a tool meant for
+ * fine, repeated, per-test marking needs much more headroom than "one
+ * outline per finding type". */
+#define MAX_OBJ_ZONES    2000
+#define MAX_OBJ_ZONE_PTS 4096
 #define MAX_OBJ_POINTS   60
 #define MAX_OBJ_TICKS    60
 
@@ -69,9 +73,23 @@ typedef enum {
 
 typedef struct {
     float       *bx, *by;        /* body-space path (dynamic array) */
+    float       *bp;             /* per-point pressure, 0.0-1.0, same cadence as bx/by
+                                   * (2026-10-02) — committed zones now render as a
+                                   * pressure-sensitive pencil stroke, same mechanism as
+                                   * Subjective's Pain (Constant), instead of a closed
+                                   * filled area; see obj_chart.c's draw_zone_body().
+                                   * A zone loaded from a session saved before this field
+                                   * existed gets a flat 1.0 here (persistence.c), so it
+                                   * still renders — just without the width variation a
+                                   * freshly-drawn one has. */
     int          n, cap;
     int          view;
     ObjZoneType  type;
+    double       draw_zoom;      /* zoom level when drawn by touch; 0.0 = stylus (no
+                                   * compensation) — same convention as Stroke.draw_zoom
+                                   * (stroke.h), needed so a zone traced while zoomed in
+                                   * on a touchscreen doesn't render thicker than what was
+                                   * seen under the finger; see obj_chart.c's `ts`. */
 } ObjZone;
 
 typedef struct {
@@ -111,7 +129,7 @@ extern const ObjPointDef OBJ_POINT_DEFS[OBJ_POINT_COUNT];
 extern const ObjTickDef  OBJ_TICK_DEFS[OBJ_TICK_TYPE_COUNT];
 
 ObjZone *obj_zone_new(ObjZoneType type, int view);
-void     obj_zone_add_pt(ObjZone *z, float bx, float by);
+void     obj_zone_add_pt(ObjZone *z, float bx, float by, float pressure);
 void     obj_zone_free(ObjZone *z);
 
 /* Resolve label position — also used by canvas.c for hit-testing */

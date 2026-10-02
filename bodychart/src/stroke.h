@@ -91,6 +91,15 @@ typedef struct {
     int           wide_mode;  /* 1 = wide band (2–7 bu), 0 = thin (0.8–4.5 bu) */
     double        draw_zoom;  /* zoom level when drawn by touch; 0.0 = stylus (no compensation) */
     int           id;         /* monotonic, never reused after undo */
+    int           obj_pencil_color_type; /* -1 = default (SYMPTOM_PENCIL's own black); else
+                                           * an ObjZoneType index (see obj_chart.h) whose
+                                           * OBJ_ZONE_DEFS colour this Objective-mode pencil
+                                           * mark uses instead — lets a clinician's freehand
+                                           * note pick up the colour of whichever finding
+                                           * type they had selected when they wrote it ("a
+                                           * coloured pencil to write notes about findings").
+                                           * Unused (-1) for every other stroke: Subjective
+                                           * strokes/pencil marks have no such colour choice. */
 } Stroke;
 
 /* ── The undo stack ─────────────────────────────────────────────────────── */

@@ -212,6 +212,15 @@ struct _AppState {
     ObjTick   obj_ticks[MAX_OBJ_TICKS];
     int       obj_tick_count;
     ObjZoneType   obj_zone_type;    /* currently selected zone type */
+    gboolean      obj_zone_type_picked; /* TRUE once a finding-type button has
+                                      * actually been clicked this session —
+                                      * obj_zone_type's own default (0 =
+                                      * Static Allodynia) is a real type, not
+                                      * "none", so a colour-tagged pencil mark
+                                      * must check this first or a cold-start
+                                      * general note comes out yellow and
+                                      * gets saved as tagged Allodynia; see
+                                      * input.c's input_end(). */
     ObjPointType  obj_point_type;   /* currently selected point type */
     ObjTickType   obj_tick_type;    /* currently armed tick/cross type */
     ObjTickState  obj_tick_state;   /* currently armed tick/cross state */
