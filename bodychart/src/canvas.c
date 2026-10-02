@@ -1514,11 +1514,18 @@ static void obj_commit_active_zone(AppState *app, GtkWidget *da)
     ObjZone *z = app->obj_active_zone;
     if (!z) return;
     app->obj_active_zone = NULL;
-    if (z->n >= 3 && app->obj_zone_count < MAX_OBJ_ZONES) {
+    /* z->n >= 2 (was >= 3): that was a closed-polygon minimum (need 3
+     * vertices to enclose an area); a freehand pencil mark is a legitimate
+     * stroke from 2 points — a short dash or tick is a real finding mark,
+     * not a discard-worthy accident. */
+    if (z->n >= 2 && app->obj_zone_count < MAX_OBJ_ZONES) {
         app->obj_zones[app->obj_zone_count++] = z;
         if (app->obj_undo_type_top < 64)
             app->obj_undo_type_stack[app->obj_undo_type_top++] = 0;
     } else {
+        if (z->n >= 2)
+            g_warning("Objective zone discarded: MAX_OBJ_ZONES (%d) reached — "
+                      "mark was NOT saved", MAX_OBJ_ZONES);
         obj_zone_free(z);
     }
     if (da) gtk_widget_queue_draw(da);
@@ -1614,7 +1621,20 @@ static void draw_pencil_strokes_body(AppState *app, cairo_t *cr, int view, doubl
     for (int i = 0; i < app->obj_pencil_strokes->n; i++) {
         Stroke *sk = app->obj_pencil_strokes->strokes[i];
         if (sk->view != view) continue;
-        draw_stroke(cr, sk, &SYMPTOM_DEFS[sk->type], app, zoom);
+        /* Colour override (2026-10-02): a mark written with a finding
+         * type selected picks up that finding's colour instead of plain
+         * black — "a coloured pencil to write notes about findings for
+         * each specific sensory test". Same FILL_PENCIL pattern either
+         * way, just a different colour triple handed to draw_stroke(). */
+        if (sk->obj_pencil_color_type >= 0 &&
+            sk->obj_pencil_color_type < OBJ_ZONE_COUNT) {
+            const ObjZoneDef *d = &OBJ_ZONE_DEFS[sk->obj_pencil_color_type];
+            SymptomDef colored = SYMPTOM_DEFS[SYMPTOM_PENCIL];
+            colored.r = d->r; colored.g = d->g; colored.b = d->b;
+            draw_stroke(cr, sk, &colored, app, zoom);
+        } else {
+            draw_stroke(cr, sk, &SYMPTOM_DEFS[sk->type], app, zoom);
+        }
     }
 }
 
@@ -1899,7 +1919,8 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
                 app->obj_active_zone = NULL;
             }
             app->obj_active_zone = obj_zone_new(app->obj_zone_type, (int)cd->view);
-            obj_zone_add_pt(app->obj_active_zone, (float)bx, (float)by);
+            obj_zone_add_pt(app->obj_active_zone, (float)bx, (float)by,
+                             (float)event_effective_pressure(event, app));
             gtk_widget_queue_draw(cd->da);
             return TRUE;
         }
@@ -1985,7 +2006,8 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
         if (app->current_mode == APP_MODE_OBJECTIVE && app->obj_active_zone) {
             double bx, by;
             screen_to_body(cd, x, y, &bx, &by);
-            obj_zone_add_pt(app->obj_active_zone, (float)bx, (float)by);
+            obj_zone_add_pt(app->obj_active_zone, (float)bx, (float)by,
+                             (float)event_effective_pressure(event, app));
             gtk_widget_queue_draw(cd->da);
             return TRUE;
         }
@@ -2193,7 +2215,8 @@ static void on_drag_begin(GtkGestureDrag *gd, double x, double y, gpointer d)
             app->obj_active_zone = NULL;
         }
         app->obj_active_zone = obj_zone_new(app->obj_zone_type, (int)cd->view);
-        obj_zone_add_pt(app->obj_active_zone, (float)bx, (float)by);
+        app->obj_active_zone->draw_zoom = *cd->p_zoom;
+        obj_zone_add_pt(app->obj_active_zone, (float)bx, (float)by, 1.0f);
         cd->touch_drawing = TRUE;
         gtk_widget_queue_draw(cd->da);
         return;
@@ -2260,7 +2283,7 @@ static void on_drag_update(GtkGestureDrag *gd, double dx, double dy,
             app->arrow_y2 = by;
             arrow_track_add(app, bx, by);
         } else if (app->current_mode == APP_MODE_OBJECTIVE && app->obj_active_zone) {
-            obj_zone_add_pt(app->obj_active_zone, (float)bx, (float)by);
+            obj_zone_add_pt(app->obj_active_zone, (float)bx, (float)by, 1.0f);
         } else {
             input_motion(app, bx, by, 1.0);
         }

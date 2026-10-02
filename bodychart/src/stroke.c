@@ -22,6 +22,10 @@ Stroke *stroke_new(SymptomType type, int view)
     s->type      = type;
     s->view      = view;
     s->wide_mode = 0;
+    s->obj_pencil_color_type = -1;  /* calloc zeroes to 0, which is a real
+                                      * ObjZoneType (Allodynia) — must set
+                                      * explicitly so "no colour override"
+                                      * means -1, not yellow. */
     return s;
 }
 

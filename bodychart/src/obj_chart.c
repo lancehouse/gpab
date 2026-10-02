@@ -47,20 +47,23 @@ ObjZone *obj_zone_new(ObjZoneType type, int view)
     z->cap  = 64;
     z->bx   = g_malloc(z->cap * sizeof(float));
     z->by   = g_malloc(z->cap * sizeof(float));
+    z->bp   = g_malloc(z->cap * sizeof(float));
     return z;
 }
 
-void obj_zone_add_pt(ObjZone *z, float bx, float by)
+void obj_zone_add_pt(ObjZone *z, float bx, float by, float pressure)
 {
     if (z->n >= z->cap) {
         z->cap *= 2;
         if (z->cap > MAX_OBJ_ZONE_PTS) z->cap = MAX_OBJ_ZONE_PTS;
         z->bx = g_realloc(z->bx, z->cap * sizeof(float));
         z->by = g_realloc(z->by, z->cap * sizeof(float));
+        z->bp = g_realloc(z->bp, z->cap * sizeof(float));
     }
     if (z->n < MAX_OBJ_ZONE_PTS) {
         z->bx[z->n] = bx;
         z->by[z->n] = by;
+        z->bp[z->n] = CLAMP(pressure, 0.0f, 1.0f);
         z->n++;
     }
 }
@@ -70,31 +73,65 @@ void obj_zone_free(ObjZone *z)
     if (!z) return;
     g_free(z->bx);
     g_free(z->by);
+    g_free(z->bp);
     g_free(z);
 }
 
 /* ── Zone path drawing helper ────────────────────────────────────────────── */
 
-static void draw_zone_body(cairo_t *cr, const ObjZone *z,
-                            float r, float g, float b)
+/* Pressure-sensitive pencil stroke — same Catmull-Rom + pressure-width
+ * mechanism as canvas.c's draw_stroke(), deliberately duplicated rather
+ * than shared: that function takes a Stroke (StrokePoint array), not an
+ * ObjZone's separate bx/by/bp arrays, and zones have no wide_mode of
+ * their own. Replaces the old closed-polygon fill (2026-10-02, see
+ * obj_chart.h's ObjZone.bp comment) —
+ * "circling an area" becomes a traced, colour-matched pencil mark instead,
+ * for better on-chart accuracy and so the same mark can run right up to a
+ * specific test site rather than needing to fully enclose it. */
+static void draw_zone_stroke_body(cairo_t *cr, const ObjZone *z,
+                                   float r, float g, float b, double alpha)
 {
     if (z->n < 2) return;
+    int n = z->n;
+    /* Same touch-zoom compensation as canvas.c's draw_stroke() — a mark
+     * traced while zoomed in on a touchscreen must not render thicker
+     * than what was seen under the finger while drawing it. */
+    const double ts = (z->draw_zoom > 0.0) ? (1.0 / z->draw_zoom) : 1.0;
 
     cairo_save(cr);
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
     cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
 
+    /* Pencil-weight band (FILL_PENCIL's own, stroke.h/canvas.c), not Pain
+     * Constant's 0.375-12.0 bu band — "pencil strokes" and "better
+     * accuracy" both point at a thin line, not a 6%-of-body-width stripe
+     * at full pressure (the touch-drawn default). Revisit after a look on
+     * the Yoga if it reads too thin. */
+    double p_cur = z->bp[0];
+    double w_cur = ts * (0.6 + p_cur * 1.4);
+    cairo_set_line_width(cr, w_cur);
+    cairo_set_source_rgba(cr, r, g, b, alpha);
     cairo_move_to(cr, z->bx[0], z->by[0]);
-    for (int i = 1; i < z->n; i++)
-        cairo_line_to(cr, z->bx[i], z->by[i]);
-
-    if (z->n >= 3) {
-        cairo_close_path(cr);
-        cairo_set_source_rgba(cr, r, g, b, 0.35);
-        cairo_fill_preserve(cr);
+    for (int i = 1; i < n; i++) {
+        double p = (z->bp[i-1] + z->bp[i]) * 0.5;
+        double w = ts * (0.6 + p * 1.4);
+        if (fabs(w - w_cur) > 0.15) {   /* FILL_PENCIL's own re-stroke threshold */
+            cairo_stroke(cr);
+            w_cur = w;
+            cairo_set_line_width(cr, w_cur);
+            cairo_set_source_rgba(cr, r, g, b, alpha);
+            cairo_move_to(cr, z->bx[i-1], z->by[i-1]);
+        }
+        double x0 = (i >= 2) ? (double)z->bx[i-2] : 2.0*z->bx[i-1] - z->bx[i];
+        double y0 = (i >= 2) ? (double)z->by[i-2] : 2.0*z->by[i-1] - z->by[i];
+        double x3 = (i+1 < n) ? (double)z->bx[i+1] : 2.0*z->bx[i] - z->bx[i-1];
+        double y3 = (i+1 < n) ? (double)z->by[i+1] : 2.0*z->by[i] - z->by[i-1];
+        double cp1x = z->bx[i-1] + (z->bx[i] - x0) / 6.0;
+        double cp1y = z->by[i-1] + (z->by[i] - y0) / 6.0;
+        double cp2x = z->bx[i]   - (x3 - z->bx[i-1]) / 6.0;
+        double cp2y = z->by[i]   - (y3 - z->by[i-1]) / 6.0;
+        cairo_curve_to(cr, cp1x, cp1y, cp2x, cp2y, z->bx[i], z->by[i]);
     }
-    cairo_set_source_rgba(cr, r, g, b, 0.80);
-    cairo_set_line_width(cr, 1.2);
     cairo_stroke(cr);
 
     cairo_restore(cr);
@@ -108,7 +145,7 @@ void obj_chart_render_body(AppState *app, cairo_t *cr, int view)
         const ObjZone *z = app->obj_zones[i];
         if (!z || z->view != view) continue;
         const ObjZoneDef *d = &OBJ_ZONE_DEFS[z->type];
-        draw_zone_body(cr, z, d->r, d->g, d->b);
+        draw_zone_stroke_body(cr, z, d->r, d->g, d->b, 0.80);
     }
 }
 
@@ -118,16 +155,7 @@ void obj_chart_render_active_body(AppState *app, cairo_t *cr, int view)
     if (!z || z->view != view || z->n < 1) return;
 
     const ObjZoneDef *d = &OBJ_ZONE_DEFS[z->type];
-    cairo_save(cr);
-    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
-    cairo_move_to(cr, z->bx[0], z->by[0]);
-    for (int i = 1; i < z->n; i++)
-        cairo_line_to(cr, z->bx[i], z->by[i]);
-    cairo_set_source_rgba(cr, d->r, d->g, d->b, 0.70);
-    cairo_set_line_width(cr, 1.5);
-    cairo_stroke(cr);
-    cairo_restore(cr);
+    draw_zone_stroke_body(cr, z, d->r, d->g, d->b, 0.70);
 }
 
 /* ── Tick/cross marker rendering — body space ────────────────────────────── */

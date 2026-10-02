@@ -2166,6 +2166,7 @@ static void on_obj_zone_clicked(GtkButton *btn, gpointer data)
     AppState *app   = pair[0];
     ObjZoneType zt  = (ObjZoneType)(gintptr)pair[1];
     app->obj_zone_type  = zt;
+    app->obj_zone_type_picked = TRUE;
     app->obj_point_mode = FALSE;
     app->obj_tick_mode  = FALSE;
     app->obj_pencil_mode = FALSE;

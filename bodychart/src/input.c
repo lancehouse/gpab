@@ -170,6 +170,17 @@ void input_end(AppState *app)
              * own obj_undo_type_stack instead (type 3 = pencil stroke), so
              * the Obj sidebar's own Undo button can reach it immediately. */
             if (app->current_mode == APP_MODE_OBJECTIVE) {
+                /* Tag with whichever finding type's colour was selected
+                 * when this mark was made (app->obj_zone_type persists
+                 * across the Pencil button toggle — see window.c's
+                 * on_obj_pencil_clicked()) — see stroke.h's field comment
+                 * and canvas.c's draw_pencil_strokes_body(). Only if a
+                 * finding type button has actually been clicked this
+                 * session (obj_zone_type_picked) — otherwise obj_zone_type's
+                 * own zero-default (Static Allodynia) would tag a plain,
+                 * general note as that finding on a cold start. */
+                app->active_stroke->obj_pencil_color_type =
+                    app->obj_zone_type_picked ? (int)app->obj_zone_type : -1;
                 stroke_list_push(app->obj_pencil_strokes, app->active_stroke);
                 if (app->obj_undo_type_top < 64)
                     app->obj_undo_type_stack[app->obj_undo_type_top++] = 3;
