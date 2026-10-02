@@ -332,6 +332,96 @@ def _shift_md_heading(line: str, offset: int) -> str:
     return line
 
 
+# Indentation step for _apply_emr_clean_layout — literal non-breaking spaces,
+# NOT a paragraph-margin/style indent. See that function's docstring for why.
+_EMR_NBSP_UNIT = " " * 4
+
+_EMR_HEADING_RE = re.compile(r'^(#{1,6})\s+(.*)$')
+_EMR_FIELD_RE   = re.compile(r'^\*\*(.+?):\*\*(.*)$')
+
+
+def _emr_indent_for_level(level: int) -> str:
+    if level >= 5:
+        return _EMR_NBSP_UNIT * 2
+    if level >= 3:
+        return _EMR_NBSP_UNIT
+    return ""
+
+
+def _apply_emr_clean_layout(text: str) -> str:
+    """
+    Reformat a finished *_clean.md body for the real docx -> Google Docs ->
+    EMR copy/paste pathway clinicians actually use, based on a live paste
+    test against the production EMR (2026-10-02 — see commit history for
+    the test battery and results). That test found:
+
+      - a true paragraph-margin/style indent does NOT survive the paste
+        (this is what an earlier reference-doc-based attempt used, and it
+        was the one thing that flattened completely)
+      - literal leading characters DO survive — specifically non-breaking
+        spaces, confirmed directly; plain spaces also tested as surviving
+        but NBSP is used here because it additionally survives Markdown's
+        own leading-whitespace trimming on the way through pandoc, which
+        plain spaces would not
+      - horizontal rules and blockquotes do NOT survive
+      - bold text and heading styles DO survive (heading font size is a
+        separate, pre-existing concern — see _MD_H_OFFSET above)
+      - a bordered/boxed callout does NOT survive (same mechanism that
+        loses table borders), so a red-flag line is made prominent with
+        bold + plain-text "!!!" markers instead
+
+    Field/subsection LABELS — a bold "**Label:**" line, whether the value
+    shares its line or is on following lines — are kept flush left, the
+    same tier as a heading. Only the actual value/content text under a
+    label is indented, per direct feedback once this had already been
+    tried without that distinction ("sub headings not indented ... actual
+    text ... indented as preset").
+
+    Only ever applied to the clean/EMR-oriented report — the full
+    *_report.md / *_report_dev.md are untouched.
+    """
+    out: list[str] = []
+    cur_indent = ""
+    for line in text.split("\n"):
+        stripped = line.strip()
+
+        if stripped == "---":
+            # Dropped — didn't survive the paste. Reset defensively: every
+            # '---' in this report is immediately followed by a heading
+            # (which resets indent anyway), but don't assume that always
+            # holds for every section.
+            cur_indent = ""
+            continue
+
+        m = _EMR_HEADING_RE.match(line)
+        if m:
+            out.append(line)
+            cur_indent = _emr_indent_for_level(len(m.group(1)))
+            continue
+
+        if not stripped or line.lstrip().startswith("|"):
+            # Blank lines and table rows pass through unindented — a pipe
+            # table's leading '|' needs to stay unobstructed, and existing
+            # tables in this report aren't part of this change.
+            out.append(line)
+            continue
+
+        m = _EMR_FIELD_RE.match(line)
+        if m:
+            label_text, rest = m.group(1), m.group(2)
+            if "⚠️" in label_text or "RED FLAG" in label_text.upper() or "RED FLAG" in rest.upper():
+                merged = (label_text + ":" + rest).replace("**", "").replace("⚠️", "").strip()
+                trail = "  " if line.endswith("  ") else ""
+                out.append(f"**!!! {merged} !!!**{trail}")
+            else:
+                out.append(line)  # label line — flush left, unchanged
+            continue
+
+        out.append(cur_indent + line)
+
+    return "\n".join(out)
+
+
 def _yn(val) -> str:
     if val is True:  return "Yes"
     if val is False: return "No"
@@ -3891,8 +3981,11 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     # ── Write ──────────────────────────────────────────────────────────────
     if _MD_H_OFFSET:
         lines = [_shift_md_heading(ln, _MD_H_OFFSET) for ln in lines]
+    out_text = "\n".join(lines)
+    if clean:
+        out_text = _apply_emr_clean_layout(out_text)
     try:
-        out_path.write_text("\n".join(lines))
+        out_path.write_text(out_text)
         logger.info(f"Report written to {out_path}")
         return str(out_path)
     except Exception as e:
