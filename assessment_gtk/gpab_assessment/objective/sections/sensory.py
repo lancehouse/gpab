@@ -35,12 +35,13 @@ _HYPO_ITEMS: list[tuple[str, str, bool]] = [
     ("Body perception impaired", "sn_body", False),
 ]
 _HYPER_ITEMS: list[tuple[str, str, bool]] = [
+    ("Pressure Pain Threshold", "sn_secondary_hyper", True),
     ("Static allodynia (monofilament)", "sn_static_allodynia", True),
     ("Dynamic allodynia (brush)", "sn_dynamic_allodynia", True),
-    ("Pressure Pain Threshold", "sn_secondary_hyper", True),
     ("Pin prick hyperalgesia", "sn_pin_prick", True),
     ("Cold hyperalgesia (ice 5 s)", "sn_cold", True),
     ("Heat hyperalgesia", "sn_heat", True),
+    ("Painful after sensations", "sn_after_sensations", True),
     ("Temporal summation", "sn_temporal_sum", True),
     ("Conditioned pain modulation", "sn_cpm", True),
     ("Nerve trunk palpation", "sn_nerve_palpation", True),
