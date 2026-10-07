@@ -2939,11 +2939,37 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     f("confidence_score",         s)
 
     sub("Activity & Exercise")
-    txt("pre_activity_level",     s)
-    txt("current_activity_level", s)
-    txt("exercise_type",          s)
-    txt("exercise_dose",          s)
-    txt("exercise_response",      s)
+    # 2026-10-08: split into Vigorous/Moderate/Strengthening triplets per
+    # direct request (see gpab's GTK port, sections/subjective.py) — the old
+    # single-value pre_activity_level/current_activity_level/exercise_type/
+    # exercise_dose ids are retired; sessions saved before this change had
+    # their one value carried forward into the new "Moderate" column on
+    # first load in gpab, so no data is missing here, just regrouped.
+    def _act_trip(prefix: str) -> list:
+        return [(s.get(f"{prefix}_{col}", "") or "").strip() or "—"
+                for col in ("vigorous", "moderate", "strengthening")]
+
+    def _act_trip_has_data(prefix: str) -> bool:
+        return any((s.get(f"{prefix}_{col}", "") or "").strip()
+                   for col in ("vigorous", "moderate", "strengthening"))
+
+    act_rows = []
+    if not clean or _act_trip_has_data("pre_activity"):
+        act_rows.append(["Pre-injury", *_act_trip("pre_activity")])
+    if not clean or _act_trip_has_data("current_activity"):
+        act_rows.append(["Current", *_act_trip("current_activity")])
+    if act_rows:
+        _emit(*_md_table(["Activity level", "Vigorous", "Moderate", "Strengthening"], act_rows))
+
+    ex_rows = []
+    if not clean or _act_trip_has_data("exercise_type"):
+        ex_rows.append(["Type", *_act_trip("exercise_type")])
+    if not clean or _act_trip_has_data("exercise_dose"):
+        ex_rows.append(["Dose", *_act_trip("exercise_dose")])
+    if ex_rows:
+        _emit(*_md_table(["Exercise", "Vigorous", "Moderate", "Strengthening"], ex_rows))
+
+    txt("exercise_response", s)
 
     sub("Work")
     txt("pre_injury_role",     s)
@@ -4097,10 +4123,18 @@ LABELS: dict[str, str] = {
     "behaviour_flareups_text":          "Flare-ups (notes)",
     "flareup_prevention":               "Flare-up prevention",
     "management_strategies":            "Management strategies",
-    "pre_activity_level":               "Pre-injury activity level",
-    "current_activity_level":           "Current activity level",
-    "exercise_type":                    "Exercise type",
-    "exercise_dose":                    "Exercise dose",
+    "pre_activity_vigorous":             "Pre-injury activity — Vigorous",
+    "pre_activity_moderate":              "Pre-injury activity — Moderate",
+    "pre_activity_strengthening":        "Pre-injury activity — Strengthening",
+    "current_activity_vigorous":         "Current activity — Vigorous",
+    "current_activity_moderate":         "Current activity — Moderate",
+    "current_activity_strengthening":    "Current activity — Strengthening",
+    "exercise_type_vigorous":            "Exercise type — Vigorous",
+    "exercise_type_moderate":            "Exercise type — Moderate",
+    "exercise_type_strengthening":       "Exercise type — Strengthening",
+    "exercise_dose_vigorous":            "Exercise dose — Vigorous",
+    "exercise_dose_moderate":            "Exercise dose — Moderate",
+    "exercise_dose_strengthening":       "Exercise dose — Strengthening",
     "exercise_response":                "Exercise response",
     "pre_injury_role":                  "Pre-injury work role",
     "pre_injury_duties":                "Pre-injury duties",
@@ -4712,11 +4746,24 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     f("confidence_score",        s)
 
     sub("Activity & Exercise")
-    txt("pre_activity_level",     s)
-    txt("current_activity_level", s)
-    txt("exercise_type",          s)
-    txt("exercise_dose",          s)
-    txt("exercise_response",      s)
+    # See the matching comment in export_session_report() — same 2026-10-08
+    # Vigorous/Moderate/Strengthening split, same retired old field ids.
+    def _trip_raw(prefix: str, label: str) -> None:
+        vig = (s.get(f"{prefix}_vigorous") or "").strip()
+        mod = (s.get(f"{prefix}_moderate") or "").strip()
+        stg = (s.get(f"{prefix}_strengthening") or "").strip()
+        if clean and not (vig or mod or stg):
+            return
+        _emit(f"  {label}:")
+        _emit(f"    Vigorous: {vig or '(empty)'}")
+        _emit(f"    Moderate: {mod or '(empty)'}")
+        _emit(f"    Strengthening: {stg or '(empty)'}")
+
+    _trip_raw("pre_activity", "Pre-injury activity level")
+    _trip_raw("current_activity", "Current activity level")
+    _trip_raw("exercise_type", "Exercise type")
+    _trip_raw("exercise_dose", "Exercise dose")
+    txt("exercise_response", s)
 
     sub("Work")
     txt("pre_injury_role",    s)
