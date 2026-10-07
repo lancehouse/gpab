@@ -39,6 +39,55 @@ _SLEEP_YAML = (
 _FULL_SLOTS = 3
 _OVERFLOW_SLOTS = 2
 
+# Activity & Exercise's Vigorous/Moderate/Strengthening triplet rows — local
+# to this section (only subheading using this 3-column shape so far; promote
+# to widgets.py if a second section ever needs it, same rule as every other
+# shared pattern here).
+_TRIPLET_COLS = ("Vigorous", "Moderate", "Strengthening")
+
+
+def _triplet_header_row() -> Gtk.Box:
+    """Shared column header ('Vigorous | Moderate | Strengthening') printed
+    once above a pair of triplet rows (PREINJURY/CURRENT, or TYPE/DOSE) —
+    not repeated per row. The 3 cells are wrapped in a homogeneous box (same
+    pattern as add_goal_orientation_block's 3-button row) so they come out
+    as exact equal thirds and line up with _triplet_row()'s cells below,
+    regardless of label text width — set_hexpand alone only distributes
+    leftover space, it doesn't equalize natural widths."""
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    spacer = Gtk.Label(label="")
+    field_left_slot(spacer)
+    row.append(spacer)
+    cells = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, homogeneous=True)
+    cells.set_hexpand(True)
+    for text in _TRIPLET_COLS:
+        lbl = Gtk.Label(label=text)
+        lbl.add_css_class("field-label")
+        lbl.set_halign(Gtk.Align.START)
+        cells.append(lbl)
+    row.append(cells)
+    return row
+
+
+def _triplet_row(label_text: str, widgets: tuple) -> Gtk.Box:
+    """label_text in the shared left-column slot, then the 3 field widgets
+    (vigorous/moderate/strengthening) in a homogeneous box so they come out
+    as exact equal thirds, matching _triplet_header_row()'s cells above."""
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    lbl = Gtk.Label(label=label_text)
+    lbl.add_css_class("field-label")
+    lbl.set_halign(Gtk.Align.START)
+    lbl.set_valign(Gtk.Align.START)
+    lbl.set_wrap(True)
+    field_left_slot(lbl)
+    row.append(lbl)
+    cells = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, homogeneous=True)
+    cells.set_hexpand(True)
+    for w in widgets:
+        cells.append(w)
+    row.append(cells)
+    return row
+
 
 class _NoteSlot(Gtk.Box):
     """One dynamic per-note slot. full=True renders loc/nat/agg/ease; else loc/nat only."""
@@ -220,16 +269,41 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.append(_field_row("Confidence managing condition (0-10):", self.confidence_score))
 
         # -- Activity & Exercise --------------------------------------------
+        # Activity-level and Exercise rows reorganised 2026-10-08 into
+        # Vigorous/Moderate/Strengthening triplets per direct request — see
+        # the now-retired single-field pre_activity_level/current_activity_level/
+        # exercise_type/exercise_dose ids, migrated forward in load() below.
         self.append(_header("Activity & Exercise", "subj_activity"))
-        self.pre_activity_level = AutoTextView("pre_activity_level", min_lines=1)
-        self.append(_field_row("Pre-injury activity level:", self.pre_activity_level))
-        self._jump_targets["activity"] = self.pre_activity_level.textview
-        self.current_activity_level = AutoTextView("current_activity_level", min_lines=1)
-        self.append(_field_row("Current activity level:", self.current_activity_level))
-        self.exercise_type = AutoTextView("exercise_type", min_lines=1)
-        self.append(_field_row("Exercise type:", self.exercise_type))
-        self.exercise_dose = AutoTextView("exercise_dose", min_lines=1)
-        self.append(_field_row("Exercise dose (frequency / duration):", self.exercise_dose))
+
+        self.append(_triplet_header_row())
+        self.pre_activity_vigorous = TouchEntry("pre_activity_vigorous")
+        self.pre_activity_moderate = TouchEntry("pre_activity_moderate")
+        self.pre_activity_strengthening = TouchEntry("pre_activity_strengthening")
+        self.append(_triplet_row("PREINJURY", (
+            self.pre_activity_vigorous, self.pre_activity_moderate, self.pre_activity_strengthening,
+        )))
+        self._jump_targets["activity"] = self.pre_activity_vigorous
+        self.current_activity_vigorous = TouchEntry("current_activity_vigorous")
+        self.current_activity_moderate = TouchEntry("current_activity_moderate")
+        self.current_activity_strengthening = TouchEntry("current_activity_strengthening")
+        self.append(_triplet_row("CURRENT", (
+            self.current_activity_vigorous, self.current_activity_moderate, self.current_activity_strengthening,
+        )))
+
+        self.append(_triplet_header_row())
+        self.exercise_type_vigorous = AutoTextView("exercise_type_vigorous", min_lines=1)
+        self.exercise_type_moderate = AutoTextView("exercise_type_moderate", min_lines=1)
+        self.exercise_type_strengthening = AutoTextView("exercise_type_strengthening", min_lines=1)
+        self.append(_triplet_row("EXERCISE TYPE", (
+            self.exercise_type_vigorous, self.exercise_type_moderate, self.exercise_type_strengthening,
+        )))
+        self.exercise_dose_vigorous = AutoTextView("exercise_dose_vigorous", min_lines=1)
+        self.exercise_dose_moderate = AutoTextView("exercise_dose_moderate", min_lines=1)
+        self.exercise_dose_strengthening = AutoTextView("exercise_dose_strengthening", min_lines=1)
+        self.append(_triplet_row("EXERCISE DOSE (freq/duration)", (
+            self.exercise_dose_vigorous, self.exercise_dose_moderate, self.exercise_dose_strengthening,
+        )))
+
         self.exercise_response = AutoTextView("exercise_response", min_lines=1)
         self.append(_field_row("Response to exercise:", self.exercise_response))
 
@@ -337,8 +411,9 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         "behaviour_boom_bust_text", "behaviour_avoidance_text",
         "behaviour_endurance_text", "behaviour_flareups_text",
         "flareup_prevention", "management_strategies",
-        "pre_activity_level", "current_activity_level",
-        "exercise_type", "exercise_dose", "exercise_response",
+        "exercise_type_vigorous", "exercise_type_moderate", "exercise_type_strengthening",
+        "exercise_dose_vigorous", "exercise_dose_moderate", "exercise_dose_strengthening",
+        "exercise_response",
         "pre_injury_role", "pre_injury_duties",
         "current_work_status", "current_duties",
         "hr24_am", "hr24_day", "hr24_pm", "hr24_nocte",
@@ -349,7 +424,25 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         "harm_plan", "harm_means", "harm_intent", "harm_action",
         "goal_1", "goal_2", "goal_3", "goal_4",
     ]
-    _INPUT_ATTRS = ["pain_control_score", "confidence_score", "pre_injury_hours", "current_hours"]
+    _INPUT_ATTRS = [
+        "pain_control_score", "confidence_score", "pre_injury_hours", "current_hours",
+        "pre_activity_vigorous", "pre_activity_moderate", "pre_activity_strengthening",
+        "current_activity_vigorous", "current_activity_moderate", "current_activity_strengthening",
+    ]
+
+    # 2026-10-08 Activity & Exercise 3-column split: a session saved before
+    # this change has a single free-text value under the *_level old field
+    # id. On load, carry that forward once into the new "Moderate" column
+    # (chosen as the least-wrong single bucket for previously-undifferentiated
+    # text) so nothing already written is lost — see old_id -> new_id below.
+    # The old id is read here only; collect() no longer writes it, so the
+    # first save after this retires it from the JSON for good.
+    _LEGACY_ACTIVITY_MIGRATION = {
+        "pre_activity_level":     "pre_activity_moderate",
+        "current_activity_level": "current_activity_moderate",
+        "exercise_type":          "exercise_type_moderate",
+        "exercise_dose":          "exercise_dose_moderate",
+    }
 
     def _wire_change_events(self) -> None:
         for attr in self._TOGGLE_ATTRS:
@@ -644,6 +737,10 @@ class SubjectiveSection(Gtk.Box, SectionBase):
 
             for attr in self._INPUT_ATTRS:
                 getattr(self, attr).text = subjective.get(attr, "")
+
+            for old_id, new_id in self._LEGACY_ACTIVITY_MIGRATION.items():
+                if not subjective.get(new_id) and subjective.get(old_id):
+                    getattr(self, new_id).text = subjective[old_id]
 
             self.sleep_subsection.load(subjective)
         finally:
