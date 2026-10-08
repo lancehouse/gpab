@@ -768,6 +768,7 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.diagnosis.load(assessment.get("diagnosis", {}))
         self.barriers.load(assessment.get("barriers", {}))
         self.rx_plan.load(assessment.get("rx_plan", {}))
+        self._sync_exercise_program_prefill()
 
         self._loading_notes = True
         try:
@@ -1638,7 +1639,36 @@ class TrialWindow(Gtk.ApplicationWindow):
     def _on_subjective_changed(self) -> None:
         self._sync_goals(self.subjective.goals, self.consent, self.functional)
         self._sync_goal_types(self.subjective, self.consent)
+        self._sync_exercise_program_prefill()
         self._schedule_save()
+
+    # One-way prefill, not a two-way mirror like _sync_goals above: Rx &
+    # Plan's "Current" cells (tx_program_vigorous/moderate/strengthening)
+    # start out mirroring Subjective's own Current-activity row, but once a
+    # cell has ANY text of its own it's independent from then on, even if
+    # Subjective's Current text changes again later — same "never overwrite
+    # what's already there" rule the chart-note prefill (objective_chart_
+    # link.py) and mapping.build_prefill() both already follow. 2026-10-09,
+    # direct request — see rx_plan.py's _PROGRAM_ROWS docstring.
+    _EXERCISE_PROGRAM_PREFILL = (
+        ("current_activity_vigorous", "tx_program_vigorous"),
+        ("current_activity_moderate", "tx_program_moderate"),
+        ("current_activity_strengthening", "tx_program_strengthening"),
+    )
+
+    def _sync_exercise_program_prefill(self) -> None:
+        focused = self.get_focus()
+        self.rx_plan._loading = True
+        try:
+            for src_attr, dst_attr in self._EXERCISE_PROGRAM_PREFILL:
+                src = getattr(self.subjective, src_attr)
+                dst = getattr(self.rx_plan, dst_attr)
+                if dst.textview is focused:
+                    continue
+                if not dst.text.strip() and src.text.strip():
+                    dst.text = src.text
+        finally:
+            self.rx_plan._loading = False
 
     def _on_functional_goal_changed(self) -> None:
         """Functional's ft_goal_N mirror lives in _objective.json, but
