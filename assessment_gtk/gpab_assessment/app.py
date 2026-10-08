@@ -768,7 +768,13 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.diagnosis.load(assessment.get("diagnosis", {}))
         self.barriers.load(assessment.get("barriers", {}))
         self.rx_plan.load(assessment.get("rx_plan", {}))
-        self._sync_exercise_program_prefill()
+        if self._sync_exercise_program_prefill():
+            # Widget-only change so far (rx_plan._loading suppressed its own
+            # autosave trigger) — flush it so the saved JSON (and anything
+            # generated from it, e.g. a report) matches what's now on
+            # screen, instead of sitting unsaved until some unrelated field
+            # happens to be edited first.
+            self._schedule_save()
 
         self._loading_notes = True
         try:
@@ -1650,25 +1656,46 @@ class TrialWindow(Gtk.ApplicationWindow):
     # what's already there" rule the chart-note prefill (objective_chart_
     # link.py) and mapping.build_prefill() both already follow. 2026-10-09,
     # direct request — see rx_plan.py's _PROGRAM_ROWS docstring.
+    #
+    # An emptiness check alone isn't enough: it would re-fill a cell the
+    # clinician deliberately cleared the next time Subjective changes
+    # again (unlike chart-note prefill, where the source rarely churns, or
+    # _sync_goals, which is a true mirror and re-pushing IS the intended
+    # behaviour). rx_plan._prefill_done is a persisted per-column latch —
+    # once a cell has ever held text, it's permanently exempt from this
+    # sync, even across a close/reopen — see rx_plan.py's load()/collect().
     _EXERCISE_PROGRAM_PREFILL = (
-        ("current_activity_vigorous", "tx_program_vigorous"),
-        ("current_activity_moderate", "tx_program_moderate"),
-        ("current_activity_strengthening", "tx_program_strengthening"),
+        ("current_activity_vigorous", "tx_program_vigorous", "vigorous"),
+        ("current_activity_moderate", "tx_program_moderate", "moderate"),
+        ("current_activity_strengthening", "tx_program_strengthening", "strengthening"),
     )
 
-    def _sync_exercise_program_prefill(self) -> None:
+    def _sync_exercise_program_prefill(self) -> bool:
+        """Returns True if any cell was actually filled — callers at load
+        time use this to decide whether a save needs scheduling, since a
+        widget-only change (made before anything else touches the file)
+        would otherwise sit unsaved until some unrelated edit flushes it,
+        leaving the on-screen text out of sync with the next report
+        generated from the JSON."""
+        changed = False
         focused = self.get_focus()
         self.rx_plan._loading = True
         try:
-            for src_attr, dst_attr in self._EXERCISE_PROGRAM_PREFILL:
+            for src_attr, dst_attr, col in self._EXERCISE_PROGRAM_PREFILL:
+                if self.rx_plan._prefill_done.get(col):
+                    continue
                 src = getattr(self.subjective, src_attr)
                 dst = getattr(self.rx_plan, dst_attr)
                 if dst.textview is focused:
                     continue
                 if not dst.text.strip() and src.text.strip():
                     dst.text = src.text
+                    changed = True
+                if dst.text.strip():
+                    self.rx_plan._prefill_done[col] = True
         finally:
             self.rx_plan._loading = False
+        return changed
 
     def _on_functional_goal_changed(self) -> None:
         """Functional's ft_goal_N mirror lives in _objective.json, but

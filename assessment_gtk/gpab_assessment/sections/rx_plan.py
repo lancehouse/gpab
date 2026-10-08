@@ -120,6 +120,16 @@ class RxPlanSection(Gtk.Box, SectionBase):
         self._entries: dict[str, TouchEntry] = {}
         self._texts: dict[str, AutoTextView] = {}
 
+        # Latches for app.py's _sync_exercise_program_prefill: True once a
+        # tx_program_{col} cell has EVER held text (prefilled or typed
+        # directly), persisted (see collect()/load()) so it survives a
+        # reopen. Without this, an emptiness check alone re-fills a cell
+        # the clinician deliberately cleared the moment Subjective changes
+        # again — found by the advisor before this ever reached a real
+        # session. "Prefill once, then independent" needs a one-way latch,
+        # not a live emptiness test.
+        self._prefill_done: dict[str, bool] = {"vigorous": False, "moderate": False, "strengthening": False}
+
         title = Gtk.Label(label="09 Rx & Plan")
         title.add_css_class("section-title")
         title.set_halign(Gtk.Align.START)
@@ -284,6 +294,8 @@ class RxPlanSection(Gtk.Box, SectionBase):
             data[fid] = w.text
         for fid, w in self._texts.items():
             data[fid] = w.text
+        for col, done in self._prefill_done.items():
+            data[f"tx_program_{col}_prefilled"] = done
         return data
 
     def load(self, data: dict) -> None:
@@ -311,6 +323,17 @@ class RxPlanSection(Gtk.Box, SectionBase):
             # replace drops it for good on first save.
             if not self.tx_program_moderate.text.strip() and (rp.get("tx_program") or "").strip():
                 self.tx_program_moderate.text = rp["tx_program"]
+
+            # Seed the prefill latch: the persisted flag covers a
+            # deliberately-cleared cell from an earlier session (the whole
+            # point of the latch — see __init__), and the "does it already
+            # have text" fallback covers a cell filled before this flag
+            # existed, or one the clinician typed into directly without
+            # ever going through the prefill path.
+            for col in self._prefill_done:
+                self._prefill_done[col] = bool(rp.get(f"tx_program_{col}_prefilled")) or bool(
+                    getattr(self, f"tx_program_{col}").text.strip()
+                )
         finally:
             self._loading = False
 
