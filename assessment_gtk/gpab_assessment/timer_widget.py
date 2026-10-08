@@ -13,8 +13,12 @@ Behaviour (all confirmed with the user 2026-08-24):
   - Starts at 00:00 the first time any field below "Session Framing" in the
     Consent tab is edited (app.py wires ConsentSection.set_on_below_framing_
     changed to self._session_timer.start_if_needed via this widget's
-    on_field_edit()).
-  - Single tap: pause/resume. Double tap: reset to 00:00. Distinguished via
+    on_field_edit()) — OR the first time the widget itself is tapped
+    (fixed 2026-10-08: a single tap used to only pause/resume an
+    already-started timer, so tapping before any qualifying field edit did
+    nothing; now a tap while not yet started also starts it).
+  - Single tap: starts the timer if not yet started, otherwise pause/resume.
+    Double tap: reset to 00:00. Distinguished via
     Gtk.GestureClick's n_press — a single tap is held for
     _DOUBLE_TAP_WINDOW_MS in case a second tap arrives (making it a double
     tap instead), which is the standard GTK idiom for this, not a hand-rolled
@@ -116,7 +120,10 @@ class SessionTimerWidget(Gtk.Box):
 
     def _fire_single_tap(self) -> bool:
         self._pending_single_tap_id = None
-        self.timer.toggle_pause()
+        if self.timer.started:
+            self.timer.toggle_pause()
+        else:
+            self.timer.start_if_needed()
         self._refresh_display()
         return GLib.SOURCE_REMOVE
 
