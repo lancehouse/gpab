@@ -438,7 +438,6 @@ _FIELD_LABELS: dict[str, tuple[str, str | None, str]] = {
     "tx_progression_vigorous":      ("08_rx_plan", "rp_exercise_program", "Exercise program — Vigorous (Progression)"),
     "tx_progression_moderate":      ("08_rx_plan", "rp_exercise_program", "Exercise program — Moderate (Progression)"),
     "tx_progression_strengthening": ("08_rx_plan", "rp_exercise_program", "Exercise program — Strength/other (Progression)"),
-    "tx_home_program":    ("08_rx_plan", "rp_treatment",  "Home program"),
     "tx_psychosocial":    ("08_rx_plan", "rp_treatment",  "Psychosocial treatment"),
     "tx_medical":         ("08_rx_plan", "rp_treatment",  "Medical treatment"),
     "tx_rtw":             ("08_rx_plan", "rp_treatment",  "Return to work plan"),

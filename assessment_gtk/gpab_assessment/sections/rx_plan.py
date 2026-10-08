@@ -207,7 +207,6 @@ class RxPlanSection(Gtk.Box, SectionBase):
             setattr(self, f"tx_progression_{col}", progression)
             self.append(_program_row(label, current, progression))
 
-        self.append(_field_row("Home program:", self._text("tx_home_program")))
         self.append(_field_row("Psychosocial strategies:", self._text("tx_psychosocial")))
         self.append(_field_row("Medical / Referral:", self._text("tx_medical")))
         self.append(_field_row("RTW plan:", self._text("tx_rtw")))

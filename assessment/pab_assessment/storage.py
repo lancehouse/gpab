@@ -3993,7 +3993,6 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     if program_rows:
         _emit(*_md_table(["Exercise / Rehab Program", "Current", "Progression"], program_rows))
 
-    txt("tx_home_program",      rp)
     txt("tx_psychosocial",      rp)
     txt("tx_medical",           rp)
     txt("tx_rtw",               rp)
@@ -4582,7 +4581,6 @@ LABELS: dict[str, str] = {
     "tx_progression_vigorous":         "Exercise program — Vigorous (Progression)",
     "tx_progression_moderate":         "Exercise program — Moderate (Progression)",
     "tx_progression_strengthening":    "Exercise program — Strength/other (Progression)",
-    "tx_home_program":                  "Home program",
     "tx_psychosocial":                  "Psychosocial strategies",
     "tx_medical":                       "Medical/referral plan",
     "tx_rtw":                           "RTW plan",
@@ -5797,7 +5795,6 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
         _program_raw("Moderate", "moderate")
         _program_raw("Strength/other", "strengthening")
 
-    txt("tx_home_program",      rp)
     txt("tx_psychosocial",      rp)
     txt("tx_medical",           rp)
     txt("tx_rtw",               rp)
