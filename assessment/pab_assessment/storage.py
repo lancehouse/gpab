@@ -2959,15 +2959,45 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     if not clean or _act_trip_has_data("current_activity"):
         act_rows.append(["Current", *_act_trip("current_activity")])
     if act_rows:
+        # Table is safe here: these 3 cells come from TouchEntry (single-line
+        # GtkEntry fields — can't contain an embedded "\n"), so a row can't
+        # span multiple raw lines and break the table.
         _emit(*_md_table(["Activity level", "Vigorous", "Moderate", "Strengthening"], act_rows))
 
-    ex_rows = []
-    if not clean or _act_trip_has_data("exercise_type"):
-        ex_rows.append(["Type", *_act_trip("exercise_type")])
-    if not clean or _act_trip_has_data("exercise_dose"):
-        ex_rows.append(["Dose", *_act_trip("exercise_dose")])
-    if ex_rows:
-        _emit(*_md_table(["Exercise", "Vigorous", "Moderate", "Strengthening"], ex_rows))
+    # Exercise Type/Dose, unlike Activity level above, come from AutoTextView
+    # (multi-paragraph free text, by design — see subjective.py). A pipe-
+    # table row must be exactly one raw line; any embedded "\n" in a cell
+    # splits the row across lines and visibly corrupts the table — found
+    # live 2026-10-09 against a real session (JW_08_10_2026_1046) whose
+    # Exercise notes ran to several paragraphs. Render these as labelled
+    # sub-lines instead (same hard-break style txt() already uses for any
+    # other multi-line field), never as a table cell.
+    def _trip_md(prefix: str, label: str) -> None:
+        vals = {col: (s.get(f"{prefix}_{col}", "") or "").strip()
+                for col in ("vigorous", "moderate", "strengthening")}
+        if clean and not any(vals.values()):
+            return
+        _emit(f"**{label}:**")
+        for sub_label, key in (("Vigorous", "vigorous"), ("Moderate", "moderate"),
+                                ("Strengthening", "strengthening")):
+            val = vals[key]
+            if clean and not val:
+                continue
+            if val and "\n" in val:
+                _emit(f"  *{sub_label}:*  ")
+                rows = val.split("\n")
+                last = len(rows) - 1
+                for i, row in enumerate(rows):
+                    _emit(("  " + row) if (i == last or not row.strip()) else ("  " + row + "  "))
+                _emit("")
+            elif val:
+                line = f"  *{sub_label}:* {val}"
+                _emit(line + "  " if clean else line)
+            else:
+                _emit(f"  *{sub_label}:* *(empty)*")
+
+    _trip_md("exercise_type", "Exercise type")
+    _trip_md("exercise_dose", "Exercise dose")
 
     txt("exercise_response", s)
 
