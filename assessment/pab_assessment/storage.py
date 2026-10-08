@@ -3970,8 +3970,29 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     f("tx_consent_explanation", rp)
     txt("tx_goal_orientation",  rp)
     txt("tx_formulation",       rp)
-    txt("tx_program",           rp)
-    txt("tx_home_program",      rp)
+
+    # 2026-10-09: tx_program (single free-text field) replaced with a
+    # per-intensity Current/Progression grid, direct request — see
+    # rx_plan.py's _PROGRAM_ROWS docstring. _esc_cell() (defined above, in
+    # scope for the rest of this function) is reused as-is: these cells are
+    # the same AutoTextView-sourced free text with the same embedded-"\n"/
+    # "|" table-corruption risk Activity & Exercise already had to guard
+    # against.
+    _program_cols = (("Vigorous", "vigorous"), ("Moderate", "moderate"), ("Strength/other", "strengthening"))
+
+    def _program_has_data(col: str) -> bool:
+        return bool((rp.get(f"tx_program_{col}", "") or "").strip()
+                     or (rp.get(f"tx_progression_{col}", "") or "").strip())
+
+    program_rows = []
+    for label, col in _program_cols:
+        if not clean or _program_has_data(col):
+            cur  = _esc_cell((rp.get(f"tx_program_{col}", "") or "").strip()) or "—"
+            prog = _esc_cell((rp.get(f"tx_progression_{col}", "") or "").strip()) or "—"
+            program_rows.append([label, cur, prog])
+    if program_rows:
+        _emit(*_md_table(["Exercise / Rehab Program", "Current", "Progression"], program_rows))
+
     txt("tx_psychosocial",      rp)
     txt("tx_medical",           rp)
     txt("tx_rtw",               rp)
@@ -4554,8 +4575,12 @@ LABELS: dict[str, str] = {
     "fu_om_schedule":                   "OM schedule",
     "tx_goal_orientation":              "Goal orientation",
     "tx_formulation":                   "Formulation",
-    "tx_program":                       "Program",
-    "tx_home_program":                  "Home program",
+    "tx_program_vigorous":              "Exercise program — Vigorous (Current)",
+    "tx_program_moderate":              "Exercise program — Moderate (Current)",
+    "tx_program_strengthening":         "Exercise program — Strength/other (Current)",
+    "tx_progression_vigorous":         "Exercise program — Vigorous (Progression)",
+    "tx_progression_moderate":         "Exercise program — Moderate (Progression)",
+    "tx_progression_strengthening":    "Exercise program — Strength/other (Progression)",
     "tx_psychosocial":                  "Psychosocial strategies",
     "tx_medical":                       "Medical/referral plan",
     "tx_rtw":                           "RTW plan",
@@ -5749,8 +5774,27 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     f("tx_consent_explanation", rp)
     txt("tx_goal_orientation",  rp)
     txt("tx_formulation",       rp)
-    txt("tx_program",           rp)
-    txt("tx_home_program",      rp)
+
+    # See the matching comment in export_session_report() — same
+    # 2026-10-09 per-intensity Current/Progression grid, same retired
+    # tx_program id. No table here (this raw export never uses tables for
+    # assessment-section content), just labelled sub-lines.
+    def _program_raw(label: str, col: str) -> None:
+        cur = (rp.get(f"tx_program_{col}") or "").strip()
+        prog = (rp.get(f"tx_progression_{col}") or "").strip()
+        if clean and not (cur or prog):
+            return
+        _emit(f"  {label}:")
+        _emit(f"    Current: {cur or '(empty)'}")
+        _emit(f"    Progression: {prog or '(empty)'}")
+
+    if not clean or any((rp.get(f"tx_program_{c}") or "").strip() or (rp.get(f"tx_progression_{c}") or "").strip()
+                         for c in ("vigorous", "moderate", "strengthening")):
+        _emit("  Exercise / Rehab Program:")
+        _program_raw("Vigorous", "vigorous")
+        _program_raw("Moderate", "moderate")
+        _program_raw("Strength/other", "strengthening")
+
     txt("tx_psychosocial",      rp)
     txt("tx_medical",           rp)
     txt("tx_rtw",               rp)

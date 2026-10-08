@@ -1,7 +1,9 @@
 """Rx & Treatment Plan — GTK4 port of pab_assessment/sections/rx_plan.py.
 
-Field ids and collect()/load() keys are 1:1 with the TUI section. No
-cross-reference badges in the TUI version of this section, so none here.
+Field ids and collect()/load() keys are 1:1 with the TUI section, except
+for the Exercise / Rehab Program grid below (gpab-only structural change,
+2026-10-09 — no corresponding TUI field shape). No cross-reference badges
+in the TUI version of this section, so none here.
 """
 
 from __future__ import annotations
@@ -13,10 +15,55 @@ from gi.repository import Gtk  # noqa: E402
 
 from ..section_base import SectionBase
 from ..widgets import (
-    CheckButton, AutoTextView, TouchEntry, CycleField,
+    CheckButton, AutoTextView, TouchEntry, CycleField, field_left_slot,
     make_subsection_header as _header,
     field_row as _field_row,
 )
+
+# Exercise / Rehab Program grid — replaces the old single tx_program
+# free-text field (2026-10-09, direct request): one row per intensity
+# level, each with a "Current" cell (prefilled live from Subjective's
+# Activity & Exercise "Current" row — see app.py's
+# _sync_exercise_program_prefill — but independently editable and stored
+# once it has any text of its own) and a "Progression" cell (blank,
+# clinician-entered). Transposes Subjective's own Vigorous/Moderate/
+# Strength-other triplet layout (there: columns=intensity, rows=concept;
+# here: rows=intensity, columns=Current/Progression) since this is a
+# 3-row x 2-col shape rather than Subjective's 2-row x 3-col one.
+_PROGRAM_ROWS = (("Vigorous", "vigorous"), ("Moderate", "moderate"), ("Strength/other", "strengthening"))
+
+
+def _program_header_row() -> Gtk.Box:
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    spacer = Gtk.Label(label="")
+    field_left_slot(spacer)
+    row.append(spacer)
+    cells = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, homogeneous=True)
+    cells.set_hexpand(True)
+    for text in ("Current", "Progression"):
+        lbl = Gtk.Label(label=text)
+        lbl.add_css_class("field-label")
+        lbl.set_halign(Gtk.Align.START)
+        cells.append(lbl)
+    row.append(cells)
+    return row
+
+
+def _program_row(label_text: str, current: Gtk.Widget, progression: Gtk.Widget) -> Gtk.Box:
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    lbl = Gtk.Label(label=label_text)
+    lbl.add_css_class("field-label")
+    lbl.set_halign(Gtk.Align.START)
+    lbl.set_valign(Gtk.Align.START)
+    lbl.set_wrap(True)
+    field_left_slot(lbl)
+    row.append(lbl)
+    cells = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, homogeneous=True)
+    cells.set_hexpand(True)
+    cells.append(current)
+    cells.append(progression)
+    row.append(cells)
+    return row
 
 _PAIN_TYPE_OPTIONS = [("1 — Nociceptive / Neuropathic", "primary"), ("2 — Nociplastic", "warning")]
 _DEBUNK_OPTIONS = [("Yes", "success"), ("No", "error"), ("N/A", "default")]
@@ -72,6 +119,16 @@ class RxPlanSection(Gtk.Box, SectionBase):
         self._cyclefields: dict[str, CycleField] = {}
         self._entries: dict[str, TouchEntry] = {}
         self._texts: dict[str, AutoTextView] = {}
+
+        # Latches for app.py's _sync_exercise_program_prefill: True once a
+        # tx_program_{col} cell has EVER held text (prefilled or typed
+        # directly), persisted (see collect()/load()) so it survives a
+        # reopen. Without this, an emptiness check alone re-fills a cell
+        # the clinician deliberately cleared the moment Subjective changes
+        # again — found by the advisor before this ever reached a real
+        # session. "Prefill once, then independent" needs a one-way latch,
+        # not a live emptiness test.
+        self._prefill_done: dict[str, bool] = {"vigorous": False, "moderate": False, "strengthening": False}
 
         title = Gtk.Label(label="09 Rx & Plan")
         title.add_css_class("section-title")
@@ -140,8 +197,16 @@ class RxPlanSection(Gtk.Box, SectionBase):
         self.append(_field_row("Debunk radiology (nociplastic):", self._cycle("tx_debunk_radiology", _DEBUNK_OPTIONS)))
         self.append(_field_row("Goal orientation:", self._text("tx_goal_orientation")))
         self.append(_field_row("Formulation:", self._text("tx_formulation")))
-        self.append(_field_row("Exercise / Rehab program:", self._text("tx_program")))
-        self.append(_field_row("Home program:", self._text("tx_home_program")))
+
+        self.append(_header("Exercise / Rehab Program", "rp_exercise_program"))
+        self.append(_program_header_row())
+        for label, col in _PROGRAM_ROWS:
+            current = self._text(f"tx_program_{col}", min_lines=1)
+            progression = self._text(f"tx_progression_{col}", min_lines=1)
+            setattr(self, f"tx_program_{col}", current)
+            setattr(self, f"tx_progression_{col}", progression)
+            self.append(_program_row(label, current, progression))
+
         self.append(_field_row("Psychosocial strategies:", self._text("tx_psychosocial")))
         self.append(_field_row("Medical / Referral:", self._text("tx_medical")))
         self.append(_field_row("RTW plan:", self._text("tx_rtw")))
@@ -228,6 +293,8 @@ class RxPlanSection(Gtk.Box, SectionBase):
             data[fid] = w.text
         for fid, w in self._texts.items():
             data[fid] = w.text
+        for col, done in self._prefill_done.items():
+            data[f"tx_program_{col}_prefilled"] = done
         return data
 
     def load(self, data: dict) -> None:
@@ -244,6 +311,28 @@ class RxPlanSection(Gtk.Box, SectionBase):
                 w.text = rp.get(fid, "")
             for fid, w in self._texts.items():
                 w.text = rp.get(fid, "")
+
+            # 2026-10-09: tx_program (single free-text field) retired in
+            # favour of the per-intensity grid above. A session saved
+            # before this change has its one value under the old id —
+            # carry it forward once into "Moderate -> Current" (same
+            # convention as Subjective's own 2026-10-08 migration) so
+            # nothing already written is lost. Old id is read only; collect()
+            # no longer writes it, so save_all_sections' section-wholesale-
+            # replace drops it for good on first save.
+            if not self.tx_program_moderate.text.strip() and (rp.get("tx_program") or "").strip():
+                self.tx_program_moderate.text = rp["tx_program"]
+
+            # Seed the prefill latch: the persisted flag covers a
+            # deliberately-cleared cell from an earlier session (the whole
+            # point of the latch — see __init__), and the "does it already
+            # have text" fallback covers a cell filled before this flag
+            # existed, or one the clinician typed into directly without
+            # ever going through the prefill path.
+            for col in self._prefill_done:
+                self._prefill_done[col] = bool(rp.get(f"tx_program_{col}_prefilled")) or bool(
+                    getattr(self, f"tx_program_{col}").text.strip()
+                )
         finally:
             self._loading = False
 
