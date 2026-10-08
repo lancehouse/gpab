@@ -43,7 +43,7 @@ _OVERFLOW_SLOTS = 2
 # to this section (only subheading using this 3-column shape so far; promote
 # to widgets.py if a second section ever needs it, same rule as every other
 # shared pattern here).
-_TRIPLET_COLS = ("Vigorous", "Moderate", "Strengthening")
+_TRIPLET_COLS = ("Vigorous", "Moderate", "Strength/other")
 
 
 def _triplet_header_row() -> Gtk.Box:

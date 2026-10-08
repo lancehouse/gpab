@@ -2995,7 +2995,7 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     if not clean or _act_trip_has_data("exercise_dose"):
         act_rows.append(["Exercise dose", *_act_trip("exercise_dose")])
     if act_rows:
-        _emit(*_md_table(["Activity level", "Vigorous", "Moderate", "Strengthening"], act_rows))
+        _emit(*_md_table(["Activity level", "Vigorous", "Moderate", "Strength/other"], act_rows))
 
     txt("exercise_response", s)
 
@@ -4153,16 +4153,16 @@ LABELS: dict[str, str] = {
     "management_strategies":            "Management strategies",
     "pre_activity_vigorous":             "Pre-injury activity — Vigorous",
     "pre_activity_moderate":              "Pre-injury activity — Moderate",
-    "pre_activity_strengthening":        "Pre-injury activity — Strengthening",
+    "pre_activity_strengthening":        "Pre-injury activity — Strength/other",
     "current_activity_vigorous":         "Current activity — Vigorous",
     "current_activity_moderate":         "Current activity — Moderate",
-    "current_activity_strengthening":    "Current activity — Strengthening",
+    "current_activity_strengthening":    "Current activity — Strength/other",
     "exercise_type_vigorous":            "Exercise type — Vigorous",
     "exercise_type_moderate":            "Exercise type — Moderate",
-    "exercise_type_strengthening":       "Exercise type — Strengthening",
+    "exercise_type_strengthening":       "Exercise type — Strength/other",
     "exercise_dose_vigorous":            "Exercise dose — Vigorous",
     "exercise_dose_moderate":            "Exercise dose — Moderate",
-    "exercise_dose_strengthening":       "Exercise dose — Strengthening",
+    "exercise_dose_strengthening":       "Exercise dose — Strength/other",
     "exercise_response":                "Exercise response",
     "pre_injury_role":                  "Pre-injury work role",
     "pre_injury_duties":                "Pre-injury duties",
@@ -4785,7 +4785,7 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
         _emit(f"  {label}:")
         _emit(f"    Vigorous: {vig or '(empty)'}")
         _emit(f"    Moderate: {mod or '(empty)'}")
-        _emit(f"    Strengthening: {stg or '(empty)'}")
+        _emit(f"    Strength/other: {stg or '(empty)'}")
 
     _trip_raw("pre_activity", "Pre-injury activity level")
     _trip_raw("current_activity", "Current activity level")
