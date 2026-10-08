@@ -2945,8 +2945,40 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     # exercise_dose ids are retired; sessions saved before this change had
     # their one value carried forward into the new "Moderate" column on
     # first load in gpab, so no data is missing here, just regrouped.
+    #
+    # 2026-10-09: all 4 rows (Pre-injury, Current, Exercise type, Exercise
+    # dose) in ONE table per direct request, rather than a table for the
+    # first two and a second, separately-headed table (or, briefly, plain
+    # sub-lines) for the exercise rows — that split put a second
+    # "Vigorous | Moderate | Strengthening" header in the middle of the
+    # section, which read as a superfluous repeat.
+    #
+    # Exercise type/dose come from AutoTextView (multi-paragraph free text,
+    # by design — see subjective.py), unlike Pre-injury/Current's
+    # single-line TouchEntry. A pipe-table row must be exactly one raw line
+    # and "|" is its column separator, so either an embedded "\n" or a
+    # literal "|" in the cell text corrupts the table — found live
+    # 2026-10-09 against real sessions (JW_08_10_2026_1046, then again in
+    # RS_08_10_2026_1004's Exercise dose cell).
+    #
+    # _esc_cell() neutralises both. First attempt was replacing "\n" with a
+    # literal "<br>", on the assumption pandoc's raw-HTML passthrough would
+    # render it as a real line break in the .docx — checked directly against
+    # the generated document.xml and it does NOT: pandoc's docx writer just
+    # drops the tag with no <w:br/>, silently fusing the two sides together
+    # ("...for 12 x 100mNOT get cocky!..." — worse than the original
+    # corruption, because nothing visibly marks where text was lost). Using
+    # a plain, visible separator instead is what actually survives the
+    # conversion: paragraph breaks ("\n\s*\n") become " / ", any remaining
+    # single "\n" becomes "; ", and a literal "|" is backslash-escaped so
+    # it can never read as a column boundary.
+    def _esc_cell(v: str) -> str:
+        v = re.sub(r"\n\s*\n+", " / ", v)
+        v = v.replace("\n", "; ")
+        return v.replace("|", "\\|")
+
     def _act_trip(prefix: str) -> list:
-        return [(s.get(f"{prefix}_{col}", "") or "").strip() or "—"
+        return [_esc_cell((s.get(f"{prefix}_{col}", "") or "").strip()) or "—"
                 for col in ("vigorous", "moderate", "strengthening")]
 
     def _act_trip_has_data(prefix: str) -> bool:
@@ -2958,46 +2990,12 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         act_rows.append(["Pre-injury", *_act_trip("pre_activity")])
     if not clean or _act_trip_has_data("current_activity"):
         act_rows.append(["Current", *_act_trip("current_activity")])
+    if not clean or _act_trip_has_data("exercise_type"):
+        act_rows.append(["Exercise type", *_act_trip("exercise_type")])
+    if not clean or _act_trip_has_data("exercise_dose"):
+        act_rows.append(["Exercise dose", *_act_trip("exercise_dose")])
     if act_rows:
-        # Table is safe here: these 3 cells come from TouchEntry (single-line
-        # GtkEntry fields — can't contain an embedded "\n"), so a row can't
-        # span multiple raw lines and break the table.
         _emit(*_md_table(["Activity level", "Vigorous", "Moderate", "Strengthening"], act_rows))
-
-    # Exercise Type/Dose, unlike Activity level above, come from AutoTextView
-    # (multi-paragraph free text, by design — see subjective.py). A pipe-
-    # table row must be exactly one raw line; any embedded "\n" in a cell
-    # splits the row across lines and visibly corrupts the table — found
-    # live 2026-10-09 against a real session (JW_08_10_2026_1046) whose
-    # Exercise notes ran to several paragraphs. Render these as labelled
-    # sub-lines instead (same hard-break style txt() already uses for any
-    # other multi-line field), never as a table cell.
-    def _trip_md(prefix: str, label: str) -> None:
-        vals = {col: (s.get(f"{prefix}_{col}", "") or "").strip()
-                for col in ("vigorous", "moderate", "strengthening")}
-        if clean and not any(vals.values()):
-            return
-        _emit(f"**{label}:**")
-        for sub_label, key in (("Vigorous", "vigorous"), ("Moderate", "moderate"),
-                                ("Strengthening", "strengthening")):
-            val = vals[key]
-            if clean and not val:
-                continue
-            if val and "\n" in val:
-                _emit(f"  *{sub_label}:*  ")
-                rows = val.split("\n")
-                last = len(rows) - 1
-                for i, row in enumerate(rows):
-                    _emit(("  " + row) if (i == last or not row.strip()) else ("  " + row + "  "))
-                _emit("")
-            elif val:
-                line = f"  *{sub_label}:* {val}"
-                _emit(line + "  " if clean else line)
-            else:
-                _emit(f"  *{sub_label}:* *(empty)*")
-
-    _trip_md("exercise_type", "Exercise type")
-    _trip_md("exercise_dose", "Exercise dose")
 
     txt("exercise_response", s)
 
