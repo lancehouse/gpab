@@ -20,6 +20,15 @@ own session notes (same provenance as autocorrect_data.json) and grown
 via the modal's "add to dictionary" action, which persists here so a term
 is never flagged again in any future session.
 
+Where the word list lives (moved 2026-10-11): the live, growing list is
+~/.local/share/pab/spellcheck_personal_dict.json — outside git and shared by
+gpabd and gpabs, same home as sticky_note.json. It used to be written into
+this package directory, which gave the dev checkout and the gpab-stable
+worktree separate copies that drifted apart, dirtied stable's git tree on
+every "add to dictionary", and conflicted on every dev->main promotion.
+The copy beside this file is now a read-only seed: used only to create the
+user file the first time it doesn't exist, never written to.
+
 Field walk: rather than depend on search.py's hand-maintained _FIELD_LABELS
 id list (which can drift — see pab's CLAUDE.md "Keeping docs and search in
 sync"), collect_fields() walks the live widget tree directly for every
@@ -37,7 +46,9 @@ region_topbar.py); a toggled-off region isn't covered until switched on.
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
 from pathlib import Path
 
 import enchant
@@ -46,7 +57,8 @@ from .search import _iter_descendants, _FIELD_LABELS, _SECTION_SHORT
 from .widgets import AutoTextView, TouchEntry
 
 _DICT_LANG = "en_AU"
-_PERSONAL_PATH = Path(__file__).parent / "spellcheck_personal_dict.json"
+_PERSONAL_PATH = Path.home() / ".local" / "share" / "pab" / "spellcheck_personal_dict.json"
+_SEED_PATH = Path(__file__).parent / "spellcheck_personal_dict.json"
 _WORD_RE = re.compile(r"[A-Za-z]+(?:['-][A-Za-z]+)*")
 _MAX_SUGGESTIONS = 8
 
@@ -54,10 +66,25 @@ _checker = enchant.Dict(_DICT_LANG)
 
 
 def _load_personal() -> set[str]:
+    path = _PERSONAL_PATH if _PERSONAL_PATH.exists() else _SEED_PATH
     try:
-        return {w.lower() for w in json.loads(_PERSONAL_PATH.read_text())}
+        return {w.lower() for w in json.loads(path.read_text())}
     except Exception:
         return set()
+
+
+def _save_personal() -> None:
+    """Atomic write (temp file + rename) so a crash mid-write can never leave
+    a truncated word list behind."""
+    _PERSONAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=_PERSONAL_PATH.parent, prefix=".spellcheck_dict.")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(sorted(_personal), indent=2) + "\n")
+        os.replace(tmp, _PERSONAL_PATH)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 _personal: set[str] = _load_personal()
@@ -77,7 +104,7 @@ def add_to_personal(word: str) -> None:
     if lw in _personal:
         return
     _personal.add(lw)
-    _PERSONAL_PATH.write_text(json.dumps(sorted(_personal), indent=2) + "\n")
+    _save_personal()
 
 
 def find_next_misspelling(text: str, start: int, skip_words: set[str]) -> tuple[int, int, str] | None:
