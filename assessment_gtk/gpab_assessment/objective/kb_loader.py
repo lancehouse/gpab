@@ -156,12 +156,33 @@ class KBEntry:
                                # before display. Empty for YAML-sourced entries
                                # (added 2026-08-23; YAML KB files have no image
                                # support yet — see kb_panel.py's module docstring).
+    weight: str = ""   # relative weight %, e.g. "15.5" (mean, Table 6/7/8 of the
+                        # source paper) — kept as a bare number string, not a
+                        # formatted sentence, so a future calculated-weighting
+                        # feature can parse it directly rather than re-parsing
+                        # prose. Added 2026-10-10 for the Pain Classification
+                        # rework (see assessment_gtk/docs/pain_classification_rework.md).
+    rank: str = ""      # "<rank> of <n> — <pain type>", e.g. "1 of 8 — Nociceptive".
+                         # Same bare/parseable intent as weight.
+    reference: str = "" # citation(s) this entry's weight/criterion text is sourced
+                         # from, distinct from `note` (free clinical commentary) and
+                         # `assess` (the criterion wording itself) — e.g.
+                         # "Shraim et al. 2026, Pain 167:1669-1682" or, for legacy/
+                         # supplementary fields that predate that paper, the original
+                         # source (e.g. "Smart et al. 2010").
 
     def render_lines(self) -> list[str]:
         """Return display lines for the KB panel."""
         lines: list[str] = []
         if self.label:
             lines += [f" {self.label}", "─" * 46]
+        if self.weight or self.rank:
+            bits = []
+            if self.rank:
+                bits.append(f"Rank {self.rank}")
+            if self.weight:
+                bits.append(f"weight {self.weight}%")
+            lines += [" / ".join(bits), ""]
         if self.purpose:
             lines += ["Purpose:", _wrap(self.purpose.strip(), 44), ""]
         if self.position:
@@ -180,6 +201,8 @@ class KBEntry:
             lines += ["Cluster:", _wrap(self.cluster.strip(), 44), ""]
         if self.note:
             lines += ["Note:", _wrap(self.note.strip(), 44), ""]
+        if self.reference:
+            lines += ["Reference:", _wrap(self.reference.strip(), 44), ""]
         return lines
 
 
@@ -221,6 +244,9 @@ def _load_yaml_file(path: Path) -> dict[str, KBEntry]:
             variants=str(data.get("variants", "")),
             cluster=str(data.get("cluster", "")),
             note=str(data.get("note", "")),
+            weight=str(data.get("weight", "")),
+            rank=str(data.get("rank", "")),
+            reference=str(data.get("reference", "")),
         )
     return entries
 

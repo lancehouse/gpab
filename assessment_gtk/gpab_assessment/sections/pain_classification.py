@@ -1,23 +1,44 @@
-"""Pain Type Classification — GTK4 port of pab_assessment/sections/pain_classification.py.
+"""Pain Type Classification — GTK4 port of pab_assessment/sections/pain_classification.py,
+reworked 2026-10-10 against Shraim et al. 2026 (Pain 167:1669-1682), the IASP Terminology
+Task Force's weighted feature ranking for nociceptive/neuropathic/nociplastic pain.
 
-Field ids and collect()/load() keys are 1:1 with the TUI section. One piece
-of the TUI section is deliberately NOT ported here, flagged rather than
+See assessment_gtk/docs/pain_classification_rework.md for the full field-by-field decision
+table this rebuild implements, and assessment_gtk/gpab_assessment/sections/kb/
+pain_classification.yaml for the weight/rank/criterion/reference KB content behind every
+ranked item (wired to Ctrl+K in app.py, not here — see that file's own docstring).
+
+Structural changes from the pre-2026-10-10 version:
+  - Inflammatory is no longer an independent pain type. Its 4 flags are nested, starred,
+    inside Nociceptive (item 4, "Signs of inflammation") as an acknowledged expansion of
+    that single paper item — the paper itself notes the item "might require expansion".
+  - Nociceptive/Neuropathic/Nociplastic are each reordered to match the paper's ranked
+    weight (highest first), with new fields added for paper items that had no prior
+    equivalent, and fields with no paper equivalent demoted into a starred "legacy/
+    supplementary" subgroup per pain type rather than deleted outright.
+  - Central Sensitisation is no longer an independent subsection. csi_score (with its
+    existing >=40 alert) and every cs_* flag have moved into Nociplastic, several of them
+    folded into fields that are now SHARED with BACPAP (see _shared_flag() below) rather
+    than kept as separate fields — BACPAP is the canonical widget tree for comorbid-
+    symptom and evoked-hypersensitivity items; Nociplastic renders a second, live-linked
+    instance of the same field ids at the same granularity BACPAP already uses.
+  - Fibromyalgia and BACPAP are otherwise unchanged.
+
+One piece of the TUI section is deliberately NOT ported here, flagged rather than
 faked:
 
 - The individual xref_* cross-reference badges next to specific fields
-  (e.g. "Subj: morning stiffness recorded" beside Inflammatory's morning-pain
-  toggle) — update_cross_refs() still runs (see below) and computes the same
-  data the TUI does, but isn't wired to a per-field badge widget yet; this
-  is a rendering-only gap, not a missing capability.
+  (e.g. "Subj: morning stiffness recorded" beside the nested Inflammatory morning-pain
+  toggle) — update_cross_refs() still runs (see below) and computes the same kind of
+  data the TUI did, but isn't wired to a per-field badge widget yet; this is a
+  rendering-only gap, not a missing capability.
 
 The embedded RegionalDifferentialPanel (sections/regional_differential.py)
-IS ported (Phase 4) — set_active_regions()/set_region_test_data() below
-mount/unmount one panel per active body region into self.diff_region_box
-and push live test results into it, mirroring the TUI's own
-set_active_regions/set_region_test_data exactly. app.py wires the mount
-timing (after region toggle, after load, after every objective autosave)
-and the click-to-KB callback (set_on_request_kb) the same way it wires
-set_on_changed elsewhere.
+IS ported (Phase 4, pre-2026-10-10) — set_active_regions()/set_region_test_data() below
+mount/unmount one panel per active body region into self.diff_region_box and push live
+test results into it, mirroring the TUI's own set_active_regions/set_region_test_data
+exactly. app.py wires the mount timing (after region toggle, after load, after every
+objective autosave) and the click-to-KB callback (set_on_request_kb) the same way it
+wires set_on_changed elsewhere.
 
 update_cross_refs() mirrors the TUI's actual behaviour (assessment_view.py's
 _show_section): called with an in-memory dict of {"medical": ..., "subjective":
@@ -37,7 +58,7 @@ from ..widgets import (
     FlagButton, AutoTextView, TouchEntry, LikelihoodField, PainTypeSelector,
     make_subsection_header as _header,
     make_subgroup_header as _subheader,
-    field_row as _field_row,
+    FieldGrid,
 )
 from .regional_differential import RegionalDifferentialPanel, RequestKBCallback
 
@@ -80,6 +101,10 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         self._toggles: dict[str, FlagButton] = {}
         self._likelihoods: dict[str, LikelihoodField] = {}
         self._texts: dict[str, AutoTextView] = {}
+        # field_id -> every FlagButton instance for that field (BACPAP <-> Nociplastic
+        # shared fields have 2; everything else has exactly 1, same list as a trivial
+        # case so load()/collect() can treat shared and non-shared fields uniformly).
+        self._shared_widgets: dict[str, list[FlagButton]] = {}
 
         title = Gtk.Label(label="Pain Type Classification")
         title.add_css_class("section-title")
@@ -90,11 +115,9 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         self.diff_region_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.append(self.diff_region_box)
 
-        self._build_inflammatory()
         self._build_nociceptive()
         self._build_neuropathic()
         self._build_nociplastic()
-        self._build_central_sensitisation()
         self._build_fibromyalgia()
         self._build_bacpap()
         self._build_summary()
@@ -112,7 +135,36 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         w = FlagButton(label, field_id)
         w.connect("changed", self._field_changed)
         self._toggles[field_id] = w
+        self._shared_widgets.setdefault(field_id, []).append(w)
         return w
+
+    def _shared_flag(self, label: str, field_id: str) -> FlagButton:
+        """A FlagButton for a field_id that may be rendered more than once
+        (currently: BACPAP <-> Nociplastic's items 4/8/9/10/15 — see module
+        docstring and assessment_gtk/docs/pain_classification_rework.md Q3).
+        Every instance of the same field_id stays in lockstep: toggling any
+        one of them updates every other instance and the stored value alike.
+        The first instance built becomes collect()/load()'s canonical entry
+        in self._toggles; which one that is doesn't matter functionally,
+        only build order (Nociplastic builds before BACPAP, so Nociplastic's
+        copy is canonical here)."""
+        w = FlagButton(label, field_id)
+        self._shared_widgets.setdefault(field_id, []).append(w)
+        if field_id not in self._toggles:
+            self._toggles[field_id] = w
+        w.connect("changed", lambda _w, fid=field_id: self._on_shared_flag_changed(fid, _w))
+        return w
+
+    def _on_shared_flag_changed(self, field_id: str, changed_widget: FlagButton) -> None:
+        if self._loading:
+            return
+        value = changed_widget.value
+        for w in self._shared_widgets.get(field_id, []):
+            if w is not changed_widget and w.value != value:
+                w.set_value(value)
+        self._refresh_all_computed()
+        if self._on_changed:
+            self._on_changed()
 
     def _text(self, field_id: str, min_lines: int = 2) -> AutoTextView:
         w = AutoTextView(field_id, min_lines=min_lines)
@@ -130,174 +182,208 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         lbl = Gtk.Label(label=text)
         lbl.add_css_class("reference-note")
         lbl.set_halign(Gtk.Align.START)
+        lbl.set_xalign(0.0)
+        lbl.set_wrap(True)
         return lbl
 
-    def _btn_row(self, *widgets: Gtk.Widget) -> Gtk.Box:
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        for w in widgets:
-            row.append(w)
-        return row
+    def _grid(self) -> FieldGrid:
+        """One FieldGrid per subsection, so every flag/score/text row in the
+        tab lines up on the same 3 equal-width columns (see widgets.py)."""
+        g = FieldGrid()
+        self.append(g)
+        return g
+
+    def _add_likelihood(self, g: FieldGrid, label: str, field_id: str) -> None:
+        w = self._likelihood("", field_id)
+        w.button.set_hexpand(True)
+        g.add_score(label, w)
 
     # ------------------------------------------------------------------
-    # Inflammatory
-    # ------------------------------------------------------------------
-
-    def _build_inflammatory(self) -> None:
-        self.append(_header("Inflammatory Pain", "pc_inflammatory"))
-        self.append(self._reference("Walker & Williamson 2008"))
-        self.append(self._btn_row(
-            self._flag("Constant symptoms", "infl_constant"),
-            self._flag("Morning pain/stiffness >30 min", "infl_morning"),
-        ))
-        self.append(self._btn_row(
-            self._flag("Sleep disturbance (moderate+)", "infl_sleep"),
-            self._flag("Better with activity", "infl_activity"),
-        ))
-        self.infl_score_label = Gtk.Label(label="Score: 0/4")
-        self.infl_score_label.set_halign(Gtk.Align.START)
-        self.append(self.infl_score_label)
-        self.infl_alert_label = _alert_label()
-        self.append(self.infl_alert_label)
-        self.append(self._likelihood("Inflammatory likelihood:", "infl_likelihood"))
-
-    # ------------------------------------------------------------------
-    # Nociceptive
+    # Nociceptive — ranked by relative weight, Shraim et al. 2026 Table 6.
+    # No published IASP clinical criteria exist for nociceptive pain (the
+    # paper's own framing); Inflammatory (Walker & Williamson 2008) is
+    # nested here as item 4's expansion, not an independent pain type.
     # ------------------------------------------------------------------
 
     def _build_nociceptive(self) -> None:
         self.append(_header("Nociceptive Pain", "pc_nociceptive"))
-        self.append(self._reference(
-            "Smart et al 2010 — pain from actual or threatened non-neural tissue damage"
+        g = self._grid()
+        g.add_full(self._reference(
+            "Ranked by relative weight — Shraim et al. 2026 (Pain 167:1669-1682)"
         ))
-        self.append(_subheader("Subjective:"))
-        self.append(self._btn_row(
-            self._flag("Mechanical agg/ease factors", "noci_subj_mechanical"),
-            self._flag("Proportionate to trauma/pathology", "noci_subj_trauma"),
-            self._flag("Localised ±somatic referral", "noci_subj_localised"),
-        ))
-        self.append(self._btn_row(
-            self._flag("Resolves in healing timeframes", "noci_subj_resolving"),
-            self._flag("Responsive to analgesia/NSAIDs", "noci_subj_analgesia"),
-            self._flag("No constant/unremitting pain", "noci_subj_no_constant"),
-        ))
-        self.append(self._btn_row(
-            self._flag("Associated with inflammation", "noci_subj_inflammation"),
-            self._flag("Recent onset", "noci_subj_recent"),
-        ))
-        self.append(_subheader("Examination:"))
-        self.append(self._btn_row(
-            self._flag("Mechanical pattern on testing", "noci_exam_mechanical"),
-            self._flag("Localised on palpation", "noci_exam_palpation"),
-            self._flag("Proportionate hyperalgesia", "noci_exam_hyperalgesia"),
-            self._flag("Antalgic posture/movement", "noci_exam_antalgic"),
-        ))
-        self.append(self._likelihood("Nociceptive likelihood:", "noci_likelihood"))
-        self.append(_field_row("Interpretation:", self._text("noci_interpretation")))
+        g.add_flags(
+            self._flag("1. Provoked by movement, proportionally", "noci_subj_mechanical"),
+            self._flag("2. Consistent pattern on exam/movement testing", "noci_exam_mechanical"),
+            self._flag("3. Localised distribution", "noci_subj_localised"),
+            self._flag("4. Signs of inflammation", "noci_subj_inflammation"),
+        )
+        g.add_full(_subheader("Inflammatory features (expansion of item 4) *:"))
+        g.add_flags(
+            self._flag("Constant symptoms *", "infl_constant"),
+            self._flag("Morning pain/stiffness >30 min *", "infl_morning"),
+            self._flag("Sleep disturbance (moderate+) *", "infl_sleep"),
+            self._flag("Better with activity *", "infl_activity"),
+        )
+        self.infl_score_label = Gtk.Label(label="Inflammatory sub-score: 0/4")
+        self.infl_score_label.set_halign(Gtk.Align.START)
+        g.add_full(self.infl_score_label)
+        self.infl_alert_label = _alert_label()
+        g.add_full(self.infl_alert_label)
+
+        g.add_flags(
+            self._flag("5. No generalised hypersensitivity", "noci_subj_no_gen_hypersensitivity"),
+            self._flag("7. No autonomic symptoms/signs", "noci_subj_no_autonomic"),
+            self._flag("8. Imaging findings of potential relevance", "noci_imaging"),
+        )
+        g.add_score(
+            "6. PainDETECT score (cut-off ≤ 12):",
+            self._make_touch_entry("noci_painDETECT_score", "0–38"),
+        )
+
+        g.add_full(_subheader("Legacy/supplementary features (pre-2026) *:"))
+        g.add_flags(
+            self._flag("Proportionate to trauma/pathology *", "noci_subj_trauma"),
+            self._flag("Resolves in healing timeframes *", "noci_subj_resolving"),
+            self._flag("No constant/unremitting pain *", "noci_subj_no_constant"),
+            self._flag("Localised on palpation *", "noci_exam_palpation"),
+            self._flag("Proportionate hyperalgesia *", "noci_exam_hyperalgesia"),
+            self._flag("Antalgic posture/movement *", "noci_exam_antalgic"),
+        )
+
+        self._add_likelihood(g, "Nociceptive likelihood:", "noci_likelihood")
+        g.add_text("Interpretation:", self._text("noci_interpretation"))
 
     # ------------------------------------------------------------------
-    # Neuropathic
+    # Neuropathic — ranked, Shraim et al. 2026 Table 7, mapped to
+    # Finnerup et al. 2016 grading criteria.
     # ------------------------------------------------------------------
 
     def _build_neuropathic(self) -> None:
         self.append(_header("Neuropathic Pain", "pc_neuropathic"))
-        self.append(self._reference(
-            "Smart et al 2010 — pain from somatosensory nervous system lesion/disease"
+        g = self._grid()
+        g.add_full(self._reference(
+            "Ranked by relative weight — Shraim et al. 2026; criteria: Finnerup et al. 2016"
         ))
-        self.append(_subheader("Subjective:"))
-        self.append(self._btn_row(
-            self._flag("Burning/shooting/electric quality", "neuro_subj_quality"),
-            self._flag("Hx of nerve injury", "neuro_subj_nerve_injury"),
-            self._flag("Neurological Sx/paraesthesia", "neuro_subj_neurological"),
-        ))
-        self.append(self._btn_row(
-            self._flag("Dermatomal distribution", "neuro_subj_dermatomal"),
-            self._flag("Anti-epileptic/AD responsive", "neuro_subj_medication"),
-            self._flag("High severity/irritability", "neuro_subj_severity"),
-        ))
-        self.append(self._btn_row(
-            self._flag("Neural tissue loading pattern", "neuro_subj_neural_loading"),
-            self._flag("Dysaesthesias (burn/cold/crawl)", "neuro_subj_dysaesthesia"),
-            self._flag("Spontaneous/paroxysmal pain", "neuro_subj_spontaneous"),
-        ))
-        self.append(_subheader("Examination:"))
-        self.append(self._btn_row(
-            self._flag("Provoc neurodynamic tests", "neuro_exam_neurodynamic"),
-            self._flag("Neural tissue palpation +", "neuro_exam_neural_palpation"),
-            self._flag("Positive neurological findings", "neuro_exam_neurology"),
-            self._flag("Antalgic limb posture", "neuro_exam_antalgic"),
-        ))
-        self.append(self._flag("Hyperalgesia/allodynia in distribution", "neuro_exam_hyperalgesia"))
-        self.append(self._likelihood("Neuropathic likelihood:", "neuro_likelihood"))
-        self.append(_field_row("Interpretation:", self._text("neuro_interpretation")))
+        g.add_flags(
+            self._flag("1. Diagnostic test confirms lesion/disease", "neuro_diagnostic_test"),
+            self._flag("2. Sensory signs on exam, plausible distribution", "neuro_exam_neurology"),
+            self._flag("3. Electric/shooting/stinging/flashing quality", "neuro_subj_quality"),
+            self._flag("4. Dermatomal/plausible distribution", "neuro_subj_dermatomal"),
+            self._flag("5. Nonpainful sensory symptoms", "neuro_subj_neurological"),
+            self._flag("6. Heat-related sensory symptoms", "neuro_heat_sensory"),
+            self._flag("7. Cold-related sensory symptoms", "neuro_cold_sensory"),
+            self._flag("9. Motor symptoms/signs", "neuro_exam_motor"),
+            self._flag("11. Neural tissue loading pattern", "neuro_subj_neural_loading"),
+            self._flag("12. Phantom pain", "neuro_phantom"),
+            self._flag("13. Muscle spasticity, plausible distribution", "neuro_spasticity"),
+        )
+        g.add_score(
+            "8. DN4 score (cut-off ≥ 4):",
+            self._make_touch_entry("neuro_dn4_score", "0–4"),
+        )
+        g.add_score(
+            "10. Neuropathic Pain Questionnaire score:",
+            self._make_touch_entry("neuro_npq_score", "score"),
+        )
+
+        g.add_full(_subheader("Legacy/supplementary features (pre-2026) *:"))
+        g.add_flags(
+            self._flag("Hx of nerve injury *", "neuro_subj_nerve_injury"),
+            self._flag("High severity/irritability *", "neuro_subj_severity"),
+            self._flag("Spontaneous/paroxysmal pain *", "neuro_subj_spontaneous"),
+            self._flag("Provoc neurodynamic tests *", "neuro_exam_neurodynamic"),
+            self._flag("Neural tissue palpation + *", "neuro_exam_neural_palpation"),
+            self._flag("Antalgic limb posture *", "neuro_exam_antalgic"),
+            self._flag("Hyperalgesia/allodynia in distribution *", "neuro_exam_hyperalgesia"),
+        )
+
+        self._add_likelihood(g, "Neuropathic likelihood:", "neuro_likelihood")
+        g.add_text("Interpretation:", self._text("neuro_interpretation"))
 
     # ------------------------------------------------------------------
-    # Nociplastic
+    # Nociplastic — ranked, Shraim et al. 2026 Table 8, mapped to Kosek
+    # et al. 2016 criteria. Central Sensitisation (csi_score + cs_* flags)
+    # is dissolved in here; items 4/8/9/10/15 are rendered as SHARED
+    # instances of BACPAP's own fields (_shared_flag), not duplicates.
     # ------------------------------------------------------------------
 
     def _build_nociplastic(self) -> None:
         self.append(_header("Nociplastic Pain", "pc_nociplastic"))
-        self.append(self._reference(
-            "IASP — pain from altered nociception, no clear nociceptive/neuropathic cause"
+        g = self._grid()
+        g.add_full(self._reference(
+            "Ranked by relative weight — Shraim et al. 2026; criteria: Kosek et al. 2016"
         ))
-        self.append(_subheader("Subjective:"))
-        self.append(self._btn_row(
-            self._flag("Disproportionate/unpredictable", "nocip_subj_disproportionate"),
-            self._flag("Beyond healing timeframes", "nocip_subj_persistent"),
-            self._flag("Disproportionate to pathology", "nocip_subj_disproportionate2"),
-        ))
-        self.append(self._btn_row(
-            self._flag("Widespread/non-anatomical", "nocip_subj_widespread"),
-            self._flag("Failed interventions", "nocip_subj_failed"),
-            self._flag("Psychosocial association", "nocip_subj_psychosocial"),
-        ))
-        self.append(self._btn_row(
-            self._flag("Anti-epileptic/AD responsive", "nocip_subj_medication"),
-            self._flag("Spontaneous/paroxysmal pain", "nocip_subj_spontaneous"),
-            self._flag("High functional disability", "nocip_subj_disability"),
-        ))
-        self.append(self._btn_row(
-            self._flag("Constant/unremitting pain", "nocip_subj_constant"),
-            self._flag("Night pain/disturbed sleep", "nocip_subj_night_pain"),
-            self._flag("Dysaesthesias (burn/cold/crawl)", "nocip_subj_dysaesthesia"),
-        ))
-        self.append(self._flag("High severity/irritability", "nocip_subj_severity"))
-        self.append(_subheader("Examination:"))
-        self.append(self._btn_row(
-            self._flag("Disproportionate provocation", "nocip_exam_disproportionate"),
-            self._flag("Hyperalgesia/allodynia", "nocip_exam_hyperalgesia"),
-            self._flag("Diffuse non-anatomic tenderness", "nocip_exam_diffuse"),
-            self._flag("Psychosocial (catastroph/FA)", "nocip_exam_psychosocial"),
-        ))
-        self.append(self._likelihood("Nociplastic likelihood:", "nocip_likelihood"))
-        self.append(_field_row("Interpretation:", self._text("nocip_interpretation")))
+        g.add_flags(
+            self._flag("1. Diffuse/widespread/regional distribution", "nocip_subj_widespread"),
+            self._flag("2. Generalised hypersensitivity", "nocip_generalised_hypersensitivity"),
+            self._flag("3. Multisite pain (3+ regions)", "nocip_multisite"),
+            self._flag("5. Disproportionate exam pattern", "nocip_exam_disproportionate"),
+            self._flag("6. Nonneuroanatomical distribution", "nocip_nonneuroanatomical"),
+            self._flag("13. Inconsistent/ambiguous test responses", "nocip_inconsistent_responses"),
+            self._flag("14. Absent/inconsistent neuro signs", "nocip_absent_inconsistent_signs"),
+            self._flag("16. Variable pain-quality descriptors", "nocip_variable_descriptors"),
+            self._flag("17. No imaging findings", "nocip_no_imaging"),
+            self._flag("18. Pain present >3 months", "nocip_subj_persistent"),
+        )
 
-    # ------------------------------------------------------------------
-    # Central Sensitisation
-    # ------------------------------------------------------------------
+        g.add_full(_subheader("4. Comorbid symptoms (shared with BACPAP):"))
+        g.add_flags(
+            self._shared_flag("Sleep disturbance", "bacpap_como_sleep"),
+            self._shared_flag("Fatigue", "bacpap_como_fatigue"),
+            self._shared_flag("Cognitive problems", "bacpap_como_cognitive"),
+        )
+        g.add_full(_subheader("8. Hypersensitivity in region of pain (shared with BACPAP):"))
+        g.add_flags(
+            self._shared_flag("Touch", "bacpap_hyper_touch"),
+            self._shared_flag("Movement", "bacpap_hyper_movement"),
+            self._shared_flag("Pressure", "bacpap_hyper_pressure"),
+            self._shared_flag("Heat", "bacpap_hyper_heat"),
+            self._shared_flag("Cold", "bacpap_hyper_cold"),
+        )
+        g.add_full(_subheader(
+            "9. Sound/light/odour  ·  10. Evoked touch/pressure allodynia  ·  "
+            "15. Evoked heat/cold allodynia (shared with BACPAP):"
+        ))
+        g.add_flags(
+            self._shared_flag("9. Sound/light/odour sensitivity", "bacpap_como_sensory"),
+            self._shared_flag("10. Static mechanical allodynia", "bacpap_static"),
+            self._shared_flag("10. Dynamic mechanical allodynia", "bacpap_dynamic"),
+            self._shared_flag("15. Heat or cold allodynia", "bacpap_thermal"),
+        )
 
-    def _build_central_sensitisation(self) -> None:
-        self.append(_header("Central Sensitisation", "pc_central"))
-        self.append(self._reference("Nijs et al 2010, Neblett et al 2013"))
-        self.append(_field_row("CSI score (0–100):", self._make_csi_entry()))
         self.csi_alert_label = _alert_label()
-        self.append(self.csi_alert_label)
-        self.append(_subheader("Additional CS features:"))
-        self.append(self._btn_row(
-            self._flag("Light sensitivity", "cs_light"),
-            self._flag("Touch sensitivity", "cs_touch"),
-            self._flag("Noise sensitivity", "cs_noise"),
-            self._flag("Chemical sensitivity", "cs_pesticides"),
-        ))
-        self.append(self._btn_row(
-            self._flag("Temperature sensitivity", "cs_temperature"),
-            self._flag("Fatigue", "cs_fatigue"),
-            self._flag("Sleep disturbance", "cs_sleep"),
-            self._flag("Concentration difficulty", "cs_concentration"),
-        ))
-        self.append(self._btn_row(
-            self._flag("Limb swelling sensation", "cs_swelling"),
-            self._flag("Tingling/numbness", "cs_tingling"),
-        ))
+        g.add_score("7. CSI score (cut-off ≥ 40):", self._make_csi_entry(), self.csi_alert_label)
+        g.add_score(
+            "11. RFIQ score (no cut-off proposed):",
+            self._make_touch_entry("nocip_rfiq_score", "score"),
+        )
+        g.add_score(
+            "12. FCSS score (no cut-off proposed):",
+            self._make_touch_entry("nocip_fcss_score", "score"),
+        )
+
+        g.add_full(_subheader("Legacy/supplementary features (pre-2026) *:"))
+        g.add_flags(
+            self._flag("Disproportionate to stimulus *", "nocip_subj_disproportionate2"),
+            self._flag("Spontaneous/paroxysmal pain *", "nocip_subj_spontaneous"),
+            self._flag("High functional disability *", "nocip_subj_disability"),
+            self._flag("Constant/unremitting pain *", "nocip_subj_constant"),
+            self._flag("Night pain/disturbed sleep *", "nocip_subj_night_pain"),
+            self._flag("Dysaesthesias (burn/cold/crawl) *", "nocip_subj_dysaesthesia"),
+            self._flag("High severity/irritability *", "nocip_subj_severity"),
+            self._flag("Hyperalgesia/allodynia (general) *", "nocip_exam_hyperalgesia"),
+            self._flag("Limb swelling sensation *", "cs_swelling"),
+            self._flag("Tingling/numbness *", "cs_tingling"),
+        )
+
+        self._add_likelihood(g, "Nociplastic likelihood:", "nocip_likelihood")
+        g.add_text("Interpretation:", self._text("nocip_interpretation"))
+
+    def _make_touch_entry(self, field_id: str, placeholder: str) -> TouchEntry:
+        w = TouchEntry(field_id, placeholder=placeholder)
+        w.connect("changed", self._field_changed)
+        setattr(self, f"_entry_{field_id}", w)
+        return w
 
     def _make_csi_entry(self) -> TouchEntry:
         self.csi_score = TouchEntry("csi_score", placeholder="0–100")
@@ -305,98 +391,90 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         return self.csi_score
 
     # ------------------------------------------------------------------
-    # Fibromyalgia
+    # Fibromyalgia — unchanged. RFIQ/FCSS (above) are new, separate
+    # nociplastic items, not assumed equivalent to this subscale —
+    # flagged for a manual compare-and-report, see pain_classification.yaml.
     # ------------------------------------------------------------------
 
     def _build_fibromyalgia(self) -> None:
         self.append(_header("Fibromyalgia", "pc_fibromyalgia"))
-        self.append(self._reference("Wolfe et al 2016"))
-        self.append(self._reference(
+        g = self._grid()
+        g.add_full(self._reference("Wolfe et al 2016"))
+        g.add_full(self._reference(
             "Criteria A: WPI > 7 and SS > 5  |  Criteria B: WPI 3–6 and SS > 9"
         ))
 
-        score_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.fm_wpi = TouchEntry("fm_wpi", placeholder="0–19")
         self.fm_fatigue = TouchEntry("fm_fatigue", placeholder="0–3")
         self.fm_waking = TouchEntry("fm_waking", placeholder="0–3")
         self.fm_cognitive = TouchEntry("fm_cognitive", placeholder="0–3")
         for entry in (self.fm_wpi, self.fm_fatigue, self.fm_waking, self.fm_cognitive):
-            entry.set_size_request(60, -1)
-            entry.set_hexpand(False)
             entry.connect("changed", self._field_changed)
-        for lbl_text, entry in (
-            ("WPI (0–19):", self.fm_wpi), ("Fatigue:", self.fm_fatigue),
-            ("Waking:", self.fm_waking), ("Cognition:", self.fm_cognitive),
-        ):
-            lbl = Gtk.Label(label=lbl_text)
-            score_row.append(lbl)
-            score_row.append(entry)
         self.fm_ss_label = Gtk.Label(label="SS: —")
-        score_row.append(self.fm_ss_label)
-        self.append(score_row)
+        self.fm_ss_label.set_halign(Gtk.Align.START)
+        g.add_score("WPI (0–19):", self.fm_wpi)
+        g.add_score("Fatigue (0–3):", self.fm_fatigue)
+        g.add_score("Waking (0–3):", self.fm_waking)
+        g.add_score("Cognition (0–3):", self.fm_cognitive, self.fm_ss_label)
 
-        self.append(_subheader("Additional SS symptoms (1 pt each):"))
-        self.append(self._btn_row(
+        g.add_full(_subheader("Additional SS symptoms (1 pt each):"))
+        g.add_flags(
             self._flag("Headaches", "fm_headaches"),
             self._flag("IBS", "fm_ibs"),
             self._flag("Depression", "fm_depression"),
-        ))
-        self.append(_subheader("Diagnostic criteria:"))
-        self.append(self._btn_row(
+        )
+        g.add_full(_subheader("Diagnostic criteria:"))
+        g.add_flags(
             self._flag("Symptoms ≥ 3 months", "fm_duration"),
             self._flag("No alternative explanation", "fm_exclusion"),
-        ))
+        )
         self.fm_alert_label = _alert_label()
-        self.append(self.fm_alert_label)
+        g.add_full(self.fm_alert_label)
 
     # ------------------------------------------------------------------
-    # BACPAP
+    # BACPAP — unchanged, and now the canonical widget tree for every
+    # field it shares with Nociplastic (see _shared_flag() above).
     # ------------------------------------------------------------------
 
     def _build_bacpap(self) -> None:
         self.append(_header("BACPAP LBP Phenotyping", "pc_bacpap"))
-        self.append(self._reference(
+        g = self._grid()
+        g.add_full(self._reference(
             "Nijs et al. 2024 — 7-step consensus decision tree for LBP pain phenotyping"
         ))
 
-        self.append(_subheader("Chronicity & distribution:"))
-        self.append(self._btn_row(
+        g.add_full(_subheader("Chronicity & distribution  /  Dominant mechanism:"))
+        g.add_flags(
             self._flag("LBP ≥ 3 months (or half-days in 6 months)", "bacpap_chronic"),
             self._flag("Regional / multifocal / widespread distribution", "bacpap_distribution"),
-        ))
-        self.append(_subheader("Dominant mechanism:"))
-        self.append(self._btn_row(
             self._flag("Nociceptive pain mainly responsible", "bacpap_nociceptive"),
             self._flag("Neuropathic pain mainly responsible", "bacpap_neuropathic"),
-        ))
-        self.append(_subheader("Evoked hypersensitivity in LBP region — any one of:"))
-        self.append(self._btn_row(
-            self._flag("Static mechanical allodynia", "bacpap_static"),
-            self._flag("Dynamic mechanical allodynia", "bacpap_dynamic"),
-        ))
-        self.append(self._btn_row(
-            self._flag("Heat or cold allodynia", "bacpap_thermal"),
+        )
+        g.add_full(_subheader("Evoked hypersensitivity in LBP region — any one of:"))
+        g.add_flags(
+            self._shared_flag("Static mechanical allodynia", "bacpap_static"),
+            self._shared_flag("Dynamic mechanical allodynia", "bacpap_dynamic"),
+            self._shared_flag("Heat or cold allodynia", "bacpap_thermal"),
             self._flag("Painful after-sensations", "bacpap_after"),
-        ))
-        self.append(_subheader("Nociplastic features:"))
-        self.append(_subheader("Subjective hypersensitivity to:"))
-        self.append(self._btn_row(
-            self._flag("Touch", "bacpap_hyper_touch"),
-            self._flag("Movement", "bacpap_hyper_movement"),
-            self._flag("Pressure", "bacpap_hyper_pressure"),
-            self._flag("Heat", "bacpap_hyper_heat"),
-            self._flag("Cold", "bacpap_hyper_cold"),
-        ))
-        self.append(_subheader("Comorbid symptoms:"))
-        self.append(self._btn_row(
-            self._flag("Sensitive to light, sound, or odours", "bacpap_como_sensory"),
-            self._flag("Sleep disturbance", "bacpap_como_sleep"),
-            self._flag("Fatigue", "bacpap_como_fatigue"),
-            self._flag("Cognitive problems", "bacpap_como_cognitive"),
-        ))
+        )
+        g.add_full(_subheader("Nociplastic features — subjective hypersensitivity to:"))
+        g.add_flags(
+            self._shared_flag("Touch", "bacpap_hyper_touch"),
+            self._shared_flag("Movement", "bacpap_hyper_movement"),
+            self._shared_flag("Pressure", "bacpap_hyper_pressure"),
+            self._shared_flag("Heat", "bacpap_hyper_heat"),
+            self._shared_flag("Cold", "bacpap_hyper_cold"),
+        )
+        g.add_full(_subheader("Comorbid symptoms:"))
+        g.add_flags(
+            self._shared_flag("Sensitive to light, sound, or odours", "bacpap_como_sensory"),
+            self._shared_flag("Sleep disturbance", "bacpap_como_sleep"),
+            self._shared_flag("Fatigue", "bacpap_como_fatigue"),
+            self._shared_flag("Cognitive problems", "bacpap_como_cognitive"),
+        )
         self.bacpap_result_label = _alert_label()
-        self.append(self.bacpap_result_label)
-        self.append(_field_row("Notes:", self._text("bacpap_notes")))
+        g.add_full(self.bacpap_result_label)
+        g.add_text("Notes:", self._text("bacpap_notes"))
 
     # ------------------------------------------------------------------
     # Summary
@@ -404,13 +482,14 @@ class PainClassificationSection(Gtk.Box, SectionBase):
 
     def _build_summary(self) -> None:
         self.append(_header("Pain Type Summary", "pc_summary"))
-        self.summary_dominant = PainTypeSelector("Dominant pain type:", "summary_dominant")
+        g = self._grid()
+        self.summary_dominant = PainTypeSelector("", "summary_dominant")
+        self.summary_dominant.button.set_hexpand(True)
         self.summary_dominant.connect("changed", self._field_changed)
-        self.append(self.summary_dominant)
         self.mixed_reminder_label = _alert_label()
-        self.append(self.mixed_reminder_label)
-        self.append(_field_row("Contributing pain type(s):", self._text("summary_contributing")))
-        self.append(_field_row("Clinical reasoning:", self._text("summary_reasoning")))
+        g.add_score("Dominant pain type:", self.summary_dominant, self.mixed_reminder_label)
+        g.add_text("Contributing pain type(s):", self._text("summary_contributing"))
+        g.add_text("Clinical reasoning:", self._text("summary_reasoning"))
 
     # ------------------------------------------------------------------
     # Regional differential panel management
@@ -443,6 +522,13 @@ class PainClassificationSection(Gtk.Box, SectionBase):
     # (see module docstring). Kept as a real method, not a no-op stub, so
     # app.py's _show_section can call it exactly like the TUI does and the
     # data is ready for badge widgets once those are built.
+    #
+    # Re-pointed 2026-10-10: xref_cs_fatigue/sleep/concentration now
+    # anchor to bacpap_como_fatigue/sleep/cognitive (the fields that
+    # absorbed cs_fatigue/cs_sleep/cs_concentration — see
+    # docs/pain_classification_rework.md). xref_nocip_failed and
+    # xref_nocip_psych are retired: nocip_subj_failed and
+    # nocip_subj_psychosocial were removed in the same rework.
     # ------------------------------------------------------------------
 
     def update_cross_refs(self, assessment: dict | None = None) -> dict[str, list[str]]:
@@ -485,14 +571,11 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         refs["xref_neuro_neurological"] = lines
 
         lines = []
-        if (subj.get("previous_treatment") or "").strip():
-            lines.append("Subj: previous treatment recorded")
-        refs["xref_nocip_failed"] = lines
-
-        lines = []
         if subj.get("mood_influences") is True:
             lines.append("Subj: mood influences pain")
-        refs["xref_nocip_psych"] = lines
+        refs["xref_nocip_psych"] = lines  # retained for mood-influences data only;
+        # NOT shown next to nocip_subj_psychosocial, which was removed — no field to
+        # anchor this badge to yet.
 
         lines = []
         if subj.get("night_waking") is True:
@@ -511,7 +594,7 @@ class PainClassificationSection(Gtk.Box, SectionBase):
             lines.append("Med: chronic fatigue syndrome")
         if med.get("comorbid_fatigue_memory") is True:
             lines.append("Med: fatigue/concentration/memory issues")
-        refs["xref_cs_fatigue"] = lines
+        refs["xref_bacpap_como_fatigue"] = lines
 
         lines = []
         if subj.get("sleep_difficulty") is True:
@@ -520,14 +603,14 @@ class PainClassificationSection(Gtk.Box, SectionBase):
             lines.append("Subj: night waking")
         if med.get("comorbid_cfs") is True:
             lines.append("Med: CFS")
-        refs["xref_cs_sleep"] = lines
+        refs["xref_bacpap_como_sleep"] = lines
 
         lines = []
         if med.get("comorbid_fatigue_memory") is True:
             lines.append("Med: fatigue/concentration/memory issues")
         if med.get("comorbid_cfs") is True:
             lines.append("Med: CFS")
-        refs["xref_cs_concentration"] = lines
+        refs["xref_bacpap_como_cognitive"] = lines
 
         lines = []
         if med.get("rf_bilateral_paraesthesia") is True:
@@ -542,7 +625,7 @@ class PainClassificationSection(Gtk.Box, SectionBase):
 
     def _update_infl_score(self) -> None:
         score = sum(1 for fid in _INFL_FIELDS if self._toggles[fid].value is True)
-        self.infl_score_label.set_label(f"Score: {score}/4")
+        self.infl_score_label.set_label(f"Inflammatory sub-score: {score}/4")
         if score >= 2:
             self.infl_alert_label.set_label(
                 "⚠ Score ≥2 — moderate likelihood of inflammatory processes "
@@ -556,7 +639,8 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         score_str = self.csi_score.text.strip()
         if score_str.isdigit() and int(score_str) >= 40:
             self.csi_alert_label.set_label(
-                f"⚠ CSI score {score_str} ≥ 40 — suggestive of central sensitisation"
+                f"⚠ CSI score {score_str} ≥ 40 — suggestive of nociplastic/"
+                "central-sensitisation features (Nociplastic item 7)"
             )
             self.csi_alert_label.set_visible(True)
         else:
@@ -720,6 +804,11 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         for fid, w in self._texts.items():
             data[fid] = w.text
         data["csi_score"] = self.csi_score.text
+        data["noci_painDETECT_score"] = self._entry_noci_painDETECT_score.text
+        data["neuro_dn4_score"] = self._entry_neuro_dn4_score.text
+        data["neuro_npq_score"] = self._entry_neuro_npq_score.text
+        data["nocip_rfiq_score"] = self._entry_nocip_rfiq_score.text
+        data["nocip_fcss_score"] = self._entry_nocip_fcss_score.text
         data["fm_wpi"] = self.fm_wpi.text
         data["fm_fatigue"] = self.fm_fatigue.text
         data["fm_waking"] = self.fm_waking.text
@@ -733,11 +822,24 @@ class PainClassificationSection(Gtk.Box, SectionBase):
             pain = data if isinstance(data, dict) else {}
             for fid, w in self._toggles.items():
                 w.set_value(pain.get(fid))
+            # Shared fields (BACPAP <-> Nociplastic): propagate the canonical
+            # value (just set above, from self._toggles) to every other
+            # rendered instance of the same field_id.
+            for fid, widgets in self._shared_widgets.items():
+                canonical_value = self._toggles[fid].value
+                for w in widgets:
+                    if w is not self._toggles[fid]:
+                        w.set_value(canonical_value)
             for fid, w in self._likelihoods.items():
                 w.set_value(pain.get(fid))
             for fid, w in self._texts.items():
                 w.text = pain.get(fid, "")
             self.csi_score.text = pain.get("csi_score", "")
+            self._entry_noci_painDETECT_score.text = pain.get("noci_painDETECT_score", "")
+            self._entry_neuro_dn4_score.text = pain.get("neuro_dn4_score", "")
+            self._entry_neuro_npq_score.text = pain.get("neuro_npq_score", "")
+            self._entry_nocip_rfiq_score.text = pain.get("nocip_rfiq_score", "")
+            self._entry_nocip_fcss_score.text = pain.get("nocip_fcss_score", "")
             self.fm_wpi.text = pain.get("fm_wpi", "")
             self.fm_fatigue.text = pain.get("fm_fatigue", "")
             self.fm_waking.text = pain.get("fm_waking", "")
@@ -751,4 +853,4 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         return self.summary_dominant.value is not None
 
     def focus_first_field(self) -> None:
-        self._toggles["infl_constant"].grab_focus()
+        self._toggles["noci_subj_mechanical"].grab_focus()
