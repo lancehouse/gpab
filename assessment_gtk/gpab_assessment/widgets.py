@@ -122,6 +122,72 @@ def field_row_pair(flag_widget: Gtk.Widget, text_widget: Gtk.Widget) -> Gtk.Box:
     return row
 
 
+class FieldGrid(Gtk.Grid):
+    """A 3-equal-column layout grid — every cell is exactly ⅓ of the content
+    width, so flag buttons, score entries and cycle buttons all line up and
+    none stretches full width by accident. Four row shapes, nothing else:
+
+      add_flags(*w)          flags, 3 per row, wrapping; a lone flag stays ⅓ wide
+      add_score(lbl, w, x)   label | ⅓-width entry/cycle | optional extra
+      add_text(lbl, w)       label | free text spanning the remaining 2 cols
+      add_full(w)            headers/sub-headers/notes/alerts across all cols
+
+    Built for Pain Classification (2026-10-11), whose flag rows had been
+    sized by label length and whose PROM score entries stretched full width.
+    Tried at 4 columns first; 3 chosen because 4 was too cramped on the
+    Yoga's screen for the button text lengths this tab uses.
+    """
+
+    COLS = 3
+
+    def __init__(self) -> None:
+        super().__init__(column_homogeneous=True, column_spacing=4, row_spacing=4)
+        self.set_hexpand(True)
+        # Zero-height placeholders pin every column into existence, so a grid
+        # whose widest row has fewer than COLS cells still splits evenly.
+        for col in range(self.COLS):
+            self.attach(Gtk.Box(), col, 0, 1, 1)
+        self._row = 1
+
+    def add_full(self, widget: Gtk.Widget) -> Gtk.Widget:
+        self.attach(widget, 0, self._row, self.COLS, 1)
+        self._row += 1
+        return widget
+
+    def add_flags(self, *widgets: Gtk.Widget) -> None:
+        for i, w in enumerate(widgets):
+            if i and i % self.COLS == 0:
+                self._row += 1
+            w.set_hexpand(True)
+            self.attach(w, i % self.COLS, self._row, 1, 1)
+        self._row += 1
+
+    def _label(self, text: str) -> Gtk.Label:
+        lbl = Gtk.Label(label=text)
+        lbl.add_css_class("field-label")
+        lbl.set_halign(Gtk.Align.START)
+        lbl.set_valign(Gtk.Align.CENTER)
+        lbl.set_xalign(0.0)
+        lbl.set_wrap(True)
+        return lbl
+
+    def add_score(self, label_text: str, widget: Gtk.Widget,
+                  extra: Gtk.Widget | None = None) -> None:
+        self.attach(self._label(label_text), 0, self._row, 1, 1)
+        widget.set_hexpand(True)
+        self.attach(widget, 1, self._row, 1, 1)
+        if extra is not None:
+            self.attach(extra, 2, self._row, self.COLS - 2, 1)
+        self._row += 1
+
+    def add_text(self, label_text: str, widget: Gtk.Widget) -> None:
+        lbl = self._label(label_text)
+        lbl.set_valign(Gtk.Align.START)
+        self.attach(lbl, 0, self._row, 1, 1)
+        self.attach(widget, 1, self._row, self.COLS - 1, 1)
+        self._row += 1
+
+
 def make_subgroup_header(text: str) -> Gtk.Label:
     """A smaller, muted/italic sub-heading nested inside a subsection — e.g.
     "Malignancy:" within Red Flags, or "Ankylosing Spondylitis:" within

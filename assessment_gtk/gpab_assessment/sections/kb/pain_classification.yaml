@@ -1,0 +1,707 @@
+# Pain Classification (04_pain_classification / Tab 05) KB content.
+#
+# gpab-owned — NOT copied from or into assessment/pab_assessment/objective/kb/
+# (that directory is TUI-reference territory) and NOT written into
+# clinical_kb.db (vendored from ~/Projects/kb, out of scope without explicit
+# per-edit permission — see ../../../CLAUDE.md "Maintaining the kb link").
+#
+# `weight`/`rank` are the mean relative weight (%) and rank position from the
+# cited paper's forced-choice conjoint analysis (Tables 6/7/8) — kept as bare
+# numbers, not prose, so a future calculated-weighting feature can read them
+# directly rather than re-parsing text (see
+# assessment_gtk/docs/pain_classification_rework.md, "Centralize, don't
+# repeat"). Fields with no `weight` predate that paper or were never ranked in
+# it (legacy/supplementary group, decision-criteria items, free text, etc).
+#
+# Primary source for every ranked item below:
+#   Shraim MA, Sterling M, Sluka KA, et al. Towards a tool to discriminate
+#   between pain mechanistic descriptors: expert ranking of clinical features
+#   and allocation of weights using a forced choice paradigm. PAIN
+#   2026;167(7):1669-1682. (workfiles/Towards a tool to discriminate between
+#   pain...  Pain.pdf)
+#
+# IASP clinical criteria (Table 2 of that paper) are drawn from:
+#   Finnerup NB, Haroutounian S, Kamerman P, et al. Neuropathic pain: an
+#   updated grading system for research and clinical practice. PAIN
+#   2016;157:1599-1606.
+#   Kosek E, Cohen M, Baron R, et al. Do we need a third mechanistic
+#   descriptor for chronic pain states? PAIN 2016;157:1382-1386.
+
+# ════════════════════════════════════════════════════════════════════
+# NOCICEPTIVE — ranked (Table 6). No published IASP clinical criteria
+# exist for nociceptive pain — the paper states this explicitly and
+# frames its own ranked list as a first step toward one.
+# ════════════════════════════════════════════════════════════════════
+
+noci_subj_mechanical:
+  label: "Nociceptive #1 — Mechanical provocation (subjective)"
+  rank: "1 of 8 — Nociceptive"
+  weight: "15.5"
+  purpose: >
+    Highest-weighted nociceptive feature. Pain is consistently
+    provoked/aggravated by specific movements and postures, in a
+    proportional manner (not exaggerated) — reported by the patient.
+  note: "No IASP clinical criteria exist for nociceptive pain (Shraim et al. 2026)."
+  reference: "Shraim et al. 2026"
+
+noci_exam_mechanical:
+  label: "Nociceptive #2 — Mechanical provocation (examination)"
+  rank: "2 of 8 — Nociceptive"
+  weight: "15.1"
+  purpose: >
+    Clear, consistent, and proportional pattern of pain/symptom
+    provocation on specific mechanical or movement testing.
+  reference: "Shraim et al. 2026"
+
+noci_subj_localised:
+  label: "Nociceptive #3 — Localised distribution"
+  rank: "3 of 8 — Nociceptive"
+  weight: "14.4"
+  purpose: "Localised distribution of pain."
+  reference: "Shraim et al. 2026"
+
+noci_subj_inflammation:
+  label: "Nociceptive #4 — Signs of inflammation"
+  rank: "4 of 8 — Nociceptive"
+  weight: "13.0"
+  purpose: >
+    Signs of inflammation (redness, heat/warmth, tenderness, swelling)
+    in the area of pain.
+  note: >
+    The paper itself flags this single item as potentially
+    under-specified: "might require expansion to reflect chronic
+    inflammatory pain presentations, such as stiffness and
+    time-dependent pain variation" (Discussion, p1676). The nested
+    4-flag Inflammatory subgroup below (infl_constant/morning/sleep/
+    activity, Walker & Williamson 2008) is kept as that expansion —
+    marked with * in the UI. See those fields' own entries.
+  reference: "Shraim et al. 2026"
+
+infl_constant:
+  label: "Inflammatory (expanded) — Constant symptoms *"
+  purpose: "Constant, unremitting symptoms — part of the Inflammatory sub-score."
+  note: >
+    Nested expansion of Nociceptive #4 (Signs of inflammation) — see that
+    entry. Not independently weighted by Shraim et al. 2026.
+  reference: "Walker & Williamson 2008"
+
+infl_morning:
+  label: "Inflammatory (expanded) — Morning pain/stiffness >30min *"
+  purpose: "Morning pain or stiffness lasting more than 30 minutes."
+  note: >
+    Nested expansion of Nociceptive #4 (Signs of inflammation) — see that
+    entry. Not independently weighted by Shraim et al. 2026.
+  reference: "Walker & Williamson 2008"
+
+infl_sleep:
+  label: "Inflammatory (expanded) — Sleep disturbance *"
+  purpose: "Moderate-or-greater sleep disturbance attributable to the pain."
+  note: >
+    Nested expansion of Nociceptive #4 (Signs of inflammation) — see that
+    entry. Not independently weighted by Shraim et al. 2026.
+  reference: "Walker & Williamson 2008"
+
+infl_activity:
+  label: "Inflammatory (expanded) — Better with activity *"
+  purpose: "Symptoms improve, rather than worsen, with activity."
+  note: >
+    Nested expansion of Nociceptive #4 (Signs of inflammation) — see that
+    entry. Not independently weighted by Shraim et al. 2026.
+  reference: "Walker & Williamson 2008"
+
+noci_subj_no_gen_hypersensitivity:
+  label: "Nociceptive #5 — No generalised hypersensitivity"
+  rank: "5 of 8 — Nociceptive"
+  weight: "11.8"
+  purpose: "Absence of generalised (widespread) hypersensitivity."
+  note: >
+    Phrased as a negation in the source paper; kept verbatim rather than
+    restated positively (decided 2026-10-10 — see
+    assessment_gtk/docs/pain_classification_rework.md).
+  reference: "Shraim et al. 2026"
+
+noci_painDETECT_score:
+  label: "Nociceptive #6 — PainDETECT score"
+  rank: "6 of 8 — Nociceptive"
+  weight: "10.5"
+  purpose: "Scores on modified PainDETECT questionnaire below cut-off (≤12)."
+  reference: "Shraim et al. 2026"
+
+noci_subj_no_autonomic:
+  label: "Nociceptive #7 — No autonomic symptoms"
+  rank: "7 of 8 — Nociceptive"
+  weight: "10.4"
+  purpose: >
+    Absence of autonomic symptoms/signs in the painful area, such as
+    swelling, changes in skin temperature/colour, or hair and nail growth.
+  note: "Phrased as a negation in the source paper; kept verbatim."
+  reference: "Shraim et al. 2026"
+
+noci_imaging:
+  label: "Nociceptive #8 — Imaging findings"
+  rank: "8 of 8 — Nociceptive (lowest-weighted)"
+  weight: "9.4"
+  purpose: >
+    Findings from imaging of body regions of potential relevance to the
+    pain experience.
+  note: "Lowest-weighted nociceptive item, but included per user decision 2026-10-10."
+  reference: "Shraim et al. 2026"
+
+# Legacy/supplementary — predate the paper, no ranked equivalent. Kept
+# nested and starred rather than dropped (decided 2026-10-10).
+noci_subj_trauma:
+  label: "Nociceptive (legacy) — Proportionate to trauma/pathology *"
+  purpose: "Pain severity is proportionate to the degree of trauma or pathology."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+noci_subj_resolving:
+  label: "Nociceptive (legacy) — Resolves in healing timeframes *"
+  purpose: "Pain is expected to, or does, resolve within normal tissue-healing timeframes."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+noci_subj_no_constant:
+  label: "Nociceptive (legacy) — No constant/unremitting pain *"
+  purpose: "Pain is not constant or unremitting."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+noci_exam_palpation:
+  label: "Nociceptive (legacy) — Localised on palpation *"
+  purpose: "Pain is reproduced and localised on palpation."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+noci_exam_hyperalgesia:
+  label: "Nociceptive (legacy) — Proportionate hyperalgesia *"
+  purpose: "Hyperalgesia on examination, proportionate to the stimulus."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+noci_exam_antalgic:
+  label: "Nociceptive (legacy) — Antalgic posture/movement *"
+  purpose: "Antalgic posturing or movement pattern on examination."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+# ════════════════════════════════════════════════════════════════════
+# NEUROPATHIC — ranked (Table 7), mapped to Finnerup et al. 2016
+# grading (definite/probable/possible criteria 1-4).
+# ════════════════════════════════════════════════════════════════════
+
+neuro_diagnostic_test:
+  label: "Neuropathic #1 — Diagnostic test confirms lesion/disease"
+  rank: "1 of 13 — Neuropathic"
+  weight: "10.9"
+  purpose: >
+    Diagnostic tests confirming evidence of a lesion or disease of the
+    somatosensory nervous system explaining the pain (e.g. abnormal nerve
+    conduction test, skin biopsy demonstrating reduced intraepidermal
+    nerve fibre density).
+  assess: >
+    DEFINITE criterion 4 (Finnerup et al. 2016): diagnostic test confirms
+    the lesion or disease explaining the pain.
+  reference: "Shraim et al. 2026; Finnerup et al. 2016"
+
+neuro_exam_neurology:
+  label: "Neuropathic #2 — Sensory signs on examination"
+  rank: "2 of 13 — Neuropathic"
+  weight: "10.4"
+  purpose: >
+    Pain associated with sensory signs on examination (negative —
+    numbness; and/or positive — hyperaesthesia) in the same
+    neuroanatomically plausible distribution as the pain (can extend
+    beyond, be within, or overlap with the area of pain).
+  assess: >
+    PROBABLE criterion 3 (Finnerup et al. 2016): pain is associated with
+    sensory signs in the same neuroanatomically plausible distribution.
+  note: >
+    Kept sensory-only — motor findings are now a separate field,
+    neuro_exam_motor (#9), matching the paper's own split.
+  reference: "Shraim et al. 2026; Finnerup et al. 2016"
+
+neuro_subj_quality:
+  label: "Neuropathic #3 — Pain quality descriptors"
+  rank: "3 of 13 — Neuropathic"
+  weight: "9.8"
+  purpose: >
+    Pain mechanism descriptors suggestive of neurological lesion (e.g.
+    electric shock-like, lightning, stinging, shooting, jumping,
+    flashing pain) in the same neuroanatomically plausible distribution.
+  assess: >
+    POSSIBLE criterion 1 (Finnerup et al. 2016): history of relevant
+    neurological lesion or disease, including pain quality descriptors.
+  reference: "Shraim et al. 2026; Finnerup et al. 2016"
+
+neuro_subj_dermatomal:
+  label: "Neuropathic #4 — Plausible distribution"
+  rank: "4 of 13 — Neuropathic"
+  weight: "9.5"
+  purpose: >
+    Pain in a neuroanatomically plausible distribution (e.g. dermatomal,
+    peripheral nerve distribution).
+  assess: >
+    POSSIBLE criterion 2 (Finnerup et al. 2016): pain distribution is
+    consistent with the suspected lesion or disease.
+  reference: "Shraim et al. 2026; Finnerup et al. 2016"
+
+neuro_subj_neurological:
+  label: "Neuropathic #5 — Nonpainful sensory symptoms"
+  rank: "5 of 13 — Neuropathic"
+  weight: "8.8"
+  purpose: >
+    Presence of nonpainful sensory symptoms (reported) — negative
+    (numbness) and/or positive (pins and needles, crawling) — suggestive
+    of pain being related to neurological lesion in the same
+    neuroanatomically plausible distribution.
+  assess: "POSSIBLE criterion 1 (Finnerup et al. 2016): history of relevant neurological lesion or disease."
+  reference: "Shraim et al. 2026; Finnerup et al. 2016"
+
+neuro_heat_sensory:
+  label: "Neuropathic #6 — Heat-related sensory symptoms"
+  rank: "6 of 13 — Neuropathic"
+  weight: "8.1"
+  purpose: >
+    Presence of heat-related sensory symptoms (e.g. fire-like, hot,
+    burning, scalding, searing sensations) suggestive of pain being
+    related to neurological lesion in the same plausible distribution.
+  note: "Split out of the old combined dysaesthesia flag (burn/cold/crawl) to match the paper's separate heat/cold ranking."
+  assess: "POSSIBLE criterion 1 (Finnerup et al. 2016)."
+  reference: "Shraim et al. 2026; Finnerup et al. 2016"
+
+neuro_cold_sensory:
+  label: "Neuropathic #7 — Cold-related sensory symptoms"
+  rank: "7 of 13 — Neuropathic"
+  weight: "7.8"
+  purpose: >
+    Presence of cold-related sensory symptoms (e.g. cool, cold, freezing
+    sensations) suggestive of pain being related to neurological lesion
+    in the same plausible distribution.
+  note: "Split out of the old combined dysaesthesia flag (burn/cold/crawl) to match the paper's separate heat/cold ranking."
+  assess: "POSSIBLE criterion 1 (Finnerup et al. 2016)."
+  reference: "Shraim et al. 2026; Finnerup et al. 2016"
+
+neuro_dn4_score:
+  label: "Neuropathic #8 — DN4 score"
+  rank: "8 of 13 — Neuropathic"
+  weight: "7.0"
+  purpose: "Scores on \"Douleur Neuropathique 4\" (DN4) above cut-off (≥4)."
+  reference: "Shraim et al. 2026"
+
+neuro_exam_motor:
+  label: "Neuropathic #9 — Motor symptoms/signs"
+  rank: "9 of 13 — Neuropathic"
+  weight: "7.0"
+  purpose: >
+    Presence of motor symptoms/signs (e.g. reduced/absent deep tendon
+    reflexes, muscle weakness, muscle atrophy) suggestive of pain being
+    related to neurological lesion in the same plausible distribution.
+  reference: "Shraim et al. 2026"
+
+neuro_npq_score:
+  label: "Neuropathic #10 — Neuropathic Pain Questionnaire score"
+  rank: "10 of 13 — Neuropathic"
+  weight: "6.0"
+  purpose: "Scores on \"Neuropathic Pain Questionnaire\" above cut-off (≥0)."
+  reference: "Shraim et al. 2026"
+
+neuro_subj_neural_loading:
+  label: "Neuropathic #11 — Neural tissue loading"
+  rank: "11 of 13 — Neuropathic"
+  weight: "5.9"
+  purpose: >
+    Pain aggravated by movements that load or compress neural tissue,
+    suggestive of pain being related to neurological lesion or disease.
+  reference: "Shraim et al. 2026"
+
+neuro_phantom:
+  label: "Neuropathic #12 — Phantom pain"
+  rank: "12 of 13 — Neuropathic"
+  weight: "5.3"
+  purpose: "Presence of phantom pain."
+  note: "Included as direct evidence of somatosensory system damage."
+  reference: "Shraim et al. 2026"
+
+neuro_spasticity:
+  label: "Neuropathic #13 — Muscle spasticity"
+  rank: "13 of 13 — Neuropathic (lowest-weighted)"
+  weight: "3.6"
+  purpose: "Presence of muscle spasticity in a neuroanatomically plausible distribution."
+  note: >
+    Lowest-weighted neuropathic item — motor signs including spasticity
+    were flagged by the Task Force as potentially unnecessary for
+    criteria since they can occur without neuropathic pain, but kept here
+    per user decision 2026-10-10.
+  reference: "Shraim et al. 2026"
+
+# Legacy/supplementary — predate the paper, no ranked equivalent.
+neuro_subj_nerve_injury:
+  label: "Neuropathic (legacy) — History of nerve injury *"
+  purpose: "Known history of nerve injury."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+neuro_subj_severity:
+  label: "Neuropathic (legacy) — High severity/irritability *"
+  purpose: "High pain severity and/or irritability."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+neuro_subj_spontaneous:
+  label: "Neuropathic (legacy) — Spontaneous/paroxysmal pain *"
+  purpose: "Spontaneous or paroxysmal pain episodes."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+neuro_exam_neurodynamic:
+  label: "Neuropathic (legacy) — Positive neurodynamic tests *"
+  purpose: "Positive provocative neurodynamic tests."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+neuro_exam_neural_palpation:
+  label: "Neuropathic (legacy) — Neural tissue palpation + *"
+  purpose: "Positive neural tissue palpation."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+neuro_exam_antalgic:
+  label: "Neuropathic (legacy) — Antalgic limb posture *"
+  purpose: "Antalgic limb posturing on examination."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+neuro_exam_hyperalgesia:
+  label: "Neuropathic (legacy) — Hyperalgesia/allodynia in distribution *"
+  purpose: "Hyperalgesia/allodynia within the neuroanatomically plausible distribution."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+# ════════════════════════════════════════════════════════════════════
+# NOCIPLASTIC — ranked (Table 8), mapped to Kosek et al. 2016
+# criteria (1a/1b/1c/1d, 2, 3, 4). Item 19 ("more concern for bodily
+# function") omitted per user decision 2026-10-10 — the paper itself
+# flags it as ambiguously interpreted by respondents.
+# ════════════════════════════════════════════════════════════════════
+
+nocip_subj_widespread:
+  label: "Nociplastic #1 — Diffuse/widespread distribution"
+  rank: "1 of 18 — Nociplastic"
+  weight: "7.7"
+  purpose: >
+    Diffuse, widespread, regional (rather than discrete), poorly
+    localised, or varying distribution of pain.
+  note: >
+    Absorbs the old nocip_subj_disproportionate field (folded in per
+    user decision 2026-10-10 — not an exact match, accepted).
+  assess: "Criterion 1b (Kosek et al. 2016): regional (rather than discrete) distribution."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+nocip_generalised_hypersensitivity:
+  label: "Nociplastic #2 — Generalised hypersensitivity"
+  rank: "2 of 18 — Nociplastic"
+  weight: "7.1"
+  purpose: "Generalised hypersensitivity."
+  assess: >
+    Criteria 2 and 4 (Kosek et al. 2016): history of pain hypersensitivity
+    in the region of pain, and evoked pain hypersensitivity phenomena
+    elicited clinically in the region of pain.
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+nocip_multisite:
+  label: "Nociplastic #3 — Multisite pain"
+  rank: "3 of 18 — Nociplastic"
+  weight: "6.8"
+  purpose: >
+    Multisite pain (3 or more regions; not in the same body part) or
+    spread of pain over time to new body sites/areas.
+  assess: "Criterion 1b (Kosek et al. 2016): regional (rather than discrete) distribution."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+bacpap_como_sleep:
+  label: "Nociplastic #4a — Sleep disturbance (shared with BACPAP)"
+  rank: "4 of 18 — Nociplastic"
+  weight: "6.1"
+  purpose: "Sleep disturbance with frequent nocturnal awakenings."
+  note: >
+    Same field/stored value as BACPAP's comorbid-symptoms step — editing
+    either location updates both. Absorbs the old cs_sleep field
+    (Central Sensitisation, dissolved into Nociplastic 2026-10-10).
+  assess: "Criterion 3 (Kosek et al. 2016): presence of comorbidities."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+bacpap_como_fatigue:
+  label: "Nociplastic #4b — Fatigue (shared with BACPAP)"
+  rank: "4 of 18 — Nociplastic"
+  weight: "6.1"
+  purpose: "Fatigue."
+  note: >
+    Same field/stored value as BACPAP's comorbid-symptoms step. Absorbs
+    the old cs_fatigue field (Central Sensitisation, dissolved into
+    Nociplastic 2026-10-10).
+  assess: "Criterion 3 (Kosek et al. 2016): presence of comorbidities."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+bacpap_como_cognitive:
+  label: "Nociplastic #4c — Cognitive problems (shared with BACPAP)"
+  rank: "4 of 18 — Nociplastic"
+  weight: "6.1"
+  purpose: "Cognitive problems such as difficulty to focus attention, memory disturbances."
+  note: >
+    Same field/stored value as BACPAP's comorbid-symptoms step. Absorbs
+    the old cs_concentration field (Central Sensitisation, dissolved into
+    Nociplastic 2026-10-10).
+  assess: "Criterion 3 (Kosek et al. 2016): presence of comorbidities."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+nocip_exam_disproportionate:
+  label: "Nociplastic #5 — Disproportionate exam pattern"
+  rank: "5 of 18 — Nociplastic"
+  weight: "6.1"
+  purpose: >
+    Mechanical testing shows a disproportionate, inconsistent,
+    nonmechanical pattern of pain or symptom provocation.
+  reference: "Shraim et al. 2026"
+
+nocip_nonneuroanatomical:
+  label: "Nociplastic #6 — Nonneuroanatomical distribution"
+  rank: "6 of 18 — Nociplastic"
+  weight: "6.1"
+  purpose: "Pain experienced in a nonneuroanatomically plausible distribution."
+  note: >
+    Absorbs the old nocip_exam_diffuse field ("diffuse non-anatomic
+    tenderness" — folded in per user decision 2026-10-10, not an exact
+    match, accepted).
+  reference: "Shraim et al. 2026"
+
+csi_score:
+  label: "Nociplastic #7 — Central Sensitization Inventory"
+  rank: "7 of 18 — Nociplastic"
+  weight: "5.4"
+  purpose: "Scores on 'Central Sensitization Inventory' questionnaire above cut-off (≥40)."
+  note: >
+    Moved in from the dissolved Central Sensitisation subsection
+    (2026-10-10) with its existing ≥40 alert logic unchanged.
+  reference: "Shraim et al. 2026; Neblett et al. 2013"
+
+bacpap_hyper_touch:
+  label: "Nociplastic #8a — Hypersensitivity to touch (shared with BACPAP)"
+  rank: "8 of 18 — Nociplastic"
+  weight: "5.3"
+  purpose: "Subjective hypersensitivity to touch, in the region of pain."
+  note: "Same field/stored value as BACPAP's nociplastic-features step. Absorbs the old cs_touch field."
+  assess: "Criterion 2 (Kosek et al. 2016): history of pain hypersensitivity in the region of pain — sensitivity to touch."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+bacpap_hyper_movement:
+  label: "Nociplastic #8b — Hypersensitivity to movement (shared with BACPAP)"
+  rank: "8 of 18 — Nociplastic"
+  weight: "5.3"
+  purpose: "Subjective hypersensitivity to movement, in the region of pain."
+  note: "Same field/stored value as BACPAP's nociplastic-features step."
+  assess: "Criterion 2 (Kosek et al. 2016): sensitivity to movement."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+bacpap_hyper_pressure:
+  label: "Nociplastic #8c — Hypersensitivity to pressure (shared with BACPAP)"
+  rank: "8 of 18 — Nociplastic"
+  weight: "5.3"
+  purpose: "Subjective hypersensitivity to pressure, in the region of pain."
+  note: "Same field/stored value as BACPAP's nociplastic-features step."
+  assess: "Criterion 2 (Kosek et al. 2016): sensitivity to pressure."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+bacpap_hyper_heat:
+  label: "Nociplastic #8d — Hypersensitivity to heat (shared with BACPAP)"
+  rank: "8 of 18 — Nociplastic"
+  weight: "5.3"
+  purpose: "Subjective hypersensitivity to heat, in the region of pain."
+  note: "Same field/stored value as BACPAP's nociplastic-features step. Absorbs part of the old cs_temperature field."
+  assess: "Criterion 2 (Kosek et al. 2016): sensitivity to heat or cold."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+bacpap_hyper_cold:
+  label: "Nociplastic #8e — Hypersensitivity to cold (shared with BACPAP)"
+  rank: "8 of 18 — Nociplastic"
+  weight: "5.3"
+  purpose: "Subjective hypersensitivity to cold, in the region of pain."
+  note: "Same field/stored value as BACPAP's nociplastic-features step. Absorbs part of the old cs_temperature field."
+  assess: "Criterion 2 (Kosek et al. 2016): sensitivity to heat or cold."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+bacpap_como_sensory:
+  label: "Nociplastic #9 — Hypersensitivity to sound/light/odour (shared with BACPAP)"
+  rank: "9 of 18 — Nociplastic"
+  weight: "5.3"
+  purpose: "Sensitive to light, sound, and/or odours (and/or taste)."
+  note: >
+    Same field/stored value as BACPAP's comorbid-symptoms step. Absorbs
+    the old cs_light and cs_noise fields, and (imperfectly — chemical/
+    pesticide sensitivity is not quite the same concept as odour
+    sensitivity) the old cs_pesticides field; accepted per user decision
+    2026-10-10.
+  assess: "Criterion 3 (Kosek et al. 2016): increased sensitivity to sound and/or light and/or odours."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+bacpap_static:
+  label: "Nociplastic #10a — Evoked static mechanical allodynia (shared with BACPAP)"
+  rank: "10 of 18 — Nociplastic"
+  weight: "5.3"
+  purpose: "Static mechanical allodynia, elicited clinically in the region of pain."
+  note: "Same field/stored value as BACPAP's evoked-hypersensitivity step."
+  assess: "Criterion 4 (Kosek et al. 2016): evoked pain hypersensitivity — static mechanical allodynia."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+bacpap_dynamic:
+  label: "Nociplastic #10b — Evoked dynamic mechanical allodynia (shared with BACPAP)"
+  rank: "10 of 18 — Nociplastic"
+  weight: "5.3"
+  purpose: "Dynamic mechanical allodynia, elicited clinically in the region of pain."
+  note: "Same field/stored value as BACPAP's evoked-hypersensitivity step."
+  assess: "Criterion 4 (Kosek et al. 2016): evoked pain hypersensitivity — dynamic mechanical allodynia."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+nocip_rfiq_score:
+  label: "Nociplastic #11 — Revised Fibromyalgia Impact Questionnaire"
+  rank: "11 of 18 — Nociplastic"
+  weight: "5.0"
+  purpose: "High scores on Revised Fibromyalgia Impact Questionnaire (RFIQ); no cut-off proposed."
+  note: >
+    TODO (flagged 2026-10-10): compare against this app's existing
+    Fibromyalgia subscale (Wolfe et al. 2016 WPI/SS criteria) before
+    wiring — may measure overlapping but not identical constructs.
+    Not assumed equivalent.
+  reference: "Shraim et al. 2026"
+
+nocip_fcss_score:
+  label: "Nociplastic #12 — Fibromyalgia Criteria and Severity Scales"
+  rank: "12 of 18 — Nociplastic"
+  weight: "5.0"
+  purpose: "High scores on Fibromyalgia Criteria and Severity Scales (FCSS); no cut-off proposed."
+  note: >
+    TODO (flagged 2026-10-10): compare against this app's existing
+    Fibromyalgia subscale (Wolfe et al. 2016 WPI/SS criteria) before
+    wiring — may measure overlapping but not identical constructs.
+    Not assumed equivalent.
+  reference: "Shraim et al. 2026"
+
+nocip_inconsistent_responses:
+  label: "Nociplastic #13 — Inconsistent/ambiguous test responses"
+  rank: "13 of 18 — Nociplastic"
+  weight: "4.8"
+  purpose: "Inconsistent, confusing, and ambiguous responses and findings to clinical tests."
+  reference: "Shraim et al. 2026"
+
+nocip_absent_inconsistent_signs:
+  label: "Nociplastic #14 — Absent/inconsistent neuro signs"
+  rank: "14 of 18 — Nociplastic"
+  weight: "4.6"
+  purpose: >
+    Absent or inconsistent (not neuroanatomically plausible)
+    sensory and/or motor signs of nervous system lesion or disease.
+  reference: "Shraim et al. 2026"
+
+bacpap_thermal:
+  label: "Nociplastic #15 — Evoked heat/cold allodynia (shared with BACPAP)"
+  rank: "15 of 18 — Nociplastic"
+  weight: "4.4"
+  purpose: "Heat or cold allodynia, elicited clinically in the region of pain."
+  note: "Same field/stored value as BACPAP's evoked-hypersensitivity step."
+  assess: "Criterion 4 (Kosek et al. 2016): evoked pain hypersensitivity — heat or cold allodynia."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+nocip_variable_descriptors:
+  label: "Nociplastic #16 — Variable pain-quality descriptors"
+  rank: "16 of 18 — Nociplastic"
+  weight: "4.2"
+  purpose: "Variability or no consistency in pain quality descriptors."
+  reference: "Shraim et al. 2026"
+
+nocip_no_imaging:
+  label: "Nociplastic #17 — No imaging findings"
+  rank: "17 of 18 — Nociplastic"
+  weight: "4.1"
+  purpose: "No findings from imaging of body regions of potential relevance to the pain experience."
+  reference: "Shraim et al. 2026"
+
+nocip_subj_persistent:
+  label: "Nociplastic #18 — Pain >3 months"
+  rank: "18 of 18 — Nociplastic (lowest-weighted, included)"
+  weight: "4.0"
+  purpose: "Pain present for more than 3 months."
+  note: >
+    Relabelled from "beyond healing timeframes" — same field, closest
+    existing match to this paper item.
+  assess: "Criterion 1a (Kosek et al. 2016): chronic (3 months)."
+  reference: "Shraim et al. 2026; Kosek et al. 2016"
+
+# Legacy/supplementary — predate the paper, no ranked equivalent, or
+# (nocip_exam_hyperalgesia) a deliberately-kept generic catch-all
+# alongside the now-granular BACPAP-shared hypersensitivity flags.
+nocip_subj_disproportionate2:
+  label: "Nociplastic (legacy) — Disproportionate to stimulus *"
+  purpose: "Pain response disproportionate to the stimulus."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+nocip_subj_spontaneous:
+  label: "Nociplastic (legacy) — Spontaneous/paroxysmal pain *"
+  purpose: "Spontaneous or paroxysmal pain episodes."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+nocip_subj_disability:
+  label: "Nociplastic (legacy) — High functional disability *"
+  purpose: "High level of functional disability."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+nocip_subj_constant:
+  label: "Nociplastic (legacy) — Constant/unremitting pain *"
+  purpose: "Constant, unremitting pain."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+nocip_subj_night_pain:
+  label: "Nociplastic (legacy) — Night pain/disturbed sleep *"
+  purpose: "Night pain or disturbed sleep attributable to pain."
+  note: "Legacy field, not in the 2026 weighted ranking. See also bacpap_como_sleep (Nociplastic #4b)."
+  reference: "Smart et al. 2010"
+
+nocip_subj_dysaesthesia:
+  label: "Nociplastic (legacy) — Dysaesthesias *"
+  purpose: "Dysaesthesias (burning/cold/crawling sensations)."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+nocip_subj_severity:
+  label: "Nociplastic (legacy) — High severity/irritability *"
+  purpose: "High pain severity, difficult to control."
+  note: "Legacy field, not in the 2026 weighted ranking."
+  reference: "Smart et al. 2010"
+
+nocip_exam_hyperalgesia:
+  label: "Nociplastic (legacy) — Hyperalgesia/allodynia (general) *"
+  purpose: "Generic hyperalgesia/allodynia on examination."
+  note: >
+    Kept as a deliberately generic catch-all alongside the now-granular
+    BACPAP-shared hypersensitivity flags (items 8/9/10/15) — confirmed
+    2026-10-10.
+  reference: "Smart et al. 2010"
+
+cs_swelling:
+  label: "Nociplastic (legacy) — Limb swelling sensation *"
+  purpose: "Perceived (not necessarily objective) limb swelling sensation."
+  note: >
+    From the dissolved Central Sensitisation subsection — no clean match
+    in the 2026 weighted ranking, kept rather than dropped (2026-10-10).
+  reference: "Nijs et al. 2010; Neblett et al. 2013"
+
+cs_tingling:
+  label: "Nociplastic (legacy) — Tingling/numbness *"
+  purpose: "Tingling or numbness."
+  note: >
+    From the dissolved Central Sensitisation subsection — no clean match
+    in the 2026 weighted ranking, kept rather than dropped (2026-10-10).
+  reference: "Nijs et al. 2010; Neblett et al. 2013"

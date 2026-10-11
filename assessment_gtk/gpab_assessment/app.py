@@ -43,7 +43,7 @@ from .objective.region_section import RegionTabContent
 from .objective.region_topbar import RegionTopbar
 from .objective.objective_nav import ObjectiveNav
 from .objective.kb_panel import KBPanel
-from .objective.kb_loader import get_registry, is_global_db_field
+from .objective.kb_loader import get_registry, is_global_db_field, PAIN_CLASSIFICATION_KB
 from .objective.kb_db_screen import KBDBWindow
 from .search import build_index, find_by_field_id, find_by_anchor_id
 from .search_widget import SearchModal
@@ -1398,7 +1398,8 @@ class TrialWindow(Gtk.ApplicationWindow):
         added 2026-09-16 so assessment-side sections (currently just
         medical.py's Spondyloarthropathy Screen) get live Ctrl+K lookups too,
         the same way Neurological/Sensory/CRPS already do on the objective
-        side."""
+        side. Outside Objective mode, gpab-owned assessment KB files (Pain
+        Classification, added 2026-10-11) resolve too."""
         if not self._showing_side_panel("kb"):
             return
         field_id = getattr(widget, "field_id", None)
@@ -1412,6 +1413,11 @@ class TrialWindow(Gtk.ApplicationWindow):
                 self.kb_panel.update("_global", field_id)
             return
         if not self._in_objective_mode:
+            # Assessment-side gpab-owned KB (currently Pain Classification's
+            # Shraim 2026 rank/weight entries, sections/kb/) — field ids are
+            # unique to that section, so no section check is needed here.
+            if registry.resolve(PAIN_CLASSIFICATION_KB, field_id) is not None:
+                self.kb_panel.update(PAIN_CLASSIFICATION_KB, field_id)
             return
         for region_id in self._active_regions:
             entry = registry.resolve(region_id, field_id)

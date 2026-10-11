@@ -41,6 +41,13 @@ def _render_entry(entry: KBEntry) -> str:
     parts: list[str] = []
     if entry.label:
         parts.append(entry.label)
+    if entry.rank or entry.weight:
+        bits = []
+        if entry.rank:
+            bits.append(f"Rank {entry.rank}")
+        if entry.weight:
+            bits.append(f"weight {entry.weight}%")
+        parts.append(" / ".join(bits))
     for heading, text in (
         ("Purpose", entry.purpose),
         ("Position", entry.position),
@@ -51,6 +58,7 @@ def _render_entry(entry: KBEntry) -> str:
         ("Sn / Sp", entry.sn_sp),
         ("Cluster", entry.cluster),
         ("Note", entry.note),
+        ("Reference", entry.reference),
     ):
         if text:
             parts.append(f"{heading}:\n{text.strip()}")

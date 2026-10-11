@@ -25,6 +25,17 @@ _KB_DIR = (
     / "assessment" / "pab_assessment" / "objective" / "kb"
 )
 
+# gpab-owned KB files for assessment-side (non-region) sections, loaded into
+# the registry under their own pseudo-region key alongside _KB_DIR's regions.
+# Added 2026-10-11: Pain Classification's Shraim 2026 rank/weight content
+# (sections/kb/pain_classification.yaml) had been authored but never loaded.
+PAIN_CLASSIFICATION_KB = "pain_classification"
+_ASSESSMENT_KB_FILES = {
+    PAIN_CLASSIFICATION_KB: (
+        Path(__file__).resolve().parents[1] / "sections" / "kb" / "pain_classification.yaml"
+    ),
+}
+
 _STRIP_SUFFIXES = ("_l", "_r", "_left", "_right")
 
 _DB_BACKED_REGIONS = {"cervical", "shoulder"}
@@ -156,12 +167,33 @@ class KBEntry:
                                # before display. Empty for YAML-sourced entries
                                # (added 2026-08-23; YAML KB files have no image
                                # support yet — see kb_panel.py's module docstring).
+    weight: str = ""   # relative weight %, e.g. "15.5" (mean, Table 6/7/8 of the
+                        # source paper) — kept as a bare number string, not a
+                        # formatted sentence, so a future calculated-weighting
+                        # feature can parse it directly rather than re-parsing
+                        # prose. Added 2026-10-10 for the Pain Classification
+                        # rework (see assessment_gtk/docs/pain_classification_rework.md).
+    rank: str = ""      # "<rank> of <n> — <pain type>", e.g. "1 of 8 — Nociceptive".
+                         # Same bare/parseable intent as weight.
+    reference: str = "" # citation(s) this entry's weight/criterion text is sourced
+                         # from, distinct from `note` (free clinical commentary) and
+                         # `assess` (the criterion wording itself) — e.g.
+                         # "Shraim et al. 2026, Pain 167:1669-1682" or, for legacy/
+                         # supplementary fields that predate that paper, the original
+                         # source (e.g. "Smart et al. 2010").
 
     def render_lines(self) -> list[str]:
         """Return display lines for the KB panel."""
         lines: list[str] = []
         if self.label:
             lines += [f" {self.label}", "─" * 46]
+        if self.weight or self.rank:
+            bits = []
+            if self.rank:
+                bits.append(f"Rank {self.rank}")
+            if self.weight:
+                bits.append(f"weight {self.weight}%")
+            lines += [" / ".join(bits), ""]
         if self.purpose:
             lines += ["Purpose:", _wrap(self.purpose.strip(), 44), ""]
         if self.position:
@@ -180,6 +212,8 @@ class KBEntry:
             lines += ["Cluster:", _wrap(self.cluster.strip(), 44), ""]
         if self.note:
             lines += ["Note:", _wrap(self.note.strip(), 44), ""]
+        if self.reference:
+            lines += ["Reference:", _wrap(self.reference.strip(), 44), ""]
         return lines
 
 
@@ -221,6 +255,9 @@ def _load_yaml_file(path: Path) -> dict[str, KBEntry]:
             variants=str(data.get("variants", "")),
             cluster=str(data.get("cluster", "")),
             note=str(data.get("note", "")),
+            weight=str(data.get("weight", "")),
+            rank=str(data.get("rank", "")),
+            reference=str(data.get("reference", "")),
         )
     return entries
 
@@ -292,6 +329,9 @@ class KBRegistry:
             region = yaml_path.stem
             self._data[region] = _load_yaml_file(yaml_path)
             logger.debug("KB loaded %s: %d entries", region, len(self._data[region]))
+        for key, yaml_path in _ASSESSMENT_KB_FILES.items():
+            self._data[key] = _load_yaml_file(yaml_path)
+            logger.debug("KB loaded %s: %d entries", key, len(self._data[key]))
 
     def resolve_any(self, field_id: str) -> tuple[str, KBEntry] | None:
         """Search all loaded regions for field_id. Returns (region, entry) or None."""
