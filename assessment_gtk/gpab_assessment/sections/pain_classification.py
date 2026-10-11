@@ -5,7 +5,8 @@ Task Force's weighted feature ranking for nociceptive/neuropathic/nociplastic pa
 See assessment_gtk/docs/pain_classification_rework.md for the full field-by-field decision
 table this rebuild implements, and assessment_gtk/gpab_assessment/sections/kb/
 pain_classification.yaml for the weight/rank/criterion/reference KB content behind every
-ranked item (wired to Ctrl+K in app.py, not here — see that file's own docstring).
+ranked item (loaded by objective/kb_loader.py's _ASSESSMENT_KB_FILES and shown on focus
+via app.py's _on_widget_focused while Ctrl+K is open — nothing here needs to know).
 
 Structural changes from the pre-2026-10-10 version:
   - Inflammatory is no longer an independent pain type. Its 4 flags are nested, starred,

@@ -25,6 +25,17 @@ _KB_DIR = (
     / "assessment" / "pab_assessment" / "objective" / "kb"
 )
 
+# gpab-owned KB files for assessment-side (non-region) sections, loaded into
+# the registry under their own pseudo-region key alongside _KB_DIR's regions.
+# Added 2026-10-11: Pain Classification's Shraim 2026 rank/weight content
+# (sections/kb/pain_classification.yaml) had been authored but never loaded.
+PAIN_CLASSIFICATION_KB = "pain_classification"
+_ASSESSMENT_KB_FILES = {
+    PAIN_CLASSIFICATION_KB: (
+        Path(__file__).resolve().parents[1] / "sections" / "kb" / "pain_classification.yaml"
+    ),
+}
+
 _STRIP_SUFFIXES = ("_l", "_r", "_left", "_right")
 
 _DB_BACKED_REGIONS = {"cervical", "shoulder"}
@@ -318,6 +329,9 @@ class KBRegistry:
             region = yaml_path.stem
             self._data[region] = _load_yaml_file(yaml_path)
             logger.debug("KB loaded %s: %d entries", region, len(self._data[region]))
+        for key, yaml_path in _ASSESSMENT_KB_FILES.items():
+            self._data[key] = _load_yaml_file(yaml_path)
+            logger.debug("KB loaded %s: %d entries", key, len(self._data[key]))
 
     def resolve_any(self, field_id: str) -> tuple[str, KBEntry] | None:
         """Search all loaded regions for field_id. Returns (region, entry) or None."""
