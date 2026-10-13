@@ -51,3 +51,7 @@ workfiles/placepdf
 # experiment from gpabd/dev itself, not just from gpabs/main — see
 # CLAUDE.md's "Branch and deployment rules".
 /merged-app/
+
+# Third-party paper (Shraim et al. 2026, Pain) used as the source for the
+# Pain Classification rework — kept locally for reference, not redistributed.
+/workfiles/Towards a tool to discriminate between pain*Pain.pdf
