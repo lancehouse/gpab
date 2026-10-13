@@ -79,11 +79,9 @@ SUBJ_GRID_DATA: list[tuple[str, str, list[tuple[str, str]]]] = [
         ("Special",      "08_special"),
     ]),
     ("04_pain_classification", "04 Pain Class", [
-        ("Inflamm",      "pc_inflammatory"),
         ("Nociceptive",  "pc_nociceptive"),
         ("Neuropathic",  "pc_neuropathic"),
         ("Nociplastic",  "pc_nociplastic"),
-        ("Central",      "pc_central"),
         ("Fibro",        "pc_fibromyalgia"),
         ("BACPAP",       "pc_bacpap"),
         ("Summary",      "pc_summary"),

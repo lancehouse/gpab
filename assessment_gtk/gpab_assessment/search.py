@@ -132,11 +132,9 @@ _SUBSECTIONS: list[tuple[str, str, str]] = [
     ("03_medical", "med_medications",      "Medications"),
     ("03_medical", "med_imaging",          "Imaging"),
     # 04 Pain Classification
-    ("04_pain_classification", "pc_inflammatory", "Inflammatory"),
     ("04_pain_classification", "pc_nociceptive",  "Nociceptive"),
     ("04_pain_classification", "pc_neuropathic",  "Neuropathic"),
     ("04_pain_classification", "pc_nociplastic",  "Nociplastic"),
-    ("04_pain_classification", "pc_central",      "Central Sensitisation"),
     ("04_pain_classification", "pc_fibromyalgia", "Fibromyalgia"),
     ("04_pain_classification", "pc_bacpap",       "BACPAP LBP Phenotyping"),
     ("04_pain_classification", "pc_summary",      "Pain Classification Summary"),
@@ -241,6 +239,19 @@ _SUBSECTION_LABEL: dict[tuple[str, str], str] = {
 
 # Extra match aliases for specific subsections (terms not in the label itself)
 _SUBSECTION_EXTRA: dict[tuple[str, str], str] = {
+    # Inflammatory and Central Sensitisation stopped being subsections in the
+    # 2026-10-10 Shraim rework (nested in Nociceptive / folded into
+    # Nociplastic) — their names live on here as aliases so searching the old
+    # name still lands on the subsection that now holds that content.
+    ("04_pain_classification", "pc_nociceptive"):
+        "Shraim 2026 ranked inflammatory inflammation Walker morning stiffness "
+        "PainDETECT imaging autonomic",
+    ("04_pain_classification", "pc_neuropathic"):
+        "Shraim 2026 Finnerup ranked DN4 NPQ neuropathic pain questionnaire "
+        "phantom spasticity motor",
+    ("04_pain_classification", "pc_nociplastic"):
+        "Shraim 2026 Kosek ranked central sensitisation sensitization CSI "
+        "RFIQ FCSS multisite generalised hypersensitivity",
     ("04_pain_classification", "pc_fibromyalgia"):
         "Wolfe 2016 fibromyalgia FM WPI widespread pain index symptom severity "
         "SS fatigue cognitive IBS depression criteria duration exclusion",
@@ -353,7 +364,12 @@ _FIELD_LABELS: dict[str, tuple[str, str | None, str]] = {
     "noci_interpretation":  ("04_pain_classification", "pc_nociceptive",  "Nociceptive interpretation"),
     "neuro_interpretation": ("04_pain_classification", "pc_neuropathic",  "Neuropathic interpretation"),
     "nocip_interpretation": ("04_pain_classification", "pc_nociplastic",  "Nociplastic interpretation"),
-    "csi_score":            ("04_pain_classification", "pc_central",      "CSI score"),
+    "noci_painDETECT_score": ("04_pain_classification", "pc_nociceptive", "PainDETECT score"),
+    "neuro_dn4_score":      ("04_pain_classification", "pc_neuropathic",  "DN4 score"),
+    "neuro_npq_score":      ("04_pain_classification", "pc_neuropathic",  "Neuropathic Pain Questionnaire score"),
+    "csi_score":            ("04_pain_classification", "pc_nociplastic",  "CSI score (Central Sensitisation Inventory)"),
+    "nocip_rfiq_score":     ("04_pain_classification", "pc_nociplastic",  "RFIQ score"),
+    "nocip_fcss_score":     ("04_pain_classification", "pc_nociplastic",  "FCSS score"),
     "fm_wpi":               ("04_pain_classification", "pc_fibromyalgia", "FM: WPI score"),
     "fm_fatigue":           ("04_pain_classification", "pc_fibromyalgia", "FM: Fatigue severity"),
     "fm_waking":            ("04_pain_classification", "pc_fibromyalgia", "FM: Waking unrefreshed"),
