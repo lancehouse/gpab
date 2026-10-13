@@ -2440,6 +2440,320 @@ _PAIN_CLASS_NEG_OVERRIDES = {
 }
 
 
+# ── Pain Classification: Nociceptive / Neuropathic / Nociplastic ─────────────
+# ONE field list for all three report renderers (_emit_pain_class_dev for the
+# dev/clean .md + .docx, export_session_report's full .md, export_raw_report's
+# .txt). Added 2026-10-13 for gpab's Shraim et al. 2026 rework of the Pain
+# Classification tab (assessment_gtk/docs/pain_classification_rework.md):
+# before this, each renderer kept its own hand-copied field list, none was
+# updated by that rework, and 21 new fields silently vanished from every
+# report. Order, grouping and wording mirror the gpab tab exactly
+# (assessment_gtk/gpab_assessment/sections/pain_classification.py) — update
+# both together. Fibromyalgia, BACPAP and the Summary are unchanged and still
+# rendered by their own code in each renderer.
+#
+# Group kinds: "flags" (Yes/No FlagButtons), "scores" (free-entry PROM
+# scores), "see_bacpap" (Nociplastic items 4/8/9/10/15 are the SAME field ids
+# as BACPAP's — reported once, in the BACPAP table, with a pointer here).
+_INFL_KEYS = ("infl_constant", "infl_morning", "infl_sleep", "infl_activity")
+
+_PAIN_TYPES: tuple[dict, ...] = (
+    {
+        "title": "Nociceptive Pain",
+        "likelihood": "noci_likelihood",
+        "interp": "noci_interpretation",
+        "groups": (
+            ("flags", "Ranked features", (
+                ("1. Provoked by movement, proportionally", "noci_subj_mechanical"),
+                ("2. Consistent pattern on exam/movement testing", "noci_exam_mechanical"),
+                ("3. Localised distribution", "noci_subj_localised"),
+                ("4. Signs of inflammation", "noci_subj_inflammation"),
+                ("5. No generalised hypersensitivity", "noci_subj_no_gen_hypersensitivity"),
+                ("7. No autonomic symptoms/signs", "noci_subj_no_autonomic"),
+                ("8. Imaging findings of potential relevance", "noci_imaging"),
+            )),
+            ("flags", "Inflammatory features (item 4) *", (
+                ("Constant symptoms *", "infl_constant"),
+                ("Morning pain/stiffness >30 min *", "infl_morning"),
+                ("Sleep disturbance (moderate+) *", "infl_sleep"),
+                ("Better with activity *", "infl_activity"),
+            )),
+            ("scores", "Scores", (
+                ("6. PainDETECT (cut-off ≤ 12)", "noci_painDETECT_score"),
+            )),
+            ("flags", "Legacy/supplementary *", (
+                ("Proportionate to trauma/pathology *", "noci_subj_trauma"),
+                ("Resolves in healing timeframes *", "noci_subj_resolving"),
+                ("No constant/unremitting pain *", "noci_subj_no_constant"),
+                ("Localised on palpation *", "noci_exam_palpation"),
+                ("Proportionate hyperalgesia *", "noci_exam_hyperalgesia"),
+                ("Antalgic posture/movement *", "noci_exam_antalgic"),
+            )),
+        ),
+    },
+    {
+        "title": "Neuropathic Pain",
+        "likelihood": "neuro_likelihood",
+        "interp": "neuro_interpretation",
+        "groups": (
+            ("flags", "Ranked features", (
+                ("1. Diagnostic test confirms lesion/disease", "neuro_diagnostic_test"),
+                ("2. Sensory signs on exam, plausible distribution", "neuro_exam_neurology"),
+                ("3. Electric/shooting/stinging/flashing quality", "neuro_subj_quality"),
+                ("4. Dermatomal/plausible distribution", "neuro_subj_dermatomal"),
+                ("5. Nonpainful sensory symptoms", "neuro_subj_neurological"),
+                ("6. Heat-related sensory symptoms", "neuro_heat_sensory"),
+                ("7. Cold-related sensory symptoms", "neuro_cold_sensory"),
+                ("9. Motor symptoms/signs", "neuro_exam_motor"),
+                ("11. Neural tissue loading pattern", "neuro_subj_neural_loading"),
+                ("12. Phantom pain", "neuro_phantom"),
+                ("13. Muscle spasticity, plausible distribution", "neuro_spasticity"),
+            )),
+            ("scores", "Scores", (
+                ("8. DN4 (cut-off ≥ 4)", "neuro_dn4_score"),
+                ("10. Neuropathic Pain Questionnaire", "neuro_npq_score"),
+            )),
+            ("flags", "Legacy/supplementary *", (
+                ("Hx of nerve injury *", "neuro_subj_nerve_injury"),
+                ("High severity/irritability *", "neuro_subj_severity"),
+                ("Spontaneous/paroxysmal pain *", "neuro_subj_spontaneous"),
+                ("Provoc neurodynamic tests *", "neuro_exam_neurodynamic"),
+                ("Neural tissue palpation + *", "neuro_exam_neural_palpation"),
+                ("Antalgic limb posture *", "neuro_exam_antalgic"),
+                ("Hyperalgesia/allodynia in distribution *", "neuro_exam_hyperalgesia"),
+            )),
+        ),
+    },
+    {
+        "title": "Nociplastic Pain",
+        "likelihood": "nocip_likelihood",
+        "interp": "nocip_interpretation",
+        "groups": (
+            ("flags", "Ranked features", (
+                ("1. Diffuse/widespread/regional distribution", "nocip_subj_widespread"),
+                ("2. Generalised hypersensitivity", "nocip_generalised_hypersensitivity"),
+                ("3. Multisite pain (3+ regions)", "nocip_multisite"),
+                ("5. Disproportionate exam pattern", "nocip_exam_disproportionate"),
+                ("6. Nonneuroanatomical distribution", "nocip_nonneuroanatomical"),
+                ("13. Inconsistent/ambiguous test responses", "nocip_inconsistent_responses"),
+                ("14. Absent/inconsistent neuro signs", "nocip_absent_inconsistent_signs"),
+                ("16. Variable pain-quality descriptors", "nocip_variable_descriptors"),
+                ("17. No imaging findings", "nocip_no_imaging"),
+                ("18. Pain present >3 months", "nocip_subj_persistent"),
+            )),
+            ("see_bacpap", "Items 4, 8, 9, 10, 15", (
+                ("", "bacpap_como_sleep"), ("", "bacpap_como_fatigue"),
+                ("", "bacpap_como_cognitive"), ("", "bacpap_como_sensory"),
+                ("", "bacpap_hyper_touch"), ("", "bacpap_hyper_movement"),
+                ("", "bacpap_hyper_pressure"), ("", "bacpap_hyper_heat"),
+                ("", "bacpap_hyper_cold"), ("", "bacpap_static"),
+                ("", "bacpap_dynamic"), ("", "bacpap_thermal"),
+            )),
+            ("scores", "Scores", (
+                ("7. CSI (cut-off ≥ 40)", "csi_score"),
+                ("11. RFIQ (no cut-off proposed)", "nocip_rfiq_score"),
+                ("12. FCSS (no cut-off proposed)", "nocip_fcss_score"),
+            )),
+            ("flags", "Legacy/supplementary *", (
+                ("Disproportionate to stimulus *", "nocip_subj_disproportionate2"),
+                ("Spontaneous/paroxysmal pain *", "nocip_subj_spontaneous"),
+                ("High functional disability *", "nocip_subj_disability"),
+                ("Constant/unremitting pain *", "nocip_subj_constant"),
+                ("Night pain/disturbed sleep *", "nocip_subj_night_pain"),
+                ("Dysaesthesias (burn/cold/crawl) *", "nocip_subj_dysaesthesia"),
+                ("High severity/irritability *", "nocip_subj_severity"),
+                ("Hyperalgesia/allodynia (general) *", "nocip_exam_hyperalgesia"),
+                ("Limb swelling sensation *", "cs_swelling"),
+                ("Tingling/numbness *", "cs_tingling"),
+            )),
+        ),
+    },
+)
+
+_SEE_BACPAP_TEXT = "see BACPAP table below (shared fields)"
+
+# Fields the 2026-10-10 rework removed from the tab. Never written by gpab
+# again (the first save of the tab drops them), but a session not yet
+# re-saved still holds them — shown only when they carry a value, under
+# their old LABELS wording, so nothing recorded is hidden from the report.
+_PAIN_RETIRED_KEYS = (
+    "infl_likelihood",
+    "noci_subj_analgesia", "noci_subj_recent",
+    "neuro_subj_medication", "neuro_subj_dysaesthesia",
+    "nocip_subj_disproportionate", "nocip_subj_failed", "nocip_subj_psychosocial",
+    "nocip_subj_medication", "nocip_exam_diffuse", "nocip_exam_psychosocial",
+    "cs_light", "cs_touch", "cs_noise", "cs_pesticides", "cs_temperature",
+    "cs_fatigue", "cs_sleep", "cs_concentration",
+)
+_PAIN_RETIRED_HEADING = "Retired fields (recorded before the 2026-10-10 rework)"
+
+# "Evidence against" wording for labels whose plain "Not <label>" would be a
+# double negative or unnatural; everything else uses _pain_neg()'s default.
+_PAIN_TYPE_NEG = {
+    "5. No generalised hypersensitivity": "5. Generalised hypersensitivity present",
+    "7. No autonomic symptoms/signs":     "7. Autonomic symptoms/signs present",
+    "17. No imaging findings":            "17. Imaging findings present",
+    "No constant/unremitting pain *":     "Constant/unremitting pain present *",
+    "Hx of nerve injury *":               "No hx of nerve injury *",
+}
+
+
+def _pain_neg(label: str) -> str:
+    """'3. Localised distribution' -> '3. Not localised distribution'."""
+    if label in _PAIN_TYPE_NEG:
+        return _PAIN_TYPE_NEG[label]
+    m = re.match(r"^(\d+\.\s+)?(.*)$", label)
+    num, rest = m.group(1) or "", m.group(2)
+    return f"{num}Not {rest[:1].lower()}{rest[1:]}"
+
+
+def _pain_score(pc: dict, key: str) -> str:
+    return (pc.get(key) or "").strip()
+
+
+def _pain_group_answered(pc: dict, kind: str, items) -> bool:
+    if kind == "scores":
+        return any(_pain_score(pc, k) for _, k in items)
+    return any(pc.get(k) is not None for _, k in items)
+
+
+def _pain_type_answered(pc: dict, spec: dict) -> bool:
+    return (any(_pain_group_answered(pc, kind, items) for kind, _, items in spec["groups"])
+            or bool((pc.get(spec["likelihood"]) or "").strip())
+            or bool((pc.get(spec["interp"]) or "").strip()))
+
+
+def _pain_infl_subscore(pc: dict) -> str | None:
+    """Same sub-score + >=2 alert the tab shows; None if no inflammatory flag answered."""
+    if not any(pc.get(k) is not None for k in _INFL_KEYS):
+        return None
+    n = sum(1 for k in _INFL_KEYS if pc.get(k) is True)
+    s = f"Inflammatory sub-score: {n}/4"
+    if n >= 2:
+        s += (" — ⚠ Score ≥2: moderate likelihood of inflammatory processes "
+              "as significant barrier to recovery")
+    return s
+
+
+def _pain_retired(pc: dict) -> list[tuple[str, object]]:
+    out = []
+    for k in _PAIN_RETIRED_KEYS:
+        v = pc.get(k)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            continue
+        out.append((LABELS.get(k, k), v))
+    return out
+
+
+def _emit_pain_types_lines(pc: dict, clean: bool, emit_fn, sub_fn, f_fn, txt_fn,
+                           raw: bool) -> None:
+    """Nociceptive/Neuropathic/Nociplastic for the line-per-field reports:
+    export_session_report's full .md (raw=False) and export_raw_report's .txt
+    (raw=True). clean=True collapses each flag group to PRESENT/DENIES lists,
+    matching those renderers' existing _pain_md/_pain_raw clean style."""
+
+    def yn(v) -> str:
+        if raw:
+            return {True: "✓ Yes", False: "✗ No", None: "(not answered)"}.get(v, str(v))
+        return {True: "Yes", False: "No", None: "*(not answered)*"}.get(v, str(v))
+
+    def line(label: str, value: str) -> None:
+        if raw:
+            emit_fn(f"  {label}: {value}")
+        else:
+            s = f"**{label}:** {value}"
+            emit_fn(s + "  " if clean else s)
+
+    for spec in _PAIN_TYPES:
+        title = spec["title"]
+        for kind, heading, items in spec["groups"]:
+            sub_fn(f"{title} — {heading}")
+            if kind == "see_bacpap":
+                if not clean or _pain_group_answered(pc, kind, items):
+                    line(heading, _SEE_BACPAP_TEXT)
+            elif kind == "scores":
+                for label, k in items:
+                    v = _pain_score(pc, k)
+                    if v or not clean:
+                        line(label, v or ("(empty)" if raw else "*(empty)*"))
+            elif clean:
+                present = [l for l, k in items if pc.get(k) is True]
+                absent = [_pain_neg(l) for l, k in items if pc.get(k) is False]
+                # "Evidence for/against", not PRESENT/DENIES: the against
+                # list is already negated by _pain_neg ("3. Not localised
+                # distribution"), so "DENIES:" in front read as a double negative.
+                if raw:
+                    if present:
+                        emit_fn(f"  {heading} — evidence for: " + "; ".join(present))
+                    if absent:
+                        emit_fn(f"  {heading} — evidence against: " + "; ".join(absent))
+                else:
+                    if present:
+                        emit_fn(f"**{heading} — evidence for:** " + "; ".join(present))
+                    if absent:
+                        emit_fn(f"**{heading} — evidence against:** " + "; ".join(absent))
+            else:
+                for label, k in items:
+                    line(label, yn(pc.get(k)))
+            if heading.startswith("Inflammatory"):
+                sub_score = _pain_infl_subscore(pc)
+                if sub_score:
+                    emit_fn(f"  {sub_score}" if raw else f"*{sub_score}*")
+        sub_fn(f"{title} — Likelihood & interpretation")
+        f_fn(spec["likelihood"], pc)
+        txt_fn(spec["interp"], pc)
+
+    retired = _pain_retired(pc)
+    if retired:
+        sub_fn(_PAIN_RETIRED_HEADING)
+        for label, v in retired:
+            line(label, yn(v))
+
+
+def _emit_pain_types_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
+    """Nociceptive/Neuropathic/Nociplastic as Evidence for / Evidence against
+    tables — the dev .md, i.e. *_clean.md and the .docx built from it."""
+    for spec in _PAIN_TYPES:
+        if clean and not _pain_type_answered(pc, spec):
+            continue
+        sub_fn(spec["title"])
+        rows: list[list[str]] = []
+        for kind, heading, items in spec["groups"]:
+            if clean and not _pain_group_answered(pc, kind, items):
+                continue
+            if kind == "see_bacpap":
+                rows.append([heading, _SEE_BACPAP_TEXT, ""])
+            elif kind == "scores":
+                shown = [(l, _pain_score(pc, k)) for l, k in items
+                         if _pain_score(pc, k) or not clean]
+                rows.extend([heading if i == 0 else "", f"{l}: {v or '—'}", ""]
+                            for i, (l, v) in enumerate(shown))
+            else:
+                rep = [l for l, k in items if pc.get(k) is True]
+                den = [_pain_neg(l) for l, k in items if pc.get(k) is False]
+                pairs = (list(zip_longest(rep or ["—"], den or ["—"], fillvalue=""))
+                         if rep or den else [("—", "—")])
+                rows.extend([heading if i == 0 else "", r, d] for i, (r, d) in enumerate(pairs))
+        lh = (pc.get(spec["likelihood"]) or "").strip()
+        if lh or not clean:
+            rows.append(["Likelihood", lh or "—", ""])
+        if rows:
+            emit_fn(*_md_table(["", "Evidence for", "Evidence against"], rows))
+        if spec["title"] == "Nociceptive Pain":
+            sub_score = _pain_infl_subscore(pc)
+            if sub_score:
+                emit_fn(f"*{sub_score}*")
+        interp = (pc.get(spec["interp"]) or "").strip()
+        if interp:
+            emit_fn(f"*{interp}*")
+
+    retired = _pain_retired(pc)
+    if retired:
+        sub_fn(_PAIN_RETIRED_HEADING)
+        emit_fn(*_md_table(["Field", "Value"],
+                           [[l, {True: "Yes", False: "No"}.get(v, str(v))] for l, v in retired]))
+
+
 def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
     """Section 4 — Pain Classification in tabulated dev format (Reports / Denies columns)."""
 
@@ -2469,118 +2783,7 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
     def _any(fields: list[tuple]) -> bool:
         return any(pc.get(key) is not None for _, key in fields)
 
-    # ── Inflammatory ──────────────────────────────────────────────────────────
-    _INFL = [("Constant pain","infl_constant"),("Morning stiffness","infl_morning"),
-             ("Night/sleep pain","infl_sleep"),("Activity improves","infl_activity")]
-    lh = (pc.get("infl_likelihood") or "").strip()
-    if not clean or _any(_INFL) or lh:
-        sub_fn("Inflammatory Pain")
-        rows = _rd_rows("Features", _INFL)
-        if lh or not clean:
-            rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "Evidence for", "Evidence against"], rows))
-
-    # ── Nociceptive ───────────────────────────────────────────────────────────
-    _NOCI_SX = [
-        ("Mechanical","noci_subj_mechanical"),("Trauma/incident","noci_subj_trauma"),
-        ("Localised","noci_subj_localised"),("Resolving","noci_subj_resolving"),
-        ("Responds to analgesia","noci_subj_analgesia"),("Not constant","noci_subj_no_constant"),
-        ("Local inflammation","noci_subj_inflammation"),("Recent onset","noci_subj_recent"),
-    ]
-    _NOCI_EX = [
-        ("Mechanical reproduction","noci_exam_mechanical"),
-        ("Palpation reproduction","noci_exam_palpation"),
-        ("Local hyperalgesia","noci_exam_hyperalgesia"),
-        ("Antalgic posture","noci_exam_antalgic"),
-    ]
-    lh     = (pc.get("noci_likelihood")     or "").strip()
-    interp = (pc.get("noci_interpretation") or "").strip()
-    if not clean or _any(_NOCI_SX) or _any(_NOCI_EX) or lh:
-        sub_fn("Nociceptive Pain")
-        rows = _rd_rows("Subjective", _NOCI_SX) + _rd_rows("Examination", _NOCI_EX)
-        if lh or not clean:
-            rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "Evidence for", "Evidence against"], rows))
-        if interp:
-            emit_fn(f"*{interp}*")
-
-    # ── Neuropathic ───────────────────────────────────────────────────────────
-    _NEURO_SX = [
-        ("Burning/electric/shooting","neuro_subj_quality"),
-        ("Known nerve injury","neuro_subj_nerve_injury"),
-        ("Neurological symptoms","neuro_subj_neurological"),
-        ("Dermatomal/nerve trunk","neuro_subj_dermatomal"),
-        ("Responds to neuropathic meds","neuro_subj_medication"),
-        ("Severe/night pain","neuro_subj_severity"),
-        ("Provoked by neural loading","neuro_subj_neural_loading"),
-        ("Dysaesthesia/allodynia","neuro_subj_dysaesthesia"),
-        ("Spontaneous pain","neuro_subj_spontaneous"),
-    ]
-    _NEURO_EX = [
-        ("Positive neurodynamic test","neuro_exam_neurodynamic"),
-        ("Neural palpation sensitive","neuro_exam_neural_palpation"),
-        ("Neurology change","neuro_exam_neurology"),
-        ("Antalgic posture","neuro_exam_antalgic"),
-        ("Hyperalgesia in distribution","neuro_exam_hyperalgesia"),
-    ]
-    lh     = (pc.get("neuro_likelihood")     or "").strip()
-    interp = (pc.get("neuro_interpretation") or "").strip()
-    if not clean or _any(_NEURO_SX) or _any(_NEURO_EX) or lh:
-        sub_fn("Neuropathic Pain")
-        rows = _rd_rows("Subjective", _NEURO_SX) + _rd_rows("Examination", _NEURO_EX)
-        if lh or not clean:
-            rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "Evidence for", "Evidence against"], rows))
-        if interp:
-            emit_fn(f"*{interp}*")
-
-    # ── Nociplastic ───────────────────────────────────────────────────────────
-    _NOCIP_SX = [
-        ("Disproportionate to pathology","nocip_subj_disproportionate"),
-        ("Persistent beyond healing","nocip_subj_persistent"),
-        ("Disproportionate to stimulus","nocip_subj_disproportionate2"),
-        ("Widespread/multifocal","nocip_subj_widespread"),
-        ("Failed previous treatment","nocip_subj_failed"),
-        ("Psychosocial contributors","nocip_subj_psychosocial"),
-        ("Responds to centrally-acting meds","nocip_subj_medication"),
-        ("Spontaneous pain","nocip_subj_spontaneous"),
-        ("High disability","nocip_subj_disability"),
-        ("Constant/unpredictable","nocip_subj_constant"),
-        ("Disturbed sleep/night pain","nocip_subj_night_pain"),
-        ("Dysaesthesia","nocip_subj_dysaesthesia"),
-        ("Severe/difficult to control","nocip_subj_severity"),
-    ]
-    _NOCIP_EX = [
-        ("Disproportionate exam findings","nocip_exam_disproportionate"),
-        ("Widespread hyperalgesia/allodynia","nocip_exam_hyperalgesia"),
-        ("Diffuse palpation tenderness","nocip_exam_diffuse"),
-        ("Psychosocial features on exam","nocip_exam_psychosocial"),
-    ]
-    lh     = (pc.get("nocip_likelihood")     or "").strip()
-    interp = (pc.get("nocip_interpretation") or "").strip()
-    if not clean or _any(_NOCIP_SX) or _any(_NOCIP_EX) or lh:
-        sub_fn("Nociplastic Pain")
-        rows = _rd_rows("Subjective", _NOCIP_SX) + _rd_rows("Examination", _NOCIP_EX)
-        if lh or not clean:
-            rows.append(["Likelihood", lh or "—", ""])
-        emit_fn(*_md_table(["", "Evidence for", "Evidence against"], rows))
-        if interp:
-            emit_fn(f"*{interp}*")
-
-    # ── Central Sensitisation ─────────────────────────────────────────────────
-    _CS = [
-        ("Light sensitivity","cs_light"),("Touch sensitivity","cs_touch"),
-        ("Noise sensitivity","cs_noise"),("Chemical/smell sensitivity","cs_pesticides"),
-        ("Temperature sensitivity","cs_temperature"),("Fatigue","cs_fatigue"),
-        ("Sleep disturbance","cs_sleep"),("Concentration difficulty","cs_concentration"),
-        ("Perceived swelling","cs_swelling"),("Tingling","cs_tingling"),
-    ]
-    csi = (pc.get("csi_score") or "").strip()
-    if not clean or _any(_CS) or csi:
-        sub_fn("Central Sensitisation")
-        if csi or not clean:
-            emit_fn(f"**CSI score:** {csi or '*(not entered)*'}")
-        emit_fn(*_md_table(["Evidence for", "Evidence against"], [list(p) for p in _rd_pairs(_CS)]))
+    _emit_pain_types_dev(pc, clean, emit_fn, sub_fn)
 
     # ── Fibromyalgia ──────────────────────────────────────────────────────────
     _FM_SC = [("WPI (0–19)","fm_wpi"),("Fatigue (0–3)","fm_fatigue"),
@@ -3323,175 +3526,7 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         _emit_pain_class_dev(pc, clean, _emit, sub)
     else:
 
-        sub("Inflammatory Pain Features")
-        if clean:
-            _pain_md("Inflammatory", [
-                ("Constant pain",     "infl_constant"),
-                ("Morning stiffness", "infl_morning"),
-                ("Night/sleep pain",  "infl_sleep"),
-                ("Activity improves", "infl_activity"),
-            ], pc)
-        else:
-            f("infl_constant",   pc)
-            f("infl_morning",    pc)
-            f("infl_sleep",      pc)
-            f("infl_activity",   pc)
-        f("infl_likelihood", pc)
-
-        sub("Nociceptive Pain — Subjective Features")
-        if clean:
-            _pain_md("Nociceptive (Sx)", [
-                ("Mechanical",              "noci_subj_mechanical"),
-                ("Trauma/incident",         "noci_subj_trauma"),
-                ("Localised",               "noci_subj_localised"),
-                ("Resolving",               "noci_subj_resolving"),
-                ("Responds to analgesia",   "noci_subj_analgesia"),
-                ("Not constant",            "noci_subj_no_constant"),
-                ("Local inflammation",      "noci_subj_inflammation"),
-                ("Recent onset",            "noci_subj_recent"),
-            ], pc)
-        else:
-            f("noci_subj_mechanical",   pc)
-            f("noci_subj_trauma",       pc)
-            f("noci_subj_localised",    pc)
-            f("noci_subj_resolving",    pc)
-            f("noci_subj_analgesia",    pc)
-            f("noci_subj_no_constant",  pc)
-            f("noci_subj_inflammation", pc)
-            f("noci_subj_recent",       pc)
-
-        sub("Nociceptive Pain — Examination Features")
-        if clean:
-            _pain_md("Nociceptive (Ex)", [
-                ("Mechanical reproduction","noci_exam_mechanical"),
-                ("Palpation reproduction", "noci_exam_palpation"),
-                ("Local hyperalgesia",     "noci_exam_hyperalgesia"),
-                ("Antalgic posture",       "noci_exam_antalgic"),
-            ], pc)
-        else:
-            f("noci_exam_mechanical",   pc)
-            f("noci_exam_palpation",    pc)
-            f("noci_exam_hyperalgesia", pc)
-            f("noci_exam_antalgic",     pc)
-        f("noci_likelihood",        pc)
-        txt("noci_interpretation",  pc)
-
-        sub("Neuropathic Pain — Subjective Features")
-        if clean:
-            _pain_md("Neuropathic (Sx)", [
-                ("Burning/electric/shooting quality","neuro_subj_quality"),
-                ("Known nerve injury",               "neuro_subj_nerve_injury"),
-                ("Neurological symptoms",            "neuro_subj_neurological"),
-                ("Dermatomal/nerve trunk",           "neuro_subj_dermatomal"),
-                ("Responds to neuropathic meds",     "neuro_subj_medication"),
-                ("Severe/night pain",                "neuro_subj_severity"),
-                ("Provoked by neural loading",       "neuro_subj_neural_loading"),
-                ("Dysaesthesia/allodynia",           "neuro_subj_dysaesthesia"),
-                ("Spontaneous pain",                 "neuro_subj_spontaneous"),
-            ], pc)
-        else:
-            f("neuro_subj_quality",         pc)
-            f("neuro_subj_nerve_injury",    pc)
-            f("neuro_subj_neurological",    pc)
-            f("neuro_subj_dermatomal",      pc)
-            f("neuro_subj_medication",      pc)
-            f("neuro_subj_severity",        pc)
-            f("neuro_subj_neural_loading",  pc)
-            f("neuro_subj_dysaesthesia",    pc)
-            f("neuro_subj_spontaneous",     pc)
-
-        sub("Neuropathic Pain — Examination Features")
-        if clean:
-            _pain_md("Neuropathic (Ex)", [
-                ("Positive neurodynamic test",   "neuro_exam_neurodynamic"),
-                ("Neural palpation sensitive",   "neuro_exam_neural_palpation"),
-                ("Neurology change",             "neuro_exam_neurology"),
-                ("Antalgic posture",             "neuro_exam_antalgic"),
-                ("Hyperalgesia in distribution", "neuro_exam_hyperalgesia"),
-            ], pc)
-        else:
-            f("neuro_exam_neurodynamic",     pc)
-            f("neuro_exam_neural_palpation", pc)
-            f("neuro_exam_neurology",        pc)
-            f("neuro_exam_antalgic",         pc)
-            f("neuro_exam_hyperalgesia",     pc)
-        f("neuro_likelihood",            pc)
-        txt("neuro_interpretation",      pc)
-
-        sub("Nociplastic Pain — Subjective Features")
-        if clean:
-            _pain_md("Nociplastic (Sx)", [
-                ("Disproportionate to pathology",    "nocip_subj_disproportionate"),
-                ("Persistent beyond healing",        "nocip_subj_persistent"),
-                ("Disproportionate to stimulus",     "nocip_subj_disproportionate2"),
-                ("Widespread/multifocal",            "nocip_subj_widespread"),
-                ("Failed previous treatment",        "nocip_subj_failed"),
-                ("Psychosocial contributors",        "nocip_subj_psychosocial"),
-                ("Responds to centrally-acting meds","nocip_subj_medication"),
-                ("Spontaneous pain",                 "nocip_subj_spontaneous"),
-                ("High disability",                  "nocip_subj_disability"),
-                ("Constant/unpredictable",           "nocip_subj_constant"),
-                ("Disturbed sleep/night pain",       "nocip_subj_night_pain"),
-                ("Dysaesthesia",                     "nocip_subj_dysaesthesia"),
-                ("Severe/difficult to control",      "nocip_subj_severity"),
-            ], pc)
-        else:
-            f("nocip_subj_disproportionate",  pc)
-            f("nocip_subj_persistent",        pc)
-            f("nocip_subj_disproportionate2", pc)
-            f("nocip_subj_widespread",        pc)
-            f("nocip_subj_failed",            pc)
-            f("nocip_subj_psychosocial",      pc)
-            f("nocip_subj_medication",        pc)
-            f("nocip_subj_spontaneous",       pc)
-            f("nocip_subj_disability",        pc)
-            f("nocip_subj_constant",          pc)
-            f("nocip_subj_night_pain",        pc)
-            f("nocip_subj_dysaesthesia",      pc)
-            f("nocip_subj_severity",          pc)
-
-        sub("Nociplastic Pain — Examination Features")
-        if clean:
-            _pain_md("Nociplastic (Ex)", [
-                ("Disproportionate exam findings",    "nocip_exam_disproportionate"),
-                ("Widespread hyperalgesia/allodynia", "nocip_exam_hyperalgesia"),
-                ("Diffuse palpation tenderness",      "nocip_exam_diffuse"),
-                ("Psychosocial features on exam",     "nocip_exam_psychosocial"),
-            ], pc)
-        else:
-            f("nocip_exam_disproportionate", pc)
-            f("nocip_exam_hyperalgesia",     pc)
-            f("nocip_exam_diffuse",          pc)
-            f("nocip_exam_psychosocial",     pc)
-        f("nocip_likelihood",            pc)
-        txt("nocip_interpretation",      pc)
-
-        sub("Central Sensitisation")
-        f("csi_score", pc)
-        if clean:
-            _pain_md("CS features", [
-                ("Light sensitivity",        "cs_light"),
-                ("Touch sensitivity",        "cs_touch"),
-                ("Noise sensitivity",        "cs_noise"),
-                ("Chemical/smell sensitivity","cs_pesticides"),
-                ("Temperature sensitivity",  "cs_temperature"),
-                ("Fatigue",                  "cs_fatigue"),
-                ("Sleep disturbance",        "cs_sleep"),
-                ("Concentration difficulty", "cs_concentration"),
-                ("Perceived swelling",       "cs_swelling"),
-                ("Tingling",                 "cs_tingling"),
-            ], pc)
-        else:
-            f("cs_light",         pc)
-            f("cs_touch",         pc)
-            f("cs_noise",         pc)
-            f("cs_pesticides",    pc)
-            f("cs_temperature",   pc)
-            f("cs_fatigue",       pc)
-            f("cs_sleep",         pc)
-            f("cs_concentration", pc)
-            f("cs_swelling",      pc)
-            f("cs_tingling",      pc)
+        _emit_pain_types_lines(pc, clean, _emit, sub, f, txt, raw=False)
 
         sub("Fibromyalgia")
         if clean:
@@ -5116,175 +5151,7 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     pc = a.get("pain_classification", {}) or {}
     sec("SECTION 4: PAIN CLASSIFICATION")
 
-    sub("Inflammatory Pain Features")
-    if clean:
-        _pain_raw("Inflammatory", [
-            ("Constant pain",     "infl_constant"),
-            ("Morning stiffness", "infl_morning"),
-            ("Night/sleep pain",  "infl_sleep"),
-            ("Activity improves", "infl_activity"),
-        ], pc)
-    else:
-        f("infl_constant",    pc)
-        f("infl_morning",     pc)
-        f("infl_sleep",       pc)
-        f("infl_activity",    pc)
-    f("infl_likelihood",  pc)
-
-    sub("Nociceptive Pain — Subjective Features")
-    if clean:
-        _pain_raw("Nociceptive (Sx)", [
-            ("Mechanical",            "noci_subj_mechanical"),
-            ("Trauma/incident",       "noci_subj_trauma"),
-            ("Localised",             "noci_subj_localised"),
-            ("Resolving",             "noci_subj_resolving"),
-            ("Responds to analgesia", "noci_subj_analgesia"),
-            ("Not constant",          "noci_subj_no_constant"),
-            ("Local inflammation",    "noci_subj_inflammation"),
-            ("Recent onset",          "noci_subj_recent"),
-        ], pc)
-    else:
-        f("noci_subj_mechanical",   pc)
-        f("noci_subj_trauma",       pc)
-        f("noci_subj_localised",    pc)
-        f("noci_subj_resolving",    pc)
-        f("noci_subj_analgesia",    pc)
-        f("noci_subj_no_constant",  pc)
-        f("noci_subj_inflammation", pc)
-        f("noci_subj_recent",       pc)
-
-    sub("Nociceptive Pain — Examination Features")
-    if clean:
-        _pain_raw("Nociceptive (Ex)", [
-            ("Mechanical reproduction","noci_exam_mechanical"),
-            ("Palpation reproduction", "noci_exam_palpation"),
-            ("Local hyperalgesia",     "noci_exam_hyperalgesia"),
-            ("Antalgic posture",       "noci_exam_antalgic"),
-        ], pc)
-    else:
-        f("noci_exam_mechanical",  pc)
-        f("noci_exam_palpation",   pc)
-        f("noci_exam_hyperalgesia", pc)
-        f("noci_exam_antalgic",    pc)
-    f("noci_likelihood",       pc)
-    txt("noci_interpretation", pc)
-
-    sub("Neuropathic Pain — Subjective Features")
-    if clean:
-        _pain_raw("Neuropathic (Sx)", [
-            ("Burning/electric/shooting quality","neuro_subj_quality"),
-            ("Known nerve injury",               "neuro_subj_nerve_injury"),
-            ("Neurological symptoms",            "neuro_subj_neurological"),
-            ("Dermatomal/nerve trunk",           "neuro_subj_dermatomal"),
-            ("Responds to neuropathic meds",     "neuro_subj_medication"),
-            ("Severe/night pain",                "neuro_subj_severity"),
-            ("Provoked by neural loading",       "neuro_subj_neural_loading"),
-            ("Dysaesthesia/allodynia",           "neuro_subj_dysaesthesia"),
-            ("Spontaneous pain",                 "neuro_subj_spontaneous"),
-        ], pc)
-    else:
-        f("neuro_subj_quality",        pc)
-        f("neuro_subj_nerve_injury",   pc)
-        f("neuro_subj_neurological",   pc)
-        f("neuro_subj_dermatomal",     pc)
-        f("neuro_subj_medication",     pc)
-        f("neuro_subj_severity",       pc)
-        f("neuro_subj_neural_loading", pc)
-        f("neuro_subj_dysaesthesia",   pc)
-        f("neuro_subj_spontaneous",    pc)
-
-    sub("Neuropathic Pain — Examination Features")
-    if clean:
-        _pain_raw("Neuropathic (Ex)", [
-            ("Positive neurodynamic test",   "neuro_exam_neurodynamic"),
-            ("Neural palpation sensitive",   "neuro_exam_neural_palpation"),
-            ("Neurology change",             "neuro_exam_neurology"),
-            ("Antalgic posture",             "neuro_exam_antalgic"),
-            ("Hyperalgesia in distribution", "neuro_exam_hyperalgesia"),
-        ], pc)
-    else:
-        f("neuro_exam_neurodynamic",    pc)
-        f("neuro_exam_neural_palpation", pc)
-        f("neuro_exam_neurology",       pc)
-        f("neuro_exam_antalgic",        pc)
-        f("neuro_exam_hyperalgesia",    pc)
-    f("neuro_likelihood",           pc)
-    txt("neuro_interpretation",     pc)
-
-    sub("Nociplastic Pain — Subjective Features")
-    if clean:
-        _pain_raw("Nociplastic (Sx)", [
-            ("Disproportionate to pathology",    "nocip_subj_disproportionate"),
-            ("Persistent beyond healing",        "nocip_subj_persistent"),
-            ("Disproportionate to stimulus",     "nocip_subj_disproportionate2"),
-            ("Widespread/multifocal",            "nocip_subj_widespread"),
-            ("Failed previous treatment",        "nocip_subj_failed"),
-            ("Psychosocial contributors",        "nocip_subj_psychosocial"),
-            ("Responds to centrally-acting meds","nocip_subj_medication"),
-            ("Spontaneous pain",                 "nocip_subj_spontaneous"),
-            ("High disability",                  "nocip_subj_disability"),
-            ("Constant/unpredictable",           "nocip_subj_constant"),
-            ("Disturbed sleep/night pain",       "nocip_subj_night_pain"),
-            ("Dysaesthesia",                     "nocip_subj_dysaesthesia"),
-            ("Severe/difficult to control",      "nocip_subj_severity"),
-        ], pc)
-    else:
-        f("nocip_subj_disproportionate",  pc)
-        f("nocip_subj_persistent",        pc)
-        f("nocip_subj_disproportionate2", pc)
-        f("nocip_subj_widespread",        pc)
-        f("nocip_subj_failed",            pc)
-        f("nocip_subj_psychosocial",      pc)
-        f("nocip_subj_medication",        pc)
-        f("nocip_subj_spontaneous",       pc)
-        f("nocip_subj_disability",        pc)
-        f("nocip_subj_constant",          pc)
-        f("nocip_subj_night_pain",        pc)
-        f("nocip_subj_dysaesthesia",      pc)
-        f("nocip_subj_severity",          pc)
-
-    sub("Nociplastic Pain — Examination Features")
-    if clean:
-        _pain_raw("Nociplastic (Ex)", [
-            ("Disproportionate exam findings",    "nocip_exam_disproportionate"),
-            ("Widespread hyperalgesia/allodynia", "nocip_exam_hyperalgesia"),
-            ("Diffuse palpation tenderness",      "nocip_exam_diffuse"),
-            ("Psychosocial features on exam",     "nocip_exam_psychosocial"),
-        ], pc)
-    else:
-        f("nocip_exam_disproportionate", pc)
-        f("nocip_exam_hyperalgesia",     pc)
-        f("nocip_exam_diffuse",          pc)
-        f("nocip_exam_psychosocial",     pc)
-    f("nocip_likelihood",            pc)
-    txt("nocip_interpretation",      pc)
-
-    sub("Central Sensitisation")
-    f("csi_score",        pc)
-    if clean:
-        _pain_raw("CS features", [
-            ("Light sensitivity",        "cs_light"),
-            ("Touch sensitivity",        "cs_touch"),
-            ("Noise sensitivity",        "cs_noise"),
-            ("Chemical/smell sensitivity","cs_pesticides"),
-            ("Temperature sensitivity",  "cs_temperature"),
-            ("Fatigue",                  "cs_fatigue"),
-            ("Sleep disturbance",        "cs_sleep"),
-            ("Concentration difficulty", "cs_concentration"),
-            ("Perceived swelling",       "cs_swelling"),
-            ("Tingling",                 "cs_tingling"),
-        ], pc)
-    else:
-        f("cs_light",         pc)
-        f("cs_touch",         pc)
-        f("cs_noise",         pc)
-        f("cs_pesticides",    pc)
-        f("cs_temperature",   pc)
-        f("cs_fatigue",       pc)
-        f("cs_sleep",         pc)
-        f("cs_concentration", pc)
-        f("cs_swelling",      pc)
-        f("cs_tingling",      pc)
+    _emit_pain_types_lines(pc, clean, _emit, sub, f, txt, raw=True)
 
     sub("Fibromyalgia")
     if clean:
