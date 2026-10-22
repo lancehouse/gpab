@@ -1,0 +1,258 @@
+# AD Lx/SIJ — position-ordered physical examination form (test run, 2026-10-22).
+#
+# Transcribed from AD's "Lx sp SIJ physical examination form 10/21"
+# (workfiles/AD-assessmentforms/). Her blocks, in her order: Standing →
+# Sitting → Supine → Side lying → Prone → Neurological → Other.
+#
+# ONE spec, read by both halves:
+#   backend  — pab_assessment/objective/ad_forms/__init__.py (value lookup +
+#              report rows; storage.py renders them as "10 AD Lx/SIJ")
+#   frontend — assessment_gtk/.../objective/sections/ad_form.py (GTK blocks)
+#
+# Cell kinds:
+#   link: <path>   cross-link to an EXISTING gpab field — the AD tab edits the
+#                  real field (no copy is stored). Path = <owner>.<field_id>
+#                  for general/functional/neurological/sensory/crps, or
+#                  <region>.<active|passive|muscle|special>.<field_id>.
+#                  Only exact matches are linked (see the 2026-10-14 notes).
+#   id: <id>       AD-only field (a gap in gpab), saved under _objective.json
+#                  assessment["ad_lx_sij"]. Needs `type`: radio | cycle |
+#                  entry | text | flag (+ `scale` for radio/cycle).
+#   "{side}" in a path/id expands to l / r for rows with `sides: [l, r]`.
+#
+# Rows marked "(to confirm with AD)" are her wording kept verbatim pending
+# her explanation — not interpreted.
+
+form_id: ad_lx_sij
+data_key: ad_lx_sij
+title: "AD Lx/SIJ — Lumbar spine / SIJ physical examination"
+report_title: "10 AD Lx/SIJ (position-ordered)"
+
+# Option sets for AD-only fields — each copied from the existing gpab scale
+# named alongside it, so AD-only and linked fields grade the same way.
+scales:
+  yes_no:            [["Yes", success], ["No", error]]
+  sij_provoke:       [["Yes", error], ["No", success]]          # = lumbar_tables._SIJ_STATES
+  functional:        [[Norm, success], [Antlgc, warning], [Asymm, default]]  # = functional._SQ3
+  activation:        [[Norm, success], [Fair, warning], [Poor, warning], [Ovact, error]]  # = lumbar.yaml Muscle Activation
+  muscle_length:     [[Norm, success], ["↓Mild", warning], ["↓Mod", warning], ["↓Mrkd", error]]  # = lumbar.yaml Muscle Length
+  reflex:            [["0 Absnt", error], ["1+ Redu", warning], ["2+ Norm", success], ["3+ Hypr", warning], ["4+Clons", error]]  # = neurological._REFLEX
+  sensation:         [[Normal, success], ["↓Hypo", warning], ["↑Hyper", error], [Absent, error]]  # = neurological._DERM, Normal first
+  norm:              [[Norm, success]]                       # = passive_widgets._NORM_STATE
+
+positions:
+
+  # ── Header ────────────────────────────────────────────────────────────────
+  - id: ad_lx_header
+    label: "Consent"
+    blocks:
+      - title: "Consent to examine"
+        rows:
+          - {label: "Consent to examine (Lx / SIJ)", cells: [{id: ad_lx_consent, type: radio, scale: yes_no}]}
+
+  # ── Standing ──────────────────────────────────────────────────────────────
+  - id: ad_lx_standing
+    label: "Standing"
+    blocks:
+      - title: "Observation / Posture / Gait"
+        rows:
+          - {label: "Observation", cells: [{link: general.go_general_notes}]}
+          - {label: "Lumbar lordosis", cells: [{link: general.go_lx_lord}]}
+          - {label: "Antalgic lean", cells: [{link: general.go_lean}]}
+          - {label: "Posture notes", cells: [{link: general.go_posture_notes}]}
+          - {label: "Gait", cells: [{link: functional.ft_gait}, {link: functional.ft_gait_obs}]}
+      - title: "Movements or positions of particular concern"
+        rows:
+          - {label: "", cells: [{id: ad_lx_concern, type: text}]}
+      - title: "Lx Sp ROM (standing)"
+        rows:
+          - {label: "Flexion", cells: [{link: lumbar.active.lx_flex_ax_l_range, unit: "°"}]}
+          - {label: "Extension", cells: [{link: lumbar.active.lx_ext_ax_l_range, unit: "°"}]}
+          - {label: "Lat flexion", sides: [l, r], cells: [{link: "lumbar.active.lx_lf_ax_{side}_range", unit: "°"}]}
+          - {label: "E (2nd column — to confirm with AD)", cells: [{id: ad_lx_rom_col2_e, type: entry}]}
+          - {label: "R (2nd column — to confirm with AD)", cells: [{id: ad_lx_rom_col2_r, type: entry}]}
+          - {label: "Lumbar ROM notes", cells: [{link: lumbar.active.am_lx_notes}]}
+      - title: "Functional movements"
+        rows:
+          - {label: "Squat", cells: [{link: functional.ft_squat}, {link: functional.ft_squat_obs}]}
+          - {label: "Step up / down", cells: [{id: ad_lx_step, type: radio, scale: functional}, {id: ad_lx_step_obs, type: entry, placeholder: "…"}]}
+          - {label: "Stand on one leg (eyes open)", sides: [l, r], cells: [{link: "functional.ft_sls_eo_{side}"}]}
+          - {label: "Sit to stand", cells: [{link: functional.ft_sts_q}, {link: functional.ft_sts_obs}]}
+      - title: "Strength"
+        rows:
+          - {label: "S1/2 calf", sides: [l, r], cells: [{id: "ad_lx_calf_{side}", type: entry, placeholder: "reps / quality"}]}
+
+  # ── Sitting ───────────────────────────────────────────────────────────────
+  - id: ad_lx_sitting
+    label: "Sitting"
+    blocks:
+      - title: "Slump"
+        rows:
+          - {label: "Slump (Special Tests)", sides: [l, r], cells: [{link: "lumbar.special.st_slump_{side}"}]}
+          - {label: "Slump response (Neuro)", sides: [l, r], cells: [{link: "neurological.nr_slump_{side}_resp"}]}
+      - title: "Lx Sp ROM (sitting)"
+        rows:
+          - {label: "Rotation", sides: [l, r], cells: [{link: "lumbar.active.lx_rot_ax_{side}_range", unit: "°"}]}
+
+  # ── Supine ────────────────────────────────────────────────────────────────
+  - id: ad_lx_supine
+    label: "Supine"
+    blocks:
+      - title: "Hip ROM"
+        note: "Hip region fields — entering a value turns the Hip region on."
+        rows:
+          - {label: "Flexion", sides: [l, r], cells: [{link: "hip.active.hp_flex_ax_{side}_range", unit: "°"}]}
+          - {label: "Abduction", sides: [l, r], cells: [{link: "hip.active.hp_abd_ax_{side}_range", unit: "°"}]}
+          - {label: "Adduction", sides: [l, r], cells: [{link: "hip.active.hp_add_ax_{side}_range", unit: "°"}]}
+          - {label: "Ext rotation", sides: [l, r], cells: [{link: "hip.active.hp_er_ax_{side}_range", unit: "°"}]}
+          - {label: "Int rotation", sides: [l, r], cells: [{link: "hip.active.hp_ir_ax_{side}_range", unit: "°"}]}
+          - {label: "FABER", sides: [l, r], cells: [{link: "lumbar.special.st_faber_{side}"}]}
+          - {label: "FADIR", sides: [l, r], cells: [{link: "lumbar.special.st_fadir_{side}"}]}
+      - title: "TA activation"
+        rows:
+          - {label: "Transversus abd (Muscle Testing)", cells: [{link: lumbar.muscle.ma_tva}]}
+          - {label: "Supine", cells: [{id: ad_lx_ta_supine, type: radio, scale: activation}]}
+          - {label: "4-point kneel", cells: [{id: ad_lx_ta_4pt, type: radio, scale: activation}]}
+          - {label: "Sitting", cells: [{id: ad_lx_ta_sitting, type: radio, scale: activation}]}
+          - {label: "Standing", cells: [{id: ad_lx_ta_standing, type: radio, scale: activation}]}
+      - title: "Bridging"
+        rows:
+          - {label: "Bilateral", cells: [{id: ad_lx_bridge_bilat, type: entry, placeholder: "reps / quality"}]}
+          - {label: "Offset", cells: [{id: ad_lx_bridge_offset, type: entry, placeholder: "reps / quality"}]}
+          - {label: "Unilateral", sides: [l, r], cells: [{id: "ad_lx_bridge_uni_{side}", type: entry, placeholder: "reps / quality"}]}
+      - title: "SLR / hamstring length"
+        rows:
+          - {label: "SLR (Special Tests)", sides: [l, r], cells: [{link: "lumbar.special.st_slr_{side}"}]}
+          - {label: "SLR angle (Neuro)", sides: [l, r], cells: [{link: "neurological.nr_slr_{side}_deg", unit: "°"}]}
+          - {label: "SLR response (Neuro)", sides: [l, r], cells: [{link: "neurological.nr_slr_{side}_resp"}]}
+          - {label: "Hamstring length", sides: [l, r], cells: [{link: "lumbar.muscle.ml_ham_{side}"}]}
+      - title: "SIJ provocation — 3/5 tests must provoke pain"
+        id: ad_lx_sij_block
+        note: "AD's set (FABER in place of Gaenslen). Compression and sacral thrust are in Side lying / Prone; all five are counted here. A bilateral test counts if either side is Yes."
+        tally:
+          label: "SIJ tests provoking pain"
+          threshold: 3
+          tests:
+            - ["Distraction", [lumbar.special.st_sij_dist]]
+            - ["Thigh thrust", [lumbar.special.st_sij_ptt_l, lumbar.special.st_sij_ptt_r]]
+            - ["FABER", [lumbar.special.st_faber_l, lumbar.special.st_faber_r]]
+            - ["Compression", [lumbar.special.st_sij_comp_l, lumbar.special.st_sij_comp_r]]
+            - ["Sacral thrust", [lumbar.special.st_sij_sacral]]
+        rows:
+          - {label: "Distraction / gapping (push ASISs apart)", cells: [{link: lumbar.special.st_sij_dist}]}
+          - {label: "Thigh thrust (hip 90°, AP shear at SIJ)", sides: [l, r], cells: [{link: "lumbar.special.st_sij_ptt_{side}"}]}
+          - {label: "FABER (stabilising opp ASIS)", sides: [l, r], cells: [{link: "lumbar.special.st_faber_{side}"}]}
+          - {label: "SIJ notes", cells: [{link: lumbar.special.st_sij_notes}]}
+
+  # ── Side lying ────────────────────────────────────────────────────────────
+  - id: ad_lx_sidelying
+    label: "Side lying"
+    blocks:
+      - title: "Hip abduction strength (side lying)"
+        rows:
+          - {label: "Hip abduction (Wagner kg)", sides: [l, r], cells: [{link: "lumbar.muscle.sh_hip_abd_{side}", unit: " kg"}]}
+      - title: "Femoral nerve test"
+        rows:
+          - {label: "Femoral (Special Tests)", sides: [l, r], cells: [{link: "lumbar.special.st_femoral_{side}"}]}
+          - {label: "PKF angle (Neuro)", sides: [l, r], cells: [{link: "neurological.nr_pkf_{side}_deg", unit: "°"}]}
+          - {label: "PKF response (Neuro)", sides: [l, r], cells: [{link: "neurological.nr_pkf_{side}_resp"}]}
+      - title: "SIJ compression (push ASISs together)"
+        rows:
+          - {label: "Compression", sides: [l, r], cells: [{link: "lumbar.special.st_sij_comp_{side}"}]}
+
+  # ── Prone ─────────────────────────────────────────────────────────────────
+  - id: ad_lx_prone
+    label: "Prone"
+    blocks:
+      - title: "Hip extension ROM"
+        note: "Hip region field — entering a value turns the Hip region on."
+        rows:
+          - {label: "Hip extension", sides: [l, r], cells: [{link: "hip.active.hp_ext_ax_{side}_range", unit: "°"}]}
+      - title: "Rectus femoris length"
+        rows:
+          - {label: "Rec fem length", sides: [l, r], cells: [{id: "ad_lx_recfem_{side}", type: radio, scale: muscle_length}]}
+      - title: "Sacral thrust / long dorsal ligament"
+        rows:
+          - {label: "Sacral thrust (prone PA pressure)", cells: [{link: lumbar.special.st_sij_sacral}]}
+          - {label: "Long dorsal ligament (PSIS → inf lat sacrum)", sides: [l, r], cells: [{id: "ad_lx_ldl_{side}", type: entry, placeholder: "findings"}]}
+      - title: "Palpation"
+        rows:
+          - {label: "", cells: [{id: ad_lx_palpation, type: text}]}
+      - title: "Spinal levels T8 – S1 (PAIVMs)"
+        wide: true
+        columns: ["", "L", "C", "R", "Grade / findings"]
+        rows:
+          - {label: "T8",  cells: [{link: lumbar.passive.pm_T8_l_norm},  {link: lumbar.passive.pm_T8_c_norm},  {link: lumbar.passive.pm_T8_r_norm},  {link: lumbar.passive.pm_T8_txt}]}
+          - {label: "T9",  cells: [{link: lumbar.passive.pm_T9_l_norm},  {link: lumbar.passive.pm_T9_c_norm},  {link: lumbar.passive.pm_T9_r_norm},  {link: lumbar.passive.pm_T9_txt}]}
+          - {label: "T10", cells: [{link: lumbar.passive.pm_T10_l_norm}, {link: lumbar.passive.pm_T10_c_norm}, {link: lumbar.passive.pm_T10_r_norm}, {link: lumbar.passive.pm_T10_txt}]}
+          - {label: "T11", cells: [{link: lumbar.passive.pm_T11_l_norm}, {link: lumbar.passive.pm_T11_c_norm}, {link: lumbar.passive.pm_T11_r_norm}, {link: lumbar.passive.pm_T11_txt}]}
+          - {label: "T12", cells: [{link: lumbar.passive.pm_T12_l_norm}, {link: lumbar.passive.pm_T12_c_norm}, {link: lumbar.passive.pm_T12_r_norm}, {link: lumbar.passive.pm_T12_txt}]}
+          - {label: "L1",  cells: [{link: lumbar.passive.pm_L1_l_norm},  {link: lumbar.passive.pm_L1_c_norm},  {link: lumbar.passive.pm_L1_r_norm},  {link: lumbar.passive.pm_L1_txt}]}
+          - {label: "L2",  cells: [{link: lumbar.passive.pm_L2_l_norm},  {link: lumbar.passive.pm_L2_c_norm},  {link: lumbar.passive.pm_L2_r_norm},  {link: lumbar.passive.pm_L2_txt}]}
+          - {label: "L3",  cells: [{link: lumbar.passive.pm_L3_l_norm},  {link: lumbar.passive.pm_L3_c_norm},  {link: lumbar.passive.pm_L3_r_norm},  {link: lumbar.passive.pm_L3_txt}]}
+          - {label: "L4",  cells: [{link: lumbar.passive.pm_L4_l_norm},  {link: lumbar.passive.pm_L4_c_norm},  {link: lumbar.passive.pm_L4_r_norm},  {link: lumbar.passive.pm_L4_txt}]}
+          - {label: "L5",  cells: [{link: lumbar.passive.pm_L5_l_norm},  {link: lumbar.passive.pm_L5_c_norm},  {link: lumbar.passive.pm_L5_r_norm},  {link: lumbar.passive.pm_L5_txt}]}
+          - {label: "S1",  cells: [{id: ad_lx_paivm_s1_l, type: cycle, scale: norm}, {id: ad_lx_paivm_s1_c, type: cycle, scale: norm}, {id: ad_lx_paivm_s1_r, type: cycle, scale: norm}, {id: ad_lx_paivm_s1_txt, type: entry, placeholder: "grade / findings"}]}
+
+  # ── Neurological examination (page 2) ─────────────────────────────────────
+  - id: ad_lx_neuro
+    label: "Neurological"
+    blocks:
+      - title: "Sensation by level"
+        wide: true
+        note: "Ascending: dorsal column (Aβ) + spinothalamic (Aδ, C). Each cell cycles Normal → ↓Hypo → ↑Hyper → Absent."
+        level_grid:
+          levels: [[l1, L1], [l2, L2], [l3, L3], [l4, L4], [l5, L5], [s1, S1], [s2, S2]]
+          modalities:
+            - [slt, "Static light touch (Aβ)"]
+            - [dlt, "Dynamic light touch (Aβ)"]
+            - [pp, "Pin prick (Aδ)"]
+            - [hot, "Temperature — hot (Aδ & C)"]
+            - [cold, "Temperature — cold (Aδ & C)"]
+          id: "ad_lx_{modality}_{level}_{side}"
+          scale: sensation
+      - title: "Reflexes"
+        wide: true
+        rows:
+          - {label: "L3,4 Knee", sides: [l, r], cells: [{link: "neurological.nr_knee_{side}"}]}
+          - {label: "L5, S1 toe flexion (to confirm with AD)", sides: [l, r], cells: [{id: "ad_lx_reflex_toe_{side}", type: radio, scale: reflex}]}
+          - {label: "S1/2 Ankle", sides: [l, r], cells: [{link: "neurological.nr_ankle_{side}"}]}
+      - title: "Strength (myotomes)"
+        wide: true
+        note: "Linked by level to the Neurological tab; gpab's own test description is shown in brackets."
+        rows:
+          - {label: "L2 Hip flexion", hint: "gpab: L2 Hip flex", sides: [l, r], cells: [{link: "neurological.nr_l2_{side}"}]}
+          - {label: "L3 Knee extension", hint: "gpab: L3 Knee ext", sides: [l, r], cells: [{link: "neurological.nr_l3_{side}"}]}
+          - {label: "L4 Ankle DF / inv", hint: "gpab: L4 Ankle DF", sides: [l, r], cells: [{link: "neurological.nr_l4_{side}"}]}
+          - {label: "L5 Big toe E", hint: "gpab: L5 GT ext/EHL", sides: [l, r], cells: [{link: "neurological.nr_l5_{side}"}]}
+          - {label: "S1 Knee F, Ank Ev", hint: "gpab: S1 PF / evert", sides: [l, r], cells: [{link: "neurological.nr_s1_{side}"}]}
+          - {label: "S2 Knee F, Ank PF", hint: "gpab: S2 Ham / KF", sides: [l, r], cells: [{link: "neurological.nr_s2_{side}"}]}
+      - title: "Sensory tests"
+        rows:
+          - {label: "Pressure algometry", cells: [{link: sensory.sn_secondary_hyper}, {link: sensory.sn_secondary_hyper_detail}]}
+          - {label: "Proprioception (big toe up / down)", cells: [{link: sensory.sn_proprioception}, {link: sensory.sn_proprioception_detail}]}
+      - title: "UMN tests"
+        note: "Babinski: lat edge of sole, medially to toes — pos = E of 1st toe. Hoffman's: inv F of thumb / index when 3rd fingernail flicked down."
+        rows:
+          - {label: "Babinski", cells: [{link: neurological.nr_umn_bab}]}
+          - {label: "Hoffman's", cells: [{link: neurological.nr_umn_hoffman}]}
+          - {label: "Clonus", cells: [{link: neurological.nr_umn_clonus}]}
+      - title: "Balance / coordination"
+        rows:
+          - {label: "Feet apart", cells: [{link: functional.ft_bal_both}]}
+          - {label: "Feet together", cells: [{link: functional.ft_bal_feet}]}
+          - {label: "Tandem", cells: [{link: functional.ft_bal_tandem}]}
+          - {label: "SLS (eyes open)", sides: [l, r], cells: [{link: "functional.ft_sls_eo_{side}"}]}
+          - {label: "Dynamic balance", cells: [{id: ad_lx_bal_dynamic, type: entry}]}
+          - {label: "Gait", cells: [{link: functional.ft_gait}, {link: functional.ft_gait_obs}]}
+          - {label: "Coordination (heel up / down shin)", sides: [l, r], cells: [{id: "ad_lx_coord_{side}", type: entry}]}
+
+  # ── Other examination ─────────────────────────────────────────────────────
+  # (AD's CRPS sign list deliberately left out of this tab — user decision
+  # 2026-10-22; CRPS stays on gpab's own 09 CRPS tab.)
+  - id: ad_lx_other
+    label: "Other"
+    blocks:
+      - title: "Other examination"
+        rows:
+          - {label: "", cells: [{id: ad_lx_other_exam, type: text}]}

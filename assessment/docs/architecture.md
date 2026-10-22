@@ -25,6 +25,10 @@ pab/assessment/
 │   ├── knee.yaml                    ← OBJECTIVE form driver (knee)
 │   └── ankle.yaml                   ← OBJECTIVE form driver (ankle)
 │
+├── pab_assessment/objective/ad_forms/
+│   ├── __init__.py                  ← spec loader, value lookup, report rows (no UI)
+│   └── ad_lx_sij.yaml               ← AD position-ordered form (gpab tab 10 + report)
+│
 ├── pab_assessment/objective/kb/
 │   ├── cervical.yaml                ← KNOWLEDGE BASE content (cervical)
 │   ├── lumbar.yaml                  ← KNOWLEDGE BASE content (lumbar)
@@ -109,6 +113,20 @@ KB YAML entry key:  spurling:
 The KB covers objective **special tests** for cervical, lumbar, shoulder, hip, knee,
 and ankle. Adding KB entries for muscle tests, neurological fields, or subjective
 fields is straightforward — see `docs/field-key-reference.md` for all available keys.
+
+---
+
+## AD position-ordered forms (gpab only, 2026-10-22)
+
+**Files:** `objective/ad_forms/ad_lx_sij.yaml` (+ `ad_forms/__init__.py`)
+
+A form arranged by patient position (Standing → Sitting → Supine → …) instead of by test type.
+Each cell either **links** to an existing field (`<section>.<field_id>` or
+`<region>.<active|passive|muscle|special>.<field_id>` — the form edits that real field, nothing
+is stored twice) or is an **AD-only** field saved under `_objective.json`'s `ad_lx_sij` key. The
+same spec drives gpab's GTK tab (`assessment_gtk/.../objective/sections/ad_form.py`) and
+`storage.py`'s "10 AD Lx/SIJ" report section (both renderers), so layout and report can't drift.
+The TUI does not read it. Quote `"Yes"`/`"No"` option labels — unquoted they parse as booleans.
 
 ---
 

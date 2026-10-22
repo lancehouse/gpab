@@ -378,6 +378,25 @@ entry {
     padding-bottom: 4px;
 }
 
+/* Block-form cards (objective/block_layout.py — the AD Lx/SIJ tab): one
+   self-contained test group per card, reflowing side by side within a
+   position section. Same border language as .region-container. */
+.block-card {
+    border: 1px solid alpha(currentColor, 0.25);
+    border-radius: 4px;
+    padding: 6px 8px;
+}
+.block-card-title {
+    font-weight: bold;
+    padding-bottom: 2px;
+}
+.block-card-tally {
+    font-weight: bold;
+    padding: 4px 6px;
+    background: alpha(#1565c0, 0.12);
+    border-radius: 3px;
+}
+
 /* Bilateral L/R grid rows (Neurological, and future Sensory/Muscle/ROM tabs) */
 .grid-col-header {
     font-weight: bold;

@@ -35,6 +35,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from .widgets import CheckButton
+from . import pab_path_bootstrap  # noqa: F401  (sys.path side effect)
+from pab_assessment.objective.ad_forms import load_form  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Data type
@@ -78,6 +80,7 @@ _SECTION_SHORT: dict[str, str] = {
     "obj:07_functional":      "Obj:Functional",
     "obj:08_special":         "Obj:Special",
     "obj:09_crps":            "Obj:CRPS",
+    "obj:10_ad_lx_sij":       "Obj:AD Lx/SIJ",
 }
 
 _SECTION_LABELS: dict[str, str] = {
@@ -99,6 +102,7 @@ _SECTION_LABELS: dict[str, str] = {
     "obj:07_functional":      "Obj 07 Functional",
     "obj:08_special":         "Obj 08 Special Tests",
     "obj:09_crps":            "Obj 09 CRPS",
+    "obj:10_ad_lx_sij":       "Obj 10 AD Lx/SIJ",
 }
 
 # (section_id, anchor_id, display_label)
@@ -232,6 +236,14 @@ _SUBSECTIONS: list[tuple[str, str, str]] = [
     ("obj:09_crps", "crps_lat",          "CRPS: Laterality"),
 ]
 
+# AD Lx/SIJ block-form tab — one entry per position heading, built from the
+# form spec (block titles become match aliases below, so e.g. "bridging"
+# lands on Supine).
+_AD_LX_FORM = load_form("ad_lx_sij")
+_SUBSECTIONS += [
+    ("obj:10_ad_lx_sij", pos.id, f"AD Lx/SIJ: {pos.label}") for pos in _AD_LX_FORM.positions
+]
+
 # Pre-built lookup: (section_id, anchor_id) -> subsection label
 _SUBSECTION_LABEL: dict[tuple[str, str], str] = {
     (s, a): lbl for s, a, lbl in _SUBSECTIONS
@@ -260,6 +272,10 @@ _SUBSECTION_EXTRA: dict[tuple[str, str], str] = {
         "dominant mechanism evoked comorbid probable possible nociceptive neuropathic "
         "static dynamic thermal after-sensations",
 }
+_SUBSECTION_EXTRA.update({
+    ("obj:10_ad_lx_sij", pos.id): "AD " + " ".join(b.title for b in pos.blocks)
+    for pos in _AD_LX_FORM.positions
+})
 
 # widget_id -> (section_id, anchor_id_or_None, human_name)
 _FIELD_LABELS: dict[str, tuple[str, str | None, str]] = {
