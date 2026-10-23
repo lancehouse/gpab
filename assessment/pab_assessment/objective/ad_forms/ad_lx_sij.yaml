@@ -20,6 +20,15 @@
 #                  entry | text | flag (+ `scale` for radio/cycle).
 #   "{side}" in a path/id expands to l / r for rows with `sides: [l, r]`.
 #
+# Layout keys:
+#   column: left|right  (block) the position becomes two fixed columns, read
+#                       top-to-bottom — set on every block of that position
+#                       or none. Block order in the file = reading order
+#                       (left column first), which is also the report order.
+#   report: false       (block) shown in the tab, left out of the report —
+#                       for links whose values the objective report can't
+#                       read (they live in _assessment.json).
+#
 # Rows marked "(to confirm with AD)" are her wording kept verbatim pending
 # her explanation — not interpreted.
 
@@ -54,17 +63,39 @@ positions:
   - id: ad_lx_standing
     label: "Standing"
     blocks:
+      # Two columns, AD's reading order: left = Goals, Concern, Functional;
+      # right = Observation, ROM, Strength (user request 2026-10-24).
+      - title: "SMART Goals"
+        column: left
+        report: false
+        note: "Shared with Consent / Subjective / Functional — edit in any of them. Reported under Subjective."
+        rows:
+          - {label: "Goal 1", cells: [{link: subjective.goal_1}]}
+          - {label: "Goal 2", cells: [{link: subjective.goal_2}]}
+          - {label: "Goal 3", cells: [{link: subjective.goal_3}]}
+          - {label: "Goal 4", cells: [{link: subjective.goal_4}]}
+      - title: "Movements or positions of particular concern"
+        column: left
+        rows:
+          - {label: "", cells: [{id: ad_lx_concern, type: text}]}
+      - title: "Functional movements"
+        column: left
+        rows:
+          - {label: "Squat", cells: [{link: functional.ft_squat}, {link: functional.ft_squat_obs}]}
+          - {label: "Step up / down", cells: [{id: ad_lx_step, type: radio, scale: functional}, {id: ad_lx_step_obs, type: entry, placeholder: "…"}]}
+          - {label: "Stand on one leg (eyes open)", sides: [l, r], cells: [{link: "functional.ft_sls_eo_{side}"}]}
+          - {label: "Sit to stand", cells: [{link: functional.ft_sts_q}, {link: functional.ft_sts_obs}]}
+          - {label: "Custom test", cells: [{link: functional.ft_fm_custom}]}
       - title: "Observation / Posture / Gait"
+        column: right
         rows:
           - {label: "Observation", cells: [{link: general.go_general_notes}]}
           - {label: "Lumbar lordosis", cells: [{link: general.go_lx_lord}]}
           - {label: "Antalgic lean", cells: [{link: general.go_lean}]}
           - {label: "Posture notes", cells: [{link: general.go_posture_notes}]}
           - {label: "Gait", cells: [{link: functional.ft_gait}, {link: functional.ft_gait_obs}]}
-      - title: "Movements or positions of particular concern"
-        rows:
-          - {label: "", cells: [{id: ad_lx_concern, type: text}]}
       - title: "Lx Sp ROM (standing)"
+        column: right
         rows:
           - {label: "Flexion", cells: [{link: lumbar.active.lx_flex_ax_l_range, unit: "°"}]}
           - {label: "Extension", cells: [{link: lumbar.active.lx_ext_ax_l_range, unit: "°"}]}
@@ -72,13 +103,8 @@ positions:
           - {label: "E (2nd column — to confirm with AD)", cells: [{id: ad_lx_rom_col2_e, type: entry}]}
           - {label: "R (2nd column — to confirm with AD)", cells: [{id: ad_lx_rom_col2_r, type: entry}]}
           - {label: "Lumbar ROM notes", cells: [{link: lumbar.active.am_lx_notes}]}
-      - title: "Functional movements"
-        rows:
-          - {label: "Squat", cells: [{link: functional.ft_squat}, {link: functional.ft_squat_obs}]}
-          - {label: "Step up / down", cells: [{id: ad_lx_step, type: radio, scale: functional}, {id: ad_lx_step_obs, type: entry, placeholder: "…"}]}
-          - {label: "Stand on one leg (eyes open)", sides: [l, r], cells: [{link: "functional.ft_sls_eo_{side}"}]}
-          - {label: "Sit to stand", cells: [{link: functional.ft_sts_q}, {link: functional.ft_sts_obs}]}
       - title: "Strength"
+        column: right
         rows:
           - {label: "S1/2 calf", sides: [l, r], cells: [{id: "ad_lx_calf_{side}", type: entry, placeholder: "reps / quality"}]}
 

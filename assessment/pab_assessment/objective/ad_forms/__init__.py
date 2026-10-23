@@ -65,6 +65,8 @@ class Block:
     id: str = ""
     note: str = ""
     wide: bool = False
+    column: str = ""               # "left" | "right" — position laid out as two columns
+    report: bool = True            # False: tab only, left out of the report
     columns: tuple = ()
     tally: dict | None = None      # {"label", "threshold", "tests": [(name, [paths])]}
     level_grid: dict | None = None  # {"levels", "modalities", "cells": {(mod, lvl, side): Cell}}
@@ -162,10 +164,17 @@ def load_form(form_id: str) -> Form:
             blocks.append(Block(
                 title=b["title"], id=b.get("id", ""), note=b.get("note", ""),
                 wide=bool(b.get("wide", False)), columns=tuple(b.get("columns", ())),
+                column=b.get("column", ""), report=bool(b.get("report", True)),
                 rows=[_row(r, scales) for r in b.get("rows", [])],
                 tally=tally,
                 level_grid=_level_grid(b["level_grid"], scales) if "level_grid" in b else None,
             ))
+        # Columns are all-or-nothing per position: a block without one would
+        # have nowhere to go in a two-column layout.
+        cols = {b.column for b in blocks}
+        if cols != {""} and cols - {"left", "right"}:
+            raise ValueError(f"{form_id}.yaml position {pos['id']!r}: give every block "
+                             f"column: left|right, or none")
         form.positions.append(Position(id=pos["id"], label=pos["label"], blocks=blocks))
     _CACHE[form_id] = form
     return form
@@ -281,6 +290,8 @@ def report_positions(obj: dict, form: Form, clean: bool, empty: str) -> list[tup
     for pos in form.positions:
         blocks_out: list[dict] = []
         for block in pos.blocks:
+            if not block.report:
+                continue
             b = _report_block(obj, form, block, clean, empty)
             if b is not None:
                 blocks_out.append(b)

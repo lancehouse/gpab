@@ -6,7 +6,9 @@ form is instead a sequence of position sections (Standing, Sitting,
 Supine, ...), each holding cards that reflow side by side as width allows
 (Gtk.FlowBox), so related tests sit together the way they do on a paper
 form. A card marked wide always takes a full line (e.g. a dense L/R
-myotome grid that would be unreadable at card width).
+myotome grid that would be unreadable at card width). A section can instead
+be laid out as two fixed columns (every card given column="left"/"right"),
+read top-to-bottom like a newspaper column rather than reflowing by row.
 
 Inside a card, rows sit on one Gtk.Grid — label | L | R, or one column per
 cell for blocks with explicit columns — so cells line up within the card
@@ -142,14 +144,33 @@ class BlockCard(Gtk.Box, GridNav):
 class PositionSection(Gtk.Box):
     """A position heading ("Standing", ...) over its cards: normal cards
     reflow in a FlowBox, wide cards take a full line each, original order
-    preserved (consecutive normal cards share one FlowBox)."""
+    preserved (consecutive normal cards share one FlowBox). Cards added
+    with a column ("left"/"right") instead stack top-to-bottom in two
+    equal-width columns, so focus/Tab order runs down the left column
+    before the right one."""
 
     def __init__(self, label: str, anchor_id: str | None = None) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.append(make_subsection_header(label, anchor_id))
         self._flow: Gtk.FlowBox | None = None
+        self._columns: dict[str, Gtk.Box] | None = None
 
-    def add_card(self, card: BlockCard) -> None:
+    def _column(self, side: str) -> Gtk.Box:
+        if self._columns is None:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, homogeneous=True, spacing=8)
+            self._columns = {}
+            for s in ("left", "right"):
+                col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+                col.set_valign(Gtk.Align.START)
+                row.append(col)
+                self._columns[s] = col
+            self.append(row)
+        return self._columns[side]
+
+    def add_card(self, card: BlockCard, column: str = "") -> None:
+        if column:
+            self._column(column).append(card)
+            return
         if card.wide:
             self._flow = None
             self.append(card)

@@ -81,7 +81,7 @@ class ADFormSection(Gtk.Box, SectionBase):
         for pos in self.form.positions:
             section = PositionSection(pos.label, pos.id)
             for block in pos.blocks:
-                section.add_card(self._build_card(block))
+                section.add_card(self._build_card(block), column=block.column)
             self.append(section)
 
         self._update_tallies()
