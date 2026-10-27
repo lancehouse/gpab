@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from .cal_cp_model import Workup as _CalCpWorkup
+from .objective.ad_forms import load_form as _ad_load_form, report_positions as _ad_report_positions, form_has_data as _ad_form_has_data
 
 
 logger = logging.getLogger(__name__)
@@ -509,6 +510,25 @@ def _merged_region_data(obj: dict, active_regions) -> tuple[dict, dict, dict, di
     return act, pas, mus, spl
 
 
+# AD position-ordered forms (gpab, 2026-10-22) — objective/ad_forms/*.yaml.
+# Each is rendered as its own trailing objective section, but only for a
+# session where that form was actually used (see ad_forms.form_has_data).
+_AD_FORM_IDS = ("ad_lx_sij",)
+
+
+def _ad_forms_with_data(obj: dict) -> list:
+    forms = []
+    for form_id in _AD_FORM_IDS:
+        try:
+            form = _ad_load_form(form_id)
+        except Exception as e:
+            logger.error(f"AD form {form_id} failed to load: {e}")
+            continue
+        if _ad_form_has_data(obj, form):
+            forms.append(form)
+    return forms
+
+
 def _render_objective_md(obj: dict, clean: bool = False) -> list:
     """Render all objective sections as Markdown.
 
@@ -533,7 +553,9 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
         mus  = obj.get("muscle",  {}) or {}
         spl  = {}
 
-    if not any([gen, act, pas, neu, sen, mus, func, spl, crps]):
+    ad_forms = _ad_forms_with_data(obj)
+
+    if not any([gen, act, pas, neu, sen, mus, func, spl, crps, ad_forms]):
         return []
 
     # ── clean-mode helpers ────────────────────────────────────────────────────
@@ -1335,6 +1357,33 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
         _maybe_note(sl, "*Laterality notes*", crps.get("crps_lat_notes", "").strip())
         _flush_section("### 09 CRPS (Budapest / Valencia Criteria)", sl)
 
+    # ── 10 AD position-ordered forms ─────────────────────────────────────────
+    # Her whole form in her order, linked values included — so a linked
+    # finding (e.g. SLR) appears both here and in its own section above, by
+    # design (user decision 2026-10-22).
+    for ad_form in ad_forms:
+        sl = []
+        for pos_label, blocks in _ad_report_positions(obj, ad_form, clean, "—"):
+            # Every block element is its own paragraph — a table glued to
+            # the bold title line above it would not parse as a table.
+            if sl and sl[-1] != "":
+                sl.append("")
+            sl.append(f"#### {pos_label}")
+            if not blocks:
+                sl.extend(["", "*(not answered)*"])
+            for b in blocks:
+                sl.extend(["", f"**{b['title']}:**"])
+                if b["tally"]:
+                    sl.extend(["", f"*{b['tally']}*"])
+                if b["rows"]:
+                    sl.append("")
+                    sl.extend(_md_table(b["headers"], b["rows"]))
+                for _lbl, text in b["notes"]:
+                    sl.extend(["", text or "*(empty)*"])
+        if sl:
+            sl.append("")
+        _flush_section(f"### {ad_form.report_title}", sl)
+
     if not lines:
         return []
 
@@ -1363,7 +1412,9 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
         mus  = obj.get("muscle",  {}) or {}
         spl  = {}
 
-    if not any([gen, act, pas, neu, sen, mus, func, spl, crps]):
+    ad_forms = _ad_forms_with_data(obj)
+
+    if not any([gen, act, pas, neu, sen, mus, func, spl, crps, ad_forms]):
         return
 
     # ── clean-mode helpers ────────────────────────────────────────────────────
@@ -2319,6 +2370,23 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
         elif not clean:
             sl.append("  Laterality notes: (empty)")
         _flush_section("09 CRPS (Budapest / Valencia Criteria)", sl)
+
+    # ── 10 AD position-ordered forms (see _render_objective_md) ──────────────
+    for ad_form in ad_forms:
+        sl = []
+        for pos_label, blocks in _ad_report_positions(obj, ad_form, clean, "-"):
+            sl.append(f"  {pos_label.upper()}")
+            if not blocks:
+                sl.append("    (not answered)")
+            for b in blocks:
+                sl.append(f"  {b['title']}:")
+                if b["tally"]:
+                    sl.append(f"    {b['tally']}")
+                if b["rows"]:
+                    sl.extend("  " + line for line in _raw_table(b["headers"], b["rows"]))
+                for _lbl, text in b["notes"]:
+                    sl.append(f"    {text or '(empty)'}")
+        _flush_section(ad_form.report_title, sl)
 
 
 # ---------------------------------------------------------------------------

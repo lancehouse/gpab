@@ -31,12 +31,14 @@ SECTION_LABELS: list[tuple[str, str]] = [
     ("06_muscle", "07 Muscle Test"),
     ("08_special", "08 Special Tests"),
     ("09_crps", "09 CRPS"),
+    ("10_ad_lx_sij", "10 AD Lx/SIJ"),
 ]
 
 # Every Objective tab in the TUI's own list is now built.
 BUILT_SECTIONS = {
     "01_general", "07_functional", "02_active", "03_passive",
     "04_neurological", "05_sensory", "06_muscle", "08_special", "09_crps",
+    "10_ad_lx_sij",
 }
 
 

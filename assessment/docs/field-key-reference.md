@@ -1197,6 +1197,37 @@ buttons are FlagButtons (Yes = red flag present, No = safe, blank = not assessed
 
 ---
 
+## Objective 10 — AD Lx/SIJ (gpab only, test run 2026-10-22)
+
+JSON key `ad_lx_sij` in `_objective.json`. Spec (single source for the GTK tab
+and the report): `pab_assessment/objective/ad_forms/ad_lx_sij.yaml`. Only the
+form's own (AD-only) fields are stored here — its **linked** cells edit the
+existing gpab fields listed elsewhere in this file (e.g. `lx_flex_ax_l_range`,
+`st_slr_l`, `nr_l2_l`, `hp_flex_ax_l_range`, `crps_sg_oedema`) and are never
+stored twice.
+
+| Key | Type / notes |
+|---|---|
+| `ad_touched` | bool — True once anything in the AD tab was edited; gates the report section |
+| `ad_lx_consent` | RadioGroup `Yes`/`No` — consent to examine |
+| `ad_lx_concern` | TextArea — movements/positions of particular concern |
+| `ad_lx_rom_col2_e`, `ad_lx_rom_col2_r` | Input — 2nd Lx ROM column "E"/"R", verbatim, meaning to confirm with AD |
+| `ad_lx_step`, `ad_lx_step_obs` | RadioGroup `Norm`/`Antlgc`/`Asymm` + Input — step up/down |
+| `ad_lx_calf_{l,r}` | Input — S1/2 calf strength |
+| `ad_lx_ta_{supine,4pt,sitting,standing}` | RadioGroup `Norm`/`Fair`/`Poor`/`Ovact` — TA activation by position |
+| `ad_lx_bridge_bilat`, `ad_lx_bridge_offset`, `ad_lx_bridge_uni_{l,r}` | Input — bridging progressions |
+| `ad_lx_recfem_{l,r}` | RadioGroup `Norm`/`↓Mild`/`↓Mod`/`↓Mrkd` — rectus femoris length |
+| `ad_lx_ldl_{l,r}` | Input — long dorsal ligament palpation |
+| `ad_lx_palpation` | TextArea — palpation |
+| `ad_lx_paivm_s1_{l,c,r}`, `ad_lx_paivm_s1_txt` | CycleButton `Norm` + Input — S1 row of the T8–S1 level ladder (T8–L5 link to `pm_*`) |
+| `ad_lx_{slt,dlt,pp,hot,cold}_{l1..l5,s1,s2}_{l,r}` | CycleButton `Normal`/`↓Hypo`/`↑Hyper`/`Absent` — sensation by modality × level × side (70 fields) |
+| `ad_lx_reflex_toe_{l,r}` | RadioGroup (reflex scale) — "L5, S1 toe flexion", meaning to confirm with AD |
+| `ad_lx_bal_dynamic` | Input — dynamic balance |
+| `ad_lx_coord_{l,r}` | Input — coordination, heel up/down shin |
+| `ad_lx_other_exam` | TextArea — other examination |
+
+---
+
 ## Maintenance Notes
 
 - **This file must be updated whenever a field is added or renamed** in any

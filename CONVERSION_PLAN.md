@@ -353,6 +353,23 @@ new toggle state/colour in `widgets.py`/`style.css` (centralised, per the standi
 per-section one-off, and needs the user to decide which history items imply which barrier
 before any mapping is written (flag, don't guess clinical content).
 
+### AD Lx/SIJ block-form tab (test run, built 2026-10-22 on `dev`)
+
+Objective tab 10 — AD's position-ordered Lx/SIJ form (Standing → Sitting → Supine → Side lying →
+Prone → Neuro → Other), to explore her assessment style beside the JF-style tabs. One spec
+(`assessment/pab_assessment/objective/ad_forms/ad_lx_sij.yaml`) drives both the GTK tab
+(`objective/sections/ad_form.py`, block cards via `objective/block_layout.py`) and the report's
+"10 AD Lx/SIJ (position-ordered)" section (`ad_forms/__init__.py` → `storage.py`). Linked cells
+are mirrors (`objective/field_link.py`) that write through to the real gpab field — nothing
+linked is stored twice; gap items are AD-only fields under `ad_lx_sij`. Decisions (2026-10-22):
+Hip-region links turn Hip on when edited; report section repeats linked values in her order
+(only for sessions where the tab was used); myotomes linked by level with both labels shown;
+her CRPS sign list removed from the tab entirely (not needed here — gpab's 09 CRPS covers it).
+Open with AD: the Lx ROM 2nd column ("E"/"R") and the "L5, S1 toe flexion" reflex — both kept
+verbatim as AD-only placeholders. Her other forms (Cx, upper limb, hip/SIJ, knee/ankle) not
+started; `ad_forms` + `block_layout` are form-agnostic, so each should be a new YAML + a tab
+entry.
+
 ## Standing rules for every phase
 
 1. **Verify, don't eyeball.** Every section gets a `collect()`/`load()` round-trip diff against

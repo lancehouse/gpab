@@ -37,6 +37,9 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
+from . import pab_path_bootstrap  # noqa: F401,E402  (sys.path side effect)
+from pab_assessment.objective.ad_forms import load_form  # noqa: E402
+
 # ── Heading data — lifted verbatim ──────────────────────────────────────────
 # Each entry: (section_id, display_label, [(heading_label, anchor_id), ...])
 
@@ -214,6 +217,11 @@ OBJ_GRID_DATA: list[tuple[str, str, list[tuple[str, str]]]] = [
         ("2Pt Discrim","crps_tpd"),
         ("Visualis",   "crps_vis"),
         ("Laterality", "crps_lat"),
+    ]),
+    # AD block-form tab — one heading per position section, straight from
+    # the form spec so the top bar / Ctrl+T can't drift from the tab itself.
+    ("10_ad_lx_sij", "10 AD Lx/SIJ", [
+        (pos.label, pos.id) for pos in load_form("ad_lx_sij").positions
     ]),
 ]
 

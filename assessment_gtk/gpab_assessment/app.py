@@ -39,6 +39,8 @@ from .objective.sections.general import GeneralSection
 from .objective.sections.functional import FunctionalSection
 from .objective.sections.sensory import SensorySection
 from .objective.sections.crps import CRPSSection
+from .objective.sections.ad_form import ADFormSection
+from .objective.field_link import LinkResolver
 from .objective.region_section import RegionTabContent
 from .objective.region_topbar import RegionTopbar
 from .objective.objective_nav import ObjectiveNav
@@ -104,6 +106,7 @@ _OBJECTIVE_NAME_TO_SECTION_ID = {
     "muscle_testing": "06_muscle",
     "special_tests": "08_special",
     "crps": "09_crps",
+    "ad_lx_sij": "10_ad_lx_sij",
 }
 
 _NAME_TO_SECTION_ID.update(_OBJECTIVE_NAME_TO_SECTION_ID)
@@ -408,6 +411,14 @@ class TrialWindow(Gtk.ApplicationWindow):
             "special_tests": self.special_tests,
         }
 
+        # AD block-form tab (test run, 2026-10-22) — built last: its linked
+        # cells are cloned from the sections above, found through the
+        # resolver via _sections_by_name and the region tabs.
+        self.link_resolver = LinkResolver(self)
+        self.ad_lx_sij = ADFormSection("ad_lx_sij", "10 AD Lx/SIJ", self.link_resolver)
+        self.ad_lx_sij.set_saved_provider(lambda: load_objective_block(self.session_file))
+        self._sections_by_name["ad_lx_sij"] = self.ad_lx_sij
+
         for name, section in self._sections_by_name.items():
             scroll = Gtk.ScrolledWindow()
             # Horizontal AUTOMATIC, not NEVER: every tab's content should
@@ -461,6 +472,7 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.functional.set_on_changed(self._schedule_save_obj)
         self.sensory.set_on_changed(self._schedule_save_obj)
         self.crps.set_on_changed(self._schedule_save_obj)
+        self.ad_lx_sij.set_on_changed(self._schedule_save_obj)
         self.functional.set_on_goals_changed(self._on_functional_goal_changed)
         self.pain_classification.set_on_request_kb(self._on_request_kb_entry)
         for tab in (self.active_movement, self.passive_movement,
@@ -606,6 +618,8 @@ class TrialWindow(Gtk.ApplicationWindow):
             })
         elif name == "crps":
             self.crps.update_cross_refs({"sensory": self.sensory.collect()})
+        elif name == "ad_lx_sij":
+            self.ad_lx_sij.refresh_links()
 
         self._update_sticky_note(section_id)
 
@@ -755,6 +769,21 @@ class TrialWindow(Gtk.ApplicationWindow):
             self._do_save_obj()
         self._sync_active_regions(regions)
         self._schedule_save_obj()
+        self._refresh_ad_form_if_visible()
+
+    def _refresh_ad_form_if_visible(self) -> None:
+        """Re-read the AD tab's linked mirrors after real fields changed
+        underneath them — only while that tab is on screen: _show_section
+        refreshes it on every visit, and a hidden mirror is never saved
+        from (nor spell-checked), so a stale hidden one is harmless."""
+        if self.stack.get_visible_child_name() == "ad_lx_sij":
+            self.ad_lx_sij.refresh_links()
+
+    def ensure_region_active(self, region_id: str) -> None:
+        """Turn region_id on as if its topbar chip were tapped — used by the
+        AD tab when an edit lands in a region that's currently off."""
+        if region_id not in self._active_regions:
+            self._on_region_toggled(None, region_id, True)
 
     def _load(self) -> None:
         assessment = load_assessment_block(self.session_file)
@@ -788,6 +817,7 @@ class TrialWindow(Gtk.ApplicationWindow):
         self.functional.load(objective.get("functional", {}))
         self.sensory.load(objective.get("sensory", {}))
         self.crps.load(objective.get("crps", {}))
+        self.ad_lx_sij.load(objective.get("ad_lx_sij", {}))
         self.functional.load_goals(subjective_data)
         self._sync_active_regions(objective.get("active_regions", _DEFAULT_ACTIVE_REGIONS))
         # Explicit, unconditional loop — NOT redundant with _mount_region's
@@ -802,6 +832,9 @@ class TrialWindow(Gtk.ApplicationWindow):
         for region_id in self._active_regions:
             self._load_region_data(region_id, objective)
         self._push_region_tests_to_pain_classification()
+        # After every real field is loaded — the AD tab's linked cells are
+        # mirrors of those, not stored data of their own.
+        self._refresh_ad_form_if_visible()
         self._update_medical_tab_color()
 
     def _on_medical_changed(self) -> None:
@@ -835,6 +868,10 @@ class TrialWindow(Gtk.ApplicationWindow):
             self.sensory.refresh_from_chart(data)
         except Exception as e:
             logger.error("sensory chart-link refresh failed: %s", e)
+        try:
+            self._refresh_ad_form_if_visible()
+        except Exception as e:
+            logger.error("AD form refresh after chart update failed: %s", e)
 
     # ------------------------------------------------------------------
     # Global hotkeys — mirrors main.py's PhysioAssessment.BINDINGS for the
@@ -1778,6 +1815,7 @@ class TrialWindow(Gtk.ApplicationWindow):
             "functional": self.functional.collect(),
             "sensory": self.sensory.collect(),
             "crps": self.crps.collect(),
+            "ad_lx_sij": self.ad_lx_sij.collect(),
             "active_regions": list(self._active_regions),
         }
         sections_complete = {
@@ -1786,6 +1824,7 @@ class TrialWindow(Gtk.ApplicationWindow):
             "04_functional": self.functional.is_complete(),
             "04_sensory": self.sensory.is_complete(),
             "04_crps": self.crps.is_complete(),
+            "04_ad_lx_sij": self.ad_lx_sij.is_complete(),
             "04_active": self.active_movement.is_complete(),
             "04_passive": self.passive_movement.is_complete(),
             "04_muscle": self.muscle_testing.is_complete(),

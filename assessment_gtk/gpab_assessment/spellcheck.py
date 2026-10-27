@@ -133,6 +133,11 @@ def collect_fields(win) -> list[tuple[object, str]]:
     live widget tree, in tree (roughly top-to-bottom) order."""
     fields = []
     for w in _iter_descendants(win):
+        # AD-tab link mirrors (objective/sections/ad_form.py) are skipped:
+        # the real field they mirror is already in this walk, and a stale
+        # hidden mirror corrected here would overwrite that real field.
+        if getattr(w, "is_link_mirror", False):
+            continue
         if isinstance(w, (AutoTextView, TouchEntry)):
             fields.append((w, field_label(getattr(w, "field_id", ""))))
     return fields

@@ -736,7 +736,8 @@ extern const char *QUALITY_SHORT_EXTERN[];
 static const char *const NOTE_QUALITY_SHORT[NOTE_QUALITY_COUNT] = {
     "Throbbing", "Pressure",  "Aching",     "Stabbing",
     "Tight",     "Burning",   "Freezing",   "Electrical",
-    "Shooting",  "Pins & Needles", "Numbness", "Itching"
+    "Shooting",  "Pins & Needles", "Numbness", "Itching",
+    "Sharp",     "Dull"
 };
 
 static void regen_note_text(NoteAnnotation *n, const char *const *qs)
@@ -769,12 +770,9 @@ static void regen_note_text(NoteAnnotation *n, const char *const *qs)
         g_strlcpy(line2, qual_buf, sizeof(line2));
     }
 
-    snprintf(n->text, sizeof(n->text), "(%d)%s %s %d-%d/10\n%s",
-             n->number,
-             n->temporal == 0 ? "Constant" : "Intermittent",
-             n->depth    == 0 ? "Superficial" : "Deep",
-             n->low_intensity, n->high_intensity,
-             line2);
+    char header[128];
+    note_format_header(n, header, sizeof(header));
+    snprintf(n->text, sizeof(n->text), "%s\n%s", header, line2);
 }
 
 /* ── Load ─────────────────────────────────────────────────────────────────── */
