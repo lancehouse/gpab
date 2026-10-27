@@ -54,7 +54,8 @@ static void attach_note_btn_rows(void);
 static const char *QUALITY_LONG[NOTE_QUALITY_COUNT] = {
     "Throbbing",  "Pressure",  "Aching",     "Stabbing",
     "Tight",      "Burning",   "Freezing",   "Electrical",
-    "Shooting",   "Pins & needles", "Numbness", "Itching"
+    "Shooting",   "Pins & needles", "Numbness", "Itching",
+    "Sharp",      "Dull"
 };
 
 /* ── Anatomical region lookup ────────────────────────────────────────────── */
@@ -876,19 +877,18 @@ static void gen_buf(void)
                                      ? QUALITY_LONG[qi] : "?";
                     strncat(qbuf, ql, sizeof(qbuf) - strlen(qbuf) - 1);
                 }
-                if (n->quality_count == 0)
-                    strncat(qbuf, "?", sizeof(qbuf) - strlen(qbuf) - 1);
             }
             const char *nrgn = body_region_name(n->view, (float)n->bx, (float)n->by);
 
-            char hdr[320];
-            snprintf(hdr, sizeof(hdr),
-                     "  NOTE (%d)  %s · %s · %s · %s · %s · %d-%d/10\n",
-                     n->number, nrgn,
-                     canvas_view_name((BodyView)n->view),
-                     n->temporal == 0 ? "Constant" : "Intermittent",
-                     n->depth    == 0 ? "Superficial" : "Deep",
-                     qbuf, n->low_intensity, n->high_intensity);
+            char fields[320] = {0}, ibuf[16];
+            note_join(fields, sizeof(fields), " · ", nrgn);
+            note_join(fields, sizeof(fields), " · ", canvas_view_name((BodyView)n->view));
+            note_join(fields, sizeof(fields), " · ", note_temporal_name(n->temporal));
+            note_join(fields, sizeof(fields), " · ", note_depth_name(n->depth));
+            note_join(fields, sizeof(fields), " · ", qbuf);
+            note_join(fields, sizeof(fields), " · ", note_intensity_str(n, ibuf, sizeof(ibuf)));
+            char hdr[360];
+            snprintf(hdr, sizeof(hdr), "  NOTE (%d)  %s\n", n->number, fields);
             ins(&it, hdr, "heading");
 
             gboolean any_sym = FALSE;
@@ -1269,16 +1269,16 @@ void report_save_md(AppState *app)
                                  ? QUALITY_LONG[qi] : "?";
                 strncat(qbuf, ql, sizeof(qbuf) - strlen(qbuf) - 1);
             }
-            if (n->quality_count == 0)
-                strncat(qbuf, "?", sizeof(qbuf) - strlen(qbuf) - 1);
         }
-        fprintf(f, "### Note (%d) — %s · %s · %s · %s · %s · %d-%d/10\n\n",
-                n->number,
-                body_region_name(n->view, (float)n->bx, (float)n->by),
-                canvas_view_name((BodyView)n->view),
-                n->temporal == 0 ? "Constant" : "Intermittent",
-                n->depth    == 0 ? "Superficial" : "Deep",
-                qbuf, n->low_intensity, n->high_intensity);
+        char fields[320] = {0}, ibuf[16];
+        note_join(fields, sizeof(fields), " · ",
+                  body_region_name(n->view, (float)n->bx, (float)n->by));
+        note_join(fields, sizeof(fields), " · ", canvas_view_name((BodyView)n->view));
+        note_join(fields, sizeof(fields), " · ", note_temporal_name(n->temporal));
+        note_join(fields, sizeof(fields), " · ", note_depth_name(n->depth));
+        note_join(fields, sizeof(fields), " · ", qbuf);
+        note_join(fields, sizeof(fields), " · ", note_intensity_str(n, ibuf, sizeof(ibuf)));
+        fprintf(f, "### Note (%d) — %s\n\n", n->number, fields);
         gboolean any = FALSE;
         char dist[256];
         for (int s = 0; s < SYMPTOM_COUNT; s++) {

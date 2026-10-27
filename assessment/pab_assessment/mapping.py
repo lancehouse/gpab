@@ -24,18 +24,20 @@ _SYMPTOM_NAMES: dict[int, str] = {
     4: "paraesthesia / deep ache",
 }
 
-# Quality index (0–11) → full clinical term
+# Quality index (0–13) → full clinical term
 # Indices match QUALITY_SHORT[] in window.c:
 #   0=Throb 1=Press 2=Ache  3=Stab
 #   4=Tight 5=Burn  6=Freez 7=Elec
 #   8=Shot  9=P+N   10=Numb 11=Itch
+#   12=Sharp 13=Dull  (appended 2026-10-27 so older indices keep their meaning)
 _QUALITY_TERMS: list[str] = [
     "throbbing", "pressure", "aching",   "stabbing",
     "tight",     "burning",  "freezing", "electrical",
     "shooting",  "pins & needles", "numbness", "itching",
+    "sharp",     "dull",
 ]
 
-# NoteAnnotation.temporal int → descriptor
+# NoteAnnotation.temporal int → descriptor (-1 = left unanswered → omitted)
 _TEMPORAL: dict[int, str] = {0: "constant", 1: "intermittent"}
 
 # NoteAnnotation.depth int → descriptor
@@ -87,8 +89,8 @@ def _fmt_nature(note: dict[str, Any], assoc_clusters: list[dict[str, Any]]) -> s
         if t and t not in seen_types:
             seen_types.append(t)
 
-    temporal = _TEMPORAL.get(int(note.get("temporal", 0)), "constant")
-    depth    = _DEPTH.get(int(note.get("depth", 0)), "superficial")
+    temporal = _TEMPORAL.get(int(note.get("temporal", 0)))
+    depth    = _DEPTH.get(int(note.get("depth", 0)))
 
     # Quality indices (0–11)
     quality_words: list[str] = []
@@ -103,9 +105,13 @@ def _fmt_nature(note: dict[str, Any], assoc_clusters: list[dict[str, Any]]) -> s
     # Assemble: symptom types from clusters encode temporal for pain types,
     # so only prepend temporal when there are no associated clusters.
     if seen_types:
-        parts = [", ".join(seen_types), depth]
+        parts = [", ".join(seen_types)]
+    elif temporal:
+        parts = [f"{temporal} symptoms"]
     else:
-        parts = [f"{temporal} symptoms", depth]
+        parts = []
+    if depth:
+        parts.append(depth)
 
     if quality_words:
         parts.append(", ".join(quality_words))

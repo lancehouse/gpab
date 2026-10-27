@@ -1,6 +1,8 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <string.h>
 
 /* ── Symptom types ──────────────────────────────────────────────────────── */
 typedef enum {
@@ -28,7 +30,7 @@ typedef enum {
 #define MAX_NOTES 10
 
 /* Quality indices — must match QUALITY_SHORT[] in window.c */
-#define NOTE_QUALITY_COUNT 12
+#define NOTE_QUALITY_COUNT 14
 
 /* Reusable: decouples a text-label position from its anchor spot.
  * Embed in any annotation that needs a draggable label box.
@@ -43,12 +45,12 @@ typedef struct {
     double       bx, by;          /* body-space spot (where user tapped) */
     int          stable_id;       /* monotonic, never reused after undo */
     int          number;          /* sequential 1-10 */
-    int          temporal;        /* 0=Constant, 1=Intermittent */
-    int          depth;           /* 0=Superficial, 1=Deep */
+    int          temporal;        /* 0=Constant, 1=Intermittent, NOTE_UNSET */
+    int          depth;           /* 0=Superficial, 1=Deep, NOTE_UNSET */
     int          qualities[3];    /* up to 3 quality indices; see NOTE_QUALITY_COUNT */
-    int          quality_count;   /* 1-3 */
-    int          low_intensity;   /* 0-10, first selected */
-    int          high_intensity;  /* 0-10, second selected */
+    int          quality_count;   /* 0-3 */
+    int          low_intensity;   /* 0-10, or NOTE_UNSET */
+    int          high_intensity;  /* 0-10 (== low for a single tap), or NOTE_UNSET */
     LabelAnchor  label;           /* draggable text-box position */
     char         text[400];       /* '\n'-delimited: header line + a body that
                                     * canvas.c's draw_note_screen() word-wraps
@@ -66,6 +68,57 @@ typedef struct {
                                          * takes priority over voice_note in
                                          * regen_note_text() when present. */
 } NoteAnnotation;
+
+/* Note fields may be left unanswered (2026-10-27: the Note window became a
+ * single any-order form that can be saved incomplete). Unset temporal/depth/
+ * intensity are stored as NOTE_UNSET (-1) — written explicitly to JSON, so
+ * the loader's absent-key default of 0 still only applies to legacy files.
+ * Every formatter goes through these helpers so an unset field is simply
+ * omitted rather than rendered as Constant/Superficial/0. */
+#define NOTE_UNSET (-1)
+
+static inline const char *note_temporal_name(int t)
+{
+    return t == 0 ? "Constant" : t == 1 ? "Intermittent" : NULL;
+}
+
+static inline const char *note_depth_name(int d)
+{
+    return d == 0 ? "Superficial" : d == 1 ? "Deep" : NULL;
+}
+
+/* "5/10" / "3-7/10", or "" when intensity wasn't answered. */
+static inline const char *note_intensity_str(const NoteAnnotation *n,
+                                             char *buf, size_t sz)
+{
+    if (n->low_intensity < 0 || n->high_intensity < 0) buf[0] = '\0';
+    else if (n->low_intensity == n->high_intensity)
+        snprintf(buf, sz, "%d/10", n->low_intensity);
+    else
+        snprintf(buf, sz, "%d-%d/10", n->low_intensity, n->high_intensity);
+    return buf;
+}
+
+/* Appends piece to buf (sep-separated) if piece is non-NULL and non-empty. */
+static inline void note_join(char *buf, size_t sz, const char *sep,
+                             const char *piece)
+{
+    if (!piece || !piece[0]) return;
+    size_t len = strlen(buf);
+    snprintf(buf + len, sz > len ? sz - len : 0, "%s%s",
+             len ? sep : "", piece);
+}
+
+/* Chart-pin header line: "(n)" + whichever of temporal/depth/intensity are set. */
+static inline void note_format_header(const NoteAnnotation *n,
+                                      char *buf, size_t sz)
+{
+    char fields[96] = {0}, ibuf[16];
+    note_join(fields, sizeof(fields), " ", note_temporal_name(n->temporal));
+    note_join(fields, sizeof(fields), " ", note_depth_name(n->depth));
+    note_join(fields, sizeof(fields), " ", note_intensity_str(n, ibuf, sizeof(ibuf)));
+    snprintf(buf, sz, "(%d)%s", n->number, fields);
+}
 
 typedef struct {
     const char  *label;
