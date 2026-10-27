@@ -554,7 +554,10 @@ gboolean persistence_save(AppState *app)
     json_object *root = json_object_new_object();
 
     /* Metadata */
-    json_object_object_add(root, "version",       json_object_new_int(3));
+    /* 4 (2026-10-27): notes may carry NOTE_UNSET (-1) temporal/depth/
+     * low/high and quality indices 12/13 (Sharp/Dull). Readers needing 3+
+     * (mapping.py) are unaffected; pab's original bodychart writes 3. */
+    json_object_object_add(root, "version",       json_object_new_int(4));
     json_object_object_add(root, "patient_id",    json_object_new_string(app->patient_id));
     json_object_object_add(root, "session_label", json_object_new_string(app->session_label));
     json_object_object_add(root, "session_name",  json_object_new_string(app->session_name));
@@ -980,6 +983,7 @@ gboolean persistence_load(AppState *app, const char *path)
     }
 
     /* Metadata */
+    const int file_version = ji(root, "version", 0);
     strncpy(app->patient_id,    js(root, "patient_id"),    sizeof(app->patient_id)    - 1);
     strncpy(app->session_label, js(root, "session_label"), sizeof(app->session_label) - 1);
     {
@@ -1100,6 +1104,12 @@ gboolean persistence_load(AppState *app, const char *path)
                 na->low_intensity  = ji(o, "avg",   0);
                 na->high_intensity = ji(o, "worst", 0);
             }
+            /* Before version 4 there was no NOTE_UNSET and 0/0 was the
+             * untouched default, not a rating — treat it as unanswered. From
+             * 4 on, 0/0 is a deliberately tapped 0/10 and is kept (user
+             * decision 2026-10-27; mapping.py applies the same rule). */
+            if (file_version < 4 && na->low_intensity == 0 && na->high_intensity == 0)
+                na->low_intensity = na->high_intensity = NOTE_UNSET;
             /* Label anchor — absent in old sessions → placed=0 (default offset) */
             json_object *lx_j;
             if (json_object_object_get_ex(o, "lx", &lx_j)) {

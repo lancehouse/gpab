@@ -66,12 +66,17 @@ def _fmt_location(note: dict[str, Any], dist_labels: list[str]) -> str:
     return "; ".join(parts)
 
 
-def _fmt_nature(note: dict[str, Any], assoc_clusters: list[dict[str, Any]]) -> str:
+def _fmt_nature(note: dict[str, Any], assoc_clusters: list[dict[str, Any]],
+                version: int = 4) -> str:
     """Build a Nature of Symptoms string from cluster types + note temporal/depth/qualities."""
     low  = int(note.get("low",  0))
     high = int(note.get("high", 0))
+    # -1 = left unanswered. Before session version 4 there was no -1 and 0/0
+    # was the untouched default, so it's dropped there; from 4 on, 0/0 is a
+    # deliberately tapped 0/10 and is kept (user decision 2026-10-27; the
+    # bodychart's persistence.c applies the same rule).
     severity = ""
-    if high > 0 or low > 0:
+    if low >= 0 and high >= 0 and not (version < 4 and low == 0 and high == 0):
         severity = f"{high}/10" if low == high else f"{low}–{high}/10"
 
     # Voice transcript takes priority over index-based quality lookup
@@ -199,7 +204,7 @@ def build_prefill(session_json: dict[str, Any]) -> dict[str, Any]:
             "stable_id":             int(note.get("stable_id", -1)),
             "number":                int(note.get("number", 0)),
             "location_distribution": _fmt_location(note, dist_labels),
-            "nature":                _fmt_nature(note, assoc_cls),
+            "nature":                _fmt_nature(note, assoc_cls, version),
             "aggravating_factors":   "",
             "easing_factors":        "",
             # Clinician's own wording for the on-chart pin label — round-trips

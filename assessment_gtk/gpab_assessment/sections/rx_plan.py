@@ -323,6 +323,17 @@ class RxPlanSection(Gtk.Box, SectionBase):
             if not self.tx_program_moderate.text.strip() and (rp.get("tx_program") or "").strip():
                 self.tx_program_moderate.text = rp["tx_program"]
 
+            # tx_home_program was removed (0b44a27) with no carry-forward,
+            # so the first save would have erased it. Appended to the same
+            # "Moderate -> Current" cell, labelled, after any tx_program
+            # text above (user decision 2026-10-27). The containment check
+            # stops a reload of a not-yet-saved session appending it twice.
+            home = (rp.get("tx_home_program") or "").strip()
+            if home and home not in self.tx_program_moderate.text:
+                cur = self.tx_program_moderate.text.rstrip()
+                self.tx_program_moderate.text = (
+                    f"{cur}\n\nHome program: {home}" if cur else f"Home program: {home}")
+
             # Seed the prefill latch: the persisted flag covers a
             # deliberately-cleared cell from an earlier session (the whole
             # point of the latch — see __init__), and the "does it already

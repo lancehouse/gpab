@@ -54,6 +54,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk  # noqa: E402
 
+from .. import pab_path_bootstrap  # noqa: F401  (sys.path side effect)
 from ..section_base import SectionBase
 from ..widgets import (
     FlagButton, AutoTextView, TouchEntry, LikelihoodField, PainTypeSelector,
@@ -62,6 +63,7 @@ from ..widgets import (
     FieldGrid,
 )
 from .regional_differential import RegionalDifferentialPanel, RequestKBCallback
+from pab_assessment.storage import _PAIN_RETIRED_KEYS  # noqa: E402
 
 _INFL_FIELDS = ["infl_constant", "infl_morning", "infl_sleep", "infl_activity"]
 
@@ -97,6 +99,12 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         self._loading = False
         self._on_changed = None
         self._on_request_kb: RequestKBCallback | None = None
+        # Fields the 2026-10-10 rework removed from the tab, as loaded.
+        # collect() writes them back unchanged so a save (which replaces the
+        # whole section) never erases what a pre-rework session recorded —
+        # user decision 2026-10-27. The report shows them under "Retired
+        # fields" (storage.py's _PAIN_RETIRED_KEYS).
+        self._retired: dict = {}
         self._diff_panels: dict[str, RegionalDifferentialPanel] = {}
 
         self._toggles: dict[str, FlagButton] = {}
@@ -815,12 +823,14 @@ class PainClassificationSection(Gtk.Box, SectionBase):
         data["fm_waking"] = self.fm_waking.text
         data["fm_cognitive"] = self.fm_cognitive.text
         data["summary_dominant"] = self.summary_dominant.value
+        data.update(self._retired)
         return data
 
     def load(self, data: dict) -> None:
         self._loading = True
         try:
             pain = data if isinstance(data, dict) else {}
+            self._retired = {k: pain[k] for k in _PAIN_RETIRED_KEYS if k in pain}
             for fid, w in self._toggles.items():
                 w.set_value(pain.get(fid))
             # Shared fields (BACPAP <-> Nociplastic): propagate the canonical
