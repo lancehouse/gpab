@@ -2700,10 +2700,11 @@ _PAIN_TYPES: tuple[dict, ...] = (
 
 _SEE_BACPAP_TEXT = "see BACPAP table below (shared fields)"
 
-# Fields the 2026-10-10 rework removed from the tab. Never written by gpab
-# again (the first save of the tab drops them), but a session not yet
-# re-saved still holds them — shown only when they carry a value, under
-# their old LABELS wording, so nothing recorded is hidden from the report.
+# Fields the 2026-10-10 rework removed from the tab. No widget edits them
+# any more, but gpab's pain_classification.py carries whatever a session
+# holds through every save unchanged (user decision 2026-10-27 — saves
+# replace the whole section, so they were previously erased on first save).
+# Shown only when they carry a value, under their old LABELS wording.
 _PAIN_RETIRED_KEYS = (
     "infl_likelihood",
     "noci_subj_analgesia", "noci_subj_recent",
@@ -3273,9 +3274,10 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     # 2026-10-08: split into Vigorous/Moderate/Strengthening triplets per
     # direct request (see gpab's GTK port, sections/subjective.py) — the old
     # single-value pre_activity_level/current_activity_level/exercise_type/
-    # exercise_dose ids are retired; sessions saved before this change had
-    # their one value carried forward into the new "Moderate" column on
-    # first load in gpab, so no data is missing here, just regrouped.
+    # exercise_dose ids are retired. gpab carries a session's old value into
+    # the "Moderate" column when the session is reopened; until then it's
+    # still under the old id, which _trip_val (_TRIPLET_LEGACY) falls back
+    # to so the report shows it either way.
     #
     # 2026-10-09: all 4 rows (Pre-injury, Current, Exercise type, Exercise
     # dose) in ONE table per direct request, rather than a table for the
@@ -4189,8 +4191,9 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
             program_rows.append([label, cur, prog])
     if program_rows:
         _emit(*_md_table(["Exercise / Rehab Program", "Current", "Progression"], program_rows))
-    # Retired 2026-10 ("remove extraneous Home program field") with no
-    # migration — shown only where a session still holds text in it.
+    # Retired 2026-10 ("remove extraneous Home program field"). gpab's
+    # rx_plan.py appends it to Moderate -> Current on reopen and the next
+    # save retires the id; until then it's shown here so it isn't hidden.
     if (rp.get("tx_home_program") or "").strip():
         txt("tx_home_program", rp)
 
