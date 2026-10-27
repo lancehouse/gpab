@@ -439,12 +439,24 @@ def _row(*pairs) -> str:
 # Objective section report rendering
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _md_cell(v) -> str:
+    """Make free text safe inside one pipe-table cell: a raw "\n" ends the
+    row and an unescaped "|" starts a new column, either of which silently
+    garbles the row (and its .docx) — same separators as
+    export_session_report's _esc_cell, and idempotent on its output, so
+    already-escaped cells pass through unchanged (2026-10-27 report audit)."""
+    s = str(v).strip()
+    s = re.sub(r"\n\s*\n+", " / ", s)
+    s = s.replace("\n", "; ")
+    return re.sub(r"(?<!\\)\|", r"\\|", s)
+
+
 def _md_table(headers: list, rows: list) -> list:
     """Return Markdown table as a list of strings. Returns [] when all value cols are blank."""
     if not rows:
         return []
     n = len(headers)
-    rows = [[str(r[i]) if i < len(r) else "" for i in range(n)] for r in rows]
+    rows = [[_md_cell(r[i]) if i < len(r) else "" for i in range(n)] for r in rows]
     col_w = [len(str(headers[i])) for i in range(n)]
     for r in rows:
         for i, v in enumerate(r):
@@ -508,6 +520,72 @@ def _merged_region_data(obj: dict, active_regions) -> tuple[dict, dict, dict, di
         mus.update(rdata.get("muscle", {}) or {})
         spl.update(rdata.get("special", {}) or {})
     return act, pas, mus, spl
+
+
+# Sensory tab rows, in gpab's order (objective/sections/sensory.py's
+# _HYPO_ITEMS/_HYPER_ITEMS). Both objective renderers read these, so a row
+# added to the tab is added here once. Every row's "<sid>_detail" text is
+# rendered whenever it's non-empty — previously Vibration, Proprioception and
+# Painful after-sensations were missing from both renderers entirely, and any
+# detail was dropped unless its flag was Yes (2026-10-27 report audit).
+_SN_HYPO_ITEMS = [
+    ("Sharp/blunt",          "sn_sharp_blunt"),
+    ("Two-point discrim",    "sn_tpd"),
+    ("Light touch",          "sn_lt"),
+    ("Vibration sense",      "sn_vibration"),
+    ("Proprioception",       "sn_proprioception"),
+    ("Body perception",      "sn_body"),
+]
+_SN_HYPER_ITEMS = [
+    ("2° hyperalgesia PPT",          "sn_secondary_hyper"),
+    ("Static allodynia",             "sn_static_allodynia"),
+    ("Dynamic allodynia",            "sn_dynamic_allodynia"),
+    ("Pin prick hyper",              "sn_pin_prick"),
+    ("Cold hyperalgesia",            "sn_cold"),
+    ("Heat hyperalgesia",            "sn_heat"),
+    ("Painful after-sensations",     "sn_after_sensations"),
+    ("Temporal summation",           "sn_temporal_sum"),
+    ("Conditioned pain modulation",  "sn_cpm"),
+    ("Nerve trunk palpation",        "sn_nerve_palpation"),
+]
+
+
+# Retired single-value ids (Activity 2026-10-08, tx_program 2026-10-09) that
+# gpab's load() carries into the Moderate column only when that column is
+# empty (subjective.py's _LEGACY_ACTIVITY_MIGRATION, rx_plan.py's tx_program
+# carry-forward). That only happens once a session is reopened, so a session
+# not reopened since still holds its text under the old id — the reports
+# apply the same rule so that text isn't missing (2026-10-27 report audit).
+_TRIPLET_LEGACY = {
+    ("pre_activity",     "moderate"): "pre_activity_level",
+    ("current_activity", "moderate"): "current_activity_level",
+    ("exercise_type",    "moderate"): "exercise_type",
+    ("exercise_dose",    "moderate"): "exercise_dose",
+    ("tx_program",       "moderate"): "tx_program",
+}
+
+
+def _trip_val(d: dict, prefix: str, col: str) -> str:
+    v = str(d.get(f"{prefix}_{col}") or "").strip()
+    legacy = _TRIPLET_LEGACY.get((prefix, col))
+    if not v and legacy:
+        v = str(d.get(legacy) or "").strip()
+    return v
+
+
+# Rx & Plan checklist rows that carry a free-text "<id>_note" beside the
+# checkbox (rx_plan.py's _stmt_row). The note is rendered on its own line
+# whenever it has text, ticked or not.
+_RX_NOTE_IDS = (
+    "tx_consent_explanation", "s1_consent_content",
+    "hw_online_module", "hw_mindfulness", "hw_goal_sheet", "hw_activity_diary",
+    "hw_sleep_diary", "tx_email_obtained", "tx_display_book",
+    "d1_explanation", "d1_session2", "d1_hypothesis", "d1_diagnosis", "d1_values",
+    "d1_evidence", "d1_plan", "d1_prognosis", "d1_stakeholders",
+    "d1_confidence_tested", "d1_questionnaires",
+    "ps_questionnaires", "ps_eppoc", "ps_ptsd_scored", "ps_isi_pbas", "ps_csi",
+    "ps_audit_dudit",
+)
 
 
 # AD position-ordered forms (gpab, 2026-10-22) — objective/ad_forms/*.yaml.
@@ -945,25 +1023,17 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             sl.append(f"**PPT (algometer):** {ppt}" + (f" — {ppt_detail}" if ppt_detail else ""))
         elif not clean:
             sl.append("**PPT (algometer):** *(not recorded)*")
-        hypo_items = [("Sharp/blunt","sn_sharp_blunt",True),("Two-point discrim","sn_tpd",True),
-                      ("Light touch","sn_lt",True),("Body perception","sn_body",True)]
-        hyper_items = [("Static allodynia","sn_static_allodynia",True),
-                       ("Dynamic allodynia","sn_dynamic_allodynia",True),
-                       ("2° hyperalgesia PPT","sn_secondary_hyper",True),
-                       ("Pin prick hyper","sn_pin_prick",True),
-                       ("Cold hyperalgesia","sn_cold",True),
-                       ("Heat hyperalgesia","sn_heat",True),
-                       ("Temporal summation","sn_temporal_sum",True),
-                       ("Conditioned pain modulation","sn_cpm",True),
-                       ("Nerve trunk palpation","sn_nerve_palpation",True)]
-        for sec_lbl, items in [("Hyposensitivity", hypo_items), ("Hypersensitivity", hyper_items)]:
+        for sec_lbl, items in [("Hyposensitivity", _SN_HYPO_ITEMS), ("Hypersensitivity", _SN_HYPER_ITEMS)]:
             rows = []
-            for lbl, sid, has_detail in items:
+            for lbl, sid in items:
                 v = sen.get(sid)
+                detail = str(sen.get(f"{sid}_detail") or "").strip()
+                if clean and v is None and not detail:
+                    continue
                 if clean and v is None:
+                    rows.append([lbl, detail])
                     continue
                 state = "Yes" if v is True else "No" if v is False else "*(not answered)*"
-                detail = sen.get(f"{sid}_detail", "").strip() if has_detail and v is True else ""
                 rows.append([lbl, f"{state} — {detail}" if detail else state])
             if rows:
                 if clean and sl and sl[-1] != "":
@@ -1893,27 +1963,17 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
             sl.append(f"  PPT (algometer): {ppt_raw}" + (f" — {ppt_detail_raw}" if ppt_detail_raw else ""))
         elif not clean:
             sl.append("  PPT (algometer): (not recorded)")
-        hypo_items = [("Sharp/blunt","sn_sharp_blunt",True),
-                      ("Two-point discrim","sn_tpd",True),
-                      ("Light touch","sn_lt",True),
-                      ("Body perception","sn_body",False)]
-        hyper_items = [("Static allodynia","sn_static_allodynia",True),
-                       ("Dynamic allodynia","sn_dynamic_allodynia",True),
-                       ("2° hyperalgesia PPT","sn_secondary_hyper",True),
-                       ("Pin prick hyper","sn_pin_prick",True),
-                       ("Cold hyperalgesia","sn_cold",True),
-                       ("Heat hyperalgesia","sn_heat",True),
-                       ("Temporal summation","sn_temporal_sum",True),
-                       ("Conditioned pain modulation","sn_cpm",True),
-                       ("Nerve trunk palpation","sn_nerve_palpation",True)]
-        for items in (hypo_items, hyper_items):
-            for lbl, sid, has_detail in items:
+        for items in (_SN_HYPO_ITEMS, _SN_HYPER_ITEMS):
+            for lbl, sid in items:
                 v = sen.get(sid)
-                if clean and v is None:
+                detail = str(sen.get(f"{sid}_detail") or "").strip()
+                if clean and v is None and not detail:
                     continue
-                detail = sen.get(f"{sid}_detail", "").strip() if has_detail else ""
+                if clean and v is None:
+                    sl.append(f"  {lbl}: {detail}")
+                    continue
                 state = "✓ Yes" if v is True else "✗ No" if v is False else "(not answered)"
-                sl.append(f"  {lbl}: {state}" + (f" — {detail}" if detail and v is True else ""))
+                sl.append(f"  {lbl}: {state}" + (f" — {detail}" if detail else ""))
         v = sen.get("sn_notes", "").strip()
         if v:
             sl.append(f"  Notes: {v}")
@@ -2920,7 +2980,7 @@ def _emit_pain_class_dev(pc: dict, clean: bool, emit_fn, sub_fn) -> None:
               ("Comorbid — cognitive problems","bacpap_como_cognitive")]
     bp_notes = (pc.get("bacpap_notes") or "").strip()
     _bp_all  = _BP_CH + _BP_ME + _BP_EV + _BP_NO
-    if not clean or _any(_bp_all):
+    if not clean or _any(_bp_all) or bp_notes:
         sub_fn("BACPAP LBP Phenotyping")
         rows = []
         for row_lbl, grp in [
@@ -3249,11 +3309,11 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         return v.replace("|", "\\|")
 
     def _act_trip(prefix: str) -> list:
-        return [_esc_cell((s.get(f"{prefix}_{col}", "") or "").strip()) or "—"
+        return [_esc_cell(_trip_val(s, prefix, col)) or "—"
                 for col in ("vigorous", "moderate", "strengthening")]
 
     def _act_trip_has_data(prefix: str) -> bool:
-        return any((s.get(f"{prefix}_{col}", "") or "").strip()
+        return any(_trip_val(s, prefix, col)
                    for col in ("vigorous", "moderate", "strengthening"))
 
     act_rows = []
@@ -3350,10 +3410,12 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
             _emit(*_md_table(["Factor"], rows))
             _emit("")
 
-    def _rf_md(name: str, flags: list, d: dict, action_key: str = None) -> None:
+    def _rf_md(name: str, flags: list, d: dict, action_key: str = None,
+               comment_key: str = None) -> None:
         raised     = [l for l, k in flags if d.get(k) is True]
         not_raised = [l for l, k in flags if d.get(k) is False]
         action = (d.get(action_key) or "").strip() if action_key else ""
+        comment = (d.get(comment_key) or "").strip() if comment_key else ""
         if raised:
             _emit(f"\n### Red Flags — {name}\n")
             line = "**⚠️ RED FLAGS RAISED:** " + "; ".join(f"**{l}**" for l in raised)
@@ -3367,6 +3429,10 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         else:
             suffix = f" — {action}" if action else ""
             _emit(f"\n### Red Flags — {name} NIL REPORTED{suffix}\n")
+        # Own line, never the heading: it's free text and may be multi-line.
+        if comment:
+            line = "**Comment:** " + "  \n".join(comment.split("\n"))
+            _emit(line + "  " if clean else line)
 
     def _pain_md(prefix: str, items: list, d: dict) -> None:
         present = [l for l, k in items if d.get(k) is True]
@@ -3451,17 +3517,17 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
             ("Cancer history",         "rf_cancer_history"),
             ("Age >50 with spinal",    "rf_age_50_spinal"),
             ("Failed conservative",    "rf_failed_conservative"),
-        ], m)
+        ], m, comment_key="rf_malignancy_comment")
         _rf_md("Fracture", [
             ("Recent trauma",               "rf_trauma"),
             ("Corticosteroid fracture risk","rf_corticosteroids_fracture"),
             ("Osteoporosis fracture risk",  "rf_osteoporosis_fracture"),
-        ], m)
+        ], m, comment_key="rf_fracture_comment")
         _rf_md("Infection", [
             ("Fever",                  "rf_fever"),
             ("Immunosuppressed",       "rf_immunosuppressed"),
             ("Recent spinal procedure","rf_spinal_procedure"),
-        ], m)
+        ], m, comment_key="rf_infection_comment")
         _rf_md("Cauda Equina (URGENT)", [
             ("Saddle anaesthesia",  "rf_saddle_anaesthesia"),
             ("Bladder disturbance", "rf_bladder_disturbance"),
@@ -3477,16 +3543,19 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         f("rf_cancer_history",      m)
         f("rf_age_50_spinal",       m)
         f("rf_failed_conservative", m)
+        txt("rf_malignancy_comment", m)
 
         sub("Red Flags — Fracture")
         f("rf_trauma",                   m)
         f("rf_corticosteroids_fracture", m)
         f("rf_osteoporosis_fracture",    m)
+        txt("rf_fracture_comment", m)
 
         sub("Red Flags — Infection")
         f("rf_fever",           m)
         f("rf_immunosuppressed", m)
         f("rf_spinal_procedure", m)
+        txt("rf_infection_comment", m)
 
         sub("Red Flags — Cauda Equina (URGENT)")
         f("rf_saddle_anaesthesia",  m)
@@ -3507,6 +3576,19 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     f("diff_as_fever_weight_loss",  m)
     f("diff_as_likelihood",         m)
     txt("diff_as_action",           m)
+
+    sub("Differential — Spondyloarthropathy (SCREEN'D'EM)")
+    f("diff_spa_skin_psoriasis",    m)
+    f("diff_spa_ibd",               m)
+    f("diff_spa_family_history",    m)
+    f("diff_spa_eye_inflammation",  m)
+    f("diff_spa_morning_stiffness", m)
+    f("diff_spa_nail_changes",      m)
+    f("diff_spa_dactylitis",        m)
+    f("diff_spa_enthesitis",        m)
+    f("diff_spa_exercise_response", m)
+    f("diff_spa_likelihood",        m)
+    txt("diff_spa_action",          m)
 
     sub("Differential — Abdominal Aortic Aneurysm")
     f("diff_aaa_pulsating",  m)
@@ -3839,7 +3921,11 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         rows = []
         for label, key, sub_items in items:
             val = d.get(key)
-            if val is None:
+            # Typed sub-item text is shown whatever the parent's state —
+            # it used to vanish unless the parent was ticked.
+            sub_text = [str(d.get(sk)).strip() for _sl, sk in sub_items
+                        if isinstance(d.get(sk), str) and d.get(sk).strip()]
+            if val is None and not sub_text:
                 continue
             if val is True:
                 sub_parts = []
@@ -3850,8 +3936,10 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
                     elif isinstance(sv, str) and sv.strip():
                         sub_parts.append(sv.strip())
                 entry = label + (f" ({', '.join(sub_parts)})" if sub_parts else "")
+            elif val is False:
+                entry = f"{label} — Absent" + (f" ({', '.join(sub_text)})" if sub_text else "")
             else:
-                entry = f"{label} — Absent"
+                entry = f"{label} ({', '.join(sub_text)})"
             rows.append([entry])
         if rows:
             _emit(*_md_table(["Barrier"], rows))
@@ -4065,12 +4153,18 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     # SECTION 8: RX PLAN
     # ════════════════════════════════════════════════════════════════════════
     rp = a.get("rx_plan", {}) or {}
+
+    def fn(fid: str, d: dict) -> None:
+        """Checklist row: its checkbox, then its "<fid>_note" text if any."""
+        f(fid, d)
+        if (d.get(f"{fid}_note") or "").strip():
+            f(f"{fid}_note", d)
     sec("Section 8: Rx Plan")
 
     sub("Treatment Plan Summary")
     f("tx_pain_type",           rp)
     f("tx_debunk_radiology",    rp)
-    f("tx_consent_explanation", rp)
+    fn("tx_consent_explanation", rp)
     txt("tx_goal_orientation",  rp)
     txt("tx_formulation",       rp)
 
@@ -4084,17 +4178,21 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     _program_cols = (("Vigorous", "vigorous"), ("Moderate", "moderate"), ("Strength/other", "strengthening"))
 
     def _program_has_data(col: str) -> bool:
-        return bool((rp.get(f"tx_program_{col}", "") or "").strip()
+        return bool(_trip_val(rp, "tx_program", col)
                      or (rp.get(f"tx_progression_{col}", "") or "").strip())
 
     program_rows = []
     for label, col in _program_cols:
         if not clean or _program_has_data(col):
-            cur  = _esc_cell((rp.get(f"tx_program_{col}", "") or "").strip()) or "—"
+            cur  = _esc_cell(_trip_val(rp, "tx_program", col)) or "—"
             prog = _esc_cell((rp.get(f"tx_progression_{col}", "") or "").strip()) or "—"
             program_rows.append([label, cur, prog])
     if program_rows:
         _emit(*_md_table(["Exercise / Rehab Program", "Current", "Progression"], program_rows))
+    # Retired 2026-10 ("remove extraneous Home program field") with no
+    # migration — shown only where a session still holds text in it.
+    if (rp.get("tx_home_program") or "").strip():
+        txt("tx_home_program", rp)
 
     txt("tx_psychosocial",      rp)
     txt("tx_medical",           rp)
@@ -4103,40 +4201,40 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     sub("Session 1 Treatment")
     txt("s1_education",     rp)
     txt("s1_experiential",  rp)
-    f("s1_consent_content", rp)
+    fn("s1_consent_content", rp)
     f("s1_confidence_nrs",  rp)
-    f("hw_online_module",   rp)
-    f("hw_mindfulness",     rp)
-    f("hw_goal_sheet",      rp)
-    f("hw_activity_diary",  rp)
-    f("hw_sleep_diary",     rp)
+    fn("hw_online_module",   rp)
+    fn("hw_mindfulness",     rp)
+    fn("hw_goal_sheet",      rp)
+    fn("hw_activity_diary",  rp)
+    fn("hw_sleep_diary",     rp)
     txt("s1_hw_other",      rp)
-    f("tx_email_obtained",  rp)
-    f("tx_display_book",    rp)
+    fn("tx_email_obtained",  rp)
+    fn("tx_display_book",    rp)
 
     sub("Day 1 Checklist")
-    f("d1_explanation",       rp)
-    f("d1_session2",          rp)
-    f("d1_hypothesis",        rp)
-    f("d1_diagnosis",         rp)
-    f("d1_values",            rp)
-    f("d1_evidence",          rp)
-    f("d1_plan",              rp)
-    f("d1_prognosis",         rp)
-    f("d1_stakeholders",      rp)
-    f("d1_confidence_tested", rp)
-    f("d1_questionnaires",    rp)
+    fn("d1_explanation",       rp)
+    fn("d1_session2",          rp)
+    fn("d1_hypothesis",        rp)
+    fn("d1_diagnosis",         rp)
+    fn("d1_values",            rp)
+    fn("d1_evidence",          rp)
+    fn("d1_plan",              rp)
+    fn("d1_prognosis",         rp)
+    fn("d1_stakeholders",      rp)
+    fn("d1_confidence_tested", rp)
+    fn("d1_questionnaires",    rp)
 
     sub("Follow-Up Plan")
     txt("fu_next_focus",   rp)
     txt("fu_monitoring",   rp)
     f("fu_om_schedule",    rp)
-    f("ps_questionnaires", rp)
-    f("ps_eppoc",          rp)
-    f("ps_ptsd_scored",    rp)
-    f("ps_isi_pbas",       rp)
-    f("ps_csi",            rp)
-    f("ps_audit_dudit",    rp)
+    fn("ps_questionnaires", rp)
+    fn("ps_eppoc",          rp)
+    fn("ps_ptsd_scored",    rp)
+    fn("ps_isi_pbas",       rp)
+    fn("ps_csi",            rp)
+    fn("ps_audit_dudit",    rp)
 
     # ════════════════════════════════════════════════════════════════════════
     # BODY CHART SUMMARY — omitted in clean mode
@@ -4359,6 +4457,9 @@ LABELS: dict[str, str] = {
     "rf_fever":                         "Red flag: Fever",
     "rf_immunosuppressed":              "Red flag: Immunosuppressed",
     "rf_spinal_procedure":              "Red flag: Recent spinal procedure",
+    "rf_malignancy_comment":            "Red flags — Malignancy: Comment",
+    "rf_fracture_comment":              "Red flags — Fracture: Comment",
+    "rf_infection_comment":             "Red flags — Infection: Comment",
     "rf_saddle_anaesthesia":            "Red flag: Saddle anaesthesia",
     "rf_bladder_disturbance":           "Red flag: Bladder disturbance",
     "rf_bowel_disturbance":             "Red flag: Bowel disturbance",
@@ -4373,6 +4474,17 @@ LABELS: dict[str, str] = {
     "diff_as_fever_weight_loss":        "Diff AS: Fever/weight loss",
     "diff_as_likelihood":               "Diff AS: Likelihood",
     "diff_as_action":                   "Diff AS: Action taken",
+    "diff_spa_skin_psoriasis":          "Diff SpA: Skin — psoriasis / rash",
+    "diff_spa_ibd":                     "Diff SpA: Colitis / Crohn's",
+    "diff_spa_family_history":          "Diff SpA: Relatives — RA/PsA/AS family hx",
+    "diff_spa_eye_inflammation":        "Diff SpA: Eyes — uveitis / iritis",
+    "diff_spa_morning_stiffness":       "Diff SpA: Early morning stiffness >30 min",
+    "diff_spa_nail_changes":            "Diff SpA: Nails — pitting / thickening",
+    "diff_spa_dactylitis":              "Diff SpA: Dactylitis (sausage digit)",
+    "diff_spa_enthesitis":              "Diff SpA: Enthesitis (Achilles/plantar/patellar)",
+    "diff_spa_exercise_response":       "Diff SpA: Better with exercise, NSAID-responsive",
+    "diff_spa_likelihood":              "Diff SpA: Likelihood",
+    "diff_spa_action":                  "Diff SpA: Action taken",
     "diff_aaa_pulsating":               "Diff AAA: Pulsating abdominal mass",
     "diff_aaa_age_50":                  "Diff AAA: Age >50",
     "diff_aaa_cvd_risk":                "Diff AAA: CVD risk factors",
@@ -4678,6 +4790,7 @@ LABELS: dict[str, str] = {
     "fu_om_schedule":                   "OM schedule",
     "tx_goal_orientation":              "Goal orientation",
     "tx_formulation":                   "Formulation",
+    "tx_home_program":                  "Home program (retired field)",
     "tx_program_vigorous":              "Exercise program — Vigorous (Current)",
     "tx_program_moderate":              "Exercise program — Moderate (Current)",
     "tx_program_strengthening":         "Exercise program — Strength/other (Current)",
@@ -4695,6 +4808,10 @@ LABELS: dict[str, str] = {
     "fu_next_focus":                    "Next session focus",
     "fu_monitoring":                    "Monitoring plan",
 }
+
+
+for _fid in _RX_NOTE_IDS:
+    LABELS.setdefault(f"{_fid}_note", f"{LABELS.get(_fid, _fid)} — note")
 
 
 def _label(fid: str) -> str:
@@ -4905,9 +5022,9 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     # See the matching comment in export_session_report() — same 2026-10-08
     # Vigorous/Moderate/Strengthening split, same retired old field ids.
     def _trip_raw(prefix: str, label: str) -> None:
-        vig = (s.get(f"{prefix}_vigorous") or "").strip()
-        mod = (s.get(f"{prefix}_moderate") or "").strip()
-        stg = (s.get(f"{prefix}_strengthening") or "").strip()
+        vig = _trip_val(s, prefix, "vigorous")
+        mod = _trip_val(s, prefix, "moderate")
+        stg = _trip_val(s, prefix, "strengthening")
         if clean and not (vig or mod or stg):
             return
         _emit(f"  {label}:")
@@ -4998,10 +5115,12 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
         if absent:
             _emit("  " + prefix + " ABSENT: " + "; ".join(absent))
 
-    def _rf_raw(name: str, flags: list, d: dict, action_key: str = None) -> None:
+    def _rf_raw(name: str, flags: list, d: dict, action_key: str = None,
+                comment_key: str = None) -> None:
         raised     = [l for l, k in flags if d.get(k) is True]
         not_raised = [l for l, k in flags if d.get(k) is False]
         action = (d.get(action_key) or "").strip() if action_key else ""
+        comment = (d.get(comment_key) or "").strip() if comment_key else ""
         if raised:
             _emit(f"  Red Flags — {name}: ⚠️ RAISED: " + "; ".join(raised))
             if not_raised:
@@ -5011,6 +5130,8 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
         else:
             suffix = f" — {action}" if action else ""
             _emit(f"  Red Flags — {name}: NIL REPORTED{suffix}")
+        if comment:
+            _emit("    Comment: " + "\n      ".join(comment.split("\n")))
 
     def _pain_raw(prefix: str, items: list, d: dict) -> None:
         present = [l for l, k in items if d.get(k) is True]
@@ -5085,17 +5206,17 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
             ("Cancer history",         "rf_cancer_history"),
             ("Age >50 with spinal",    "rf_age_50_spinal"),
             ("Failed conservative",    "rf_failed_conservative"),
-        ], m)
+        ], m, comment_key="rf_malignancy_comment")
         _rf_raw("Fracture", [
             ("Recent trauma",               "rf_trauma"),
             ("Corticosteroid fracture risk","rf_corticosteroids_fracture"),
             ("Osteoporosis fracture risk",  "rf_osteoporosis_fracture"),
-        ], m)
+        ], m, comment_key="rf_fracture_comment")
         _rf_raw("Infection", [
             ("Fever",                  "rf_fever"),
             ("Immunosuppressed",       "rf_immunosuppressed"),
             ("Recent spinal procedure","rf_spinal_procedure"),
-        ], m)
+        ], m, comment_key="rf_infection_comment")
         _rf_raw("Cauda Equina (URGENT)", [
             ("Saddle anaesthesia",  "rf_saddle_anaesthesia"),
             ("Bladder disturbance", "rf_bladder_disturbance"),
@@ -5111,16 +5232,19 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
         f("rf_cancer_history",       m)
         f("rf_age_50_spinal",        m)
         f("rf_failed_conservative",  m)
+        txt("rf_malignancy_comment", m)
 
         sub("Red Flags — Fracture")
         f("rf_trauma",                  m)
         f("rf_corticosteroids_fracture", m)
         f("rf_osteoporosis_fracture",   m)
+        txt("rf_fracture_comment", m)
 
         sub("Red Flags — Infection")
         f("rf_fever",           m)
         f("rf_immunosuppressed", m)
         f("rf_spinal_procedure", m)
+        txt("rf_infection_comment", m)
 
         sub("Red Flags — Cauda Equina (URGENT)")
         f("rf_saddle_anaesthesia", m)
@@ -5141,6 +5265,19 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     f("diff_as_fever_weight_loss", m)
     f("diff_as_likelihood",        m)
     txt("diff_as_action",          m)
+
+    sub("Differential — Spondyloarthropathy (SCREEN'D'EM)")
+    f("diff_spa_skin_psoriasis",    m)
+    f("diff_spa_ibd",               m)
+    f("diff_spa_family_history",    m)
+    f("diff_spa_eye_inflammation",  m)
+    f("diff_spa_morning_stiffness", m)
+    f("diff_spa_nail_changes",      m)
+    f("diff_spa_dactylitis",        m)
+    f("diff_spa_enthesitis",        m)
+    f("diff_spa_exercise_response", m)
+    f("diff_spa_likelihood",        m)
+    txt("diff_spa_action",          m)
 
     sub("Differential — Abdominal Aortic Aneurysm")
     f("diff_aaa_pulsating",  m)
@@ -5234,6 +5371,8 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
             ("Symptoms ≥ 3 months",     "fm_duration"),
             ("No alternative explanation","fm_exclusion"),
         ], pc)
+        for k in ("fm_wpi", "fm_fatigue", "fm_waking", "fm_cognitive"):
+            f(k, pc)
     else:
         f("fm_wpi",       pc)
         f("fm_fatigue",   pc)
@@ -5474,8 +5613,11 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     def _barrier_raw(prefix: str, items: list, d: dict) -> None:
         present_parts = []
         absent_parts  = []
+        noted_parts   = []
         for label, key, sub_items in items:
             val = d.get(key)
+            sub_text = [str(d.get(sk)).strip() for _sl, sk in sub_items
+                        if isinstance(d.get(sk), str) and d.get(sk).strip()]
             if val is True:
                 sub_parts = []
                 for sub_label, sub_key in sub_items:
@@ -5487,11 +5629,16 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
                 present_parts.append(
                     f"{label} ({', '.join(sub_parts)})" if sub_parts else label)
             elif val is False:
-                absent_parts.append(label)
+                absent_parts.append(
+                    f"{label} ({', '.join(sub_text)})" if sub_text else label)
+            elif sub_text:
+                noted_parts.append(f"{label} ({', '.join(sub_text)})")
         if present_parts:
             _emit("  " + prefix + " PRESENT: " + "; ".join(present_parts))
         if absent_parts:
             _emit("  " + prefix + " ABSENT: " + "; ".join(absent_parts))
+        if noted_parts:
+            _emit("  " + prefix + " NOTED: " + "; ".join(noted_parts))
 
     _NOCI_B = [
         ("Disease/pathology",      "b_noci_disease",        []),
@@ -5701,12 +5848,18 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     # SECTION 8: RX PLAN
     # ════════════════════════════════════════════════════════════════════════
     rp = a.get("rx_plan", {}) or {}
+
+    def fn(fid: str, d: dict) -> None:
+        """Checklist row: its checkbox, then its "<fid>_note" text if any."""
+        f(fid, d)
+        if (d.get(f"{fid}_note") or "").strip():
+            f(f"{fid}_note", d)
     sec("SECTION 8: RX PLAN")
 
     sub("Treatment Plan Summary")
     f("tx_pain_type",           rp)
     f("tx_debunk_radiology",    rp)
-    f("tx_consent_explanation", rp)
+    fn("tx_consent_explanation", rp)
     txt("tx_goal_orientation",  rp)
     txt("tx_formulation",       rp)
 
@@ -5715,7 +5868,7 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     # tx_program id. No table here (this raw export never uses tables for
     # assessment-section content), just labelled sub-lines.
     def _program_raw(label: str, col: str) -> None:
-        cur = (rp.get(f"tx_program_{col}") or "").strip()
+        cur = _trip_val(rp, "tx_program", col)
         prog = (rp.get(f"tx_progression_{col}") or "").strip()
         if clean and not (cur or prog):
             return
@@ -5723,12 +5876,14 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
         _emit(f"    Current: {cur or '(empty)'}")
         _emit(f"    Progression: {prog or '(empty)'}")
 
-    if not clean or any((rp.get(f"tx_program_{c}") or "").strip() or (rp.get(f"tx_progression_{c}") or "").strip()
+    if not clean or any(_trip_val(rp, "tx_program", c) or (rp.get(f"tx_progression_{c}") or "").strip()
                          for c in ("vigorous", "moderate", "strengthening")):
         _emit("  Exercise / Rehab Program:")
         _program_raw("Vigorous", "vigorous")
         _program_raw("Moderate", "moderate")
         _program_raw("Strength/other", "strengthening")
+    if (rp.get("tx_home_program") or "").strip():
+        txt("tx_home_program", rp)
 
     txt("tx_psychosocial",      rp)
     txt("tx_medical",           rp)
@@ -5737,40 +5892,40 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     sub("Session 1 Treatment")
     txt("s1_education",     rp)
     txt("s1_experiential",  rp)
-    f("s1_consent_content", rp)
+    fn("s1_consent_content", rp)
     f("s1_confidence_nrs",  rp)
-    f("hw_online_module",   rp)
-    f("hw_mindfulness",     rp)
-    f("hw_goal_sheet",      rp)
-    f("hw_activity_diary",  rp)
-    f("hw_sleep_diary",     rp)
+    fn("hw_online_module",   rp)
+    fn("hw_mindfulness",     rp)
+    fn("hw_goal_sheet",      rp)
+    fn("hw_activity_diary",  rp)
+    fn("hw_sleep_diary",     rp)
     txt("s1_hw_other",      rp)
-    f("tx_email_obtained",  rp)
-    f("tx_display_book",    rp)
+    fn("tx_email_obtained",  rp)
+    fn("tx_display_book",    rp)
 
     sub("Day 1 Checklist")
-    f("d1_explanation",       rp)
-    f("d1_session2",          rp)
-    f("d1_hypothesis",        rp)
-    f("d1_diagnosis",         rp)
-    f("d1_values",            rp)
-    f("d1_evidence",          rp)
-    f("d1_plan",              rp)
-    f("d1_prognosis",         rp)
-    f("d1_stakeholders",      rp)
-    f("d1_confidence_tested", rp)
-    f("d1_questionnaires",    rp)
+    fn("d1_explanation",       rp)
+    fn("d1_session2",          rp)
+    fn("d1_hypothesis",        rp)
+    fn("d1_diagnosis",         rp)
+    fn("d1_values",            rp)
+    fn("d1_evidence",          rp)
+    fn("d1_plan",              rp)
+    fn("d1_prognosis",         rp)
+    fn("d1_stakeholders",      rp)
+    fn("d1_confidence_tested", rp)
+    fn("d1_questionnaires",    rp)
 
     sub("Follow-Up Plan")
     txt("fu_next_focus",   rp)
     txt("fu_monitoring",   rp)
     f("fu_om_schedule",    rp)
-    f("ps_questionnaires", rp)
-    f("ps_eppoc",          rp)
-    f("ps_ptsd_scored",    rp)
-    f("ps_isi_pbas",       rp)
-    f("ps_csi",            rp)
-    f("ps_audit_dudit",    rp)
+    fn("ps_questionnaires", rp)
+    fn("ps_eppoc",          rp)
+    fn("ps_ptsd_scored",    rp)
+    fn("ps_isi_pbas",       rp)
+    fn("ps_csi",            rp)
+    fn("ps_audit_dudit",    rp)
 
     # ════════════════════════════════════════════════════════════════════════
     # BODY CHART SUMMARY
