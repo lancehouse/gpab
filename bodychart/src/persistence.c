@@ -554,7 +554,10 @@ gboolean persistence_save(AppState *app)
     json_object *root = json_object_new_object();
 
     /* Metadata */
-    json_object_object_add(root, "version",       json_object_new_int(3));
+    /* 4 (2026-10-27): notes may carry NOTE_UNSET (-1) temporal/depth/
+     * low/high and quality indices 12/13 (Sharp/Dull). Readers needing 3+
+     * (mapping.py) are unaffected; pab's original bodychart writes 3. */
+    json_object_object_add(root, "version",       json_object_new_int(4));
     json_object_object_add(root, "patient_id",    json_object_new_string(app->patient_id));
     json_object_object_add(root, "session_label", json_object_new_string(app->session_label));
     json_object_object_add(root, "session_name",  json_object_new_string(app->session_name));
