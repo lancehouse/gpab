@@ -230,6 +230,7 @@ class SpellcheckModal(Gtk.Window):
         self._advance()
 
     def _apply_suggestion(self, replacement: str) -> None:
+        spellcheck.learn(self._current["word"], replacement)
         buf = self.context_view.get_buffer()
         it_s = buf.get_iter_at_mark(self._word_start_mark)
         it_e = buf.get_iter_at_mark(self._word_end_mark)

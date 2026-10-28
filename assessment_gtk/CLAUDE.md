@@ -60,8 +60,9 @@ fuzzy search), Ctrl+F fuzzy jump-search across every assessment/objective field
 (`search.py` + `search_widget.py`), a heading-map overview (`grid_overview.py`, Ctrl+T), a
 Ctrl+G ROM/goniometer import wizard, and a Ctrl+S spell-check pass (`spellcheck.py` +
 `spellcheck_modal.py`, dictionary-backed via `enchant`, walking every free-text field live in the
-widget tree and correcting in place — separate from `autocorrect.py`'s fixed-typo table, which
-fires inline while typing) are all built and wired. This app is what `bodychart` launches
+widget tree and correcting in place; suggestions re-ranked by word frequency
+(`spell_freq_en.json`, rebuilt with `scripts/build_spell_freq.py`), and every suggestion picked is
+learned into `autocorrect.py`'s inline table via `~/.local/share/pab/autocorrect_learned.json`) are all built and wired. This app is what `bodychart` launches
 directly for every real session (see `../bodychart/src/integration.c`) and is in genuine clinical
 use, not a prototype running alongside the TUI.
 

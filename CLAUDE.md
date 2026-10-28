@@ -38,9 +38,12 @@ guarantee below for exactly what that does and doesn't change.
 - `assessment/` in this clone was a **fully read-only reference copy** until 2026-09-15, when that
   blanket prohibition was relaxed: gpab is the real, ongoing app now, not a conversion-in-progress
   artifact, so files it genuinely depends on for correctness may be edited directly in this clone
-  on an incremental, as-needed basis — decided when adding SpA/SCREEN'D'EM differential-screening
-  report fields, which required editing `pab_assessment/storage.py`'s report generation (see git
-  history around that date for the first such edit). This is not a green light to rewrite
+  on an incremental, as-needed basis — decided while planning the SpA/SCREEN'D'EM differential-
+  screening fields. (Correction, 2026-10-27: those fields were in fact only added to the GTK
+  Medical tab, `a442621`, 2026-09-21; `storage.py` never rendered them, so they were saved but
+  absent from every report until `cd90b94` added them, along with ~60 other gpab-added fields found
+  missing by the same audit. Adding a field to a GTK section is not done until every report
+  generator in `storage.py` renders it — see `assessment/CLAUDE.md` rule 5.) This is not a green light to rewrite
   `assessment/` freely — most of it is still kept purely for reference/comparison against the TUI
   and isn't expected to need changes; edit only the specific file a specific piece of work actually
   requires, when it actually requires it. Any such edit stays local to this clone only, same as
