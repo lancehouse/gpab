@@ -303,7 +303,17 @@ def add_to_personal(word: str) -> None:
 def find_next_misspelling(text: str, start: int, skip_words: set[str]) -> tuple[int, int, str] | None:
     """First unknown word in `text` at/after `start`, or None. Words in
     `skip_words` (lowercased, "skip for this pass" from the modal) are
-    passed over without a dictionary lookup."""
+    passed over without a dictionary lookup.
+
+    A `start` inside a word (the modal resumes from its context window's
+    start, a fixed 150 chars back) is moved back to that word's start, so a
+    word's tail ("ermatomal", "ng") is never checked on its own."""
+    def letter(i: int) -> bool:
+        return 0 <= i < len(text) and text[i].isascii() and text[i].isalpha()
+
+    if letter(start) and letter(start - 1):  # inside a word, not just after one (S skip resumes at word end)
+        while letter(start - 1) or (start > 1 and text[start - 1] in "'-" and letter(start - 2)):
+            start -= 1
     for m in _WORD_RE.finditer(text, start):
         word = m.group(0)
         if len(word) < 2 or word.lower() in skip_words or is_known(word):
