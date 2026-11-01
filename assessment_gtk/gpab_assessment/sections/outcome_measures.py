@@ -15,22 +15,25 @@ schema:
   same in-memory pattern as pain_classification.py), it's just not wired to
   a badge widget per field yet. Same scope choice as pain_classification.py.
 
-Note re: pab-intake (a separate, not-yet-clinic-used patient-facing PROM
-collector living in ~/Projects/pab-intake) — that project's own CLAUDE.md
-explicitly defers any TUI/PAB import integration ("No changes to
-~/Projects/pab/ until this is explicitly requested"). This port matches the
-TUI's outcome_measures.py exactly as it stands today: manual entry only, no
-_intake.json import path. Not built here for the same reason it isn't built
-in the real TUI yet.
+NO TUI EQUIVALENT (added 2026-10-29 per direct user request): "Import
+intake…" reads a pab-intake (~/Projects/pab-intake) `_intake.json`,
+typically carried over on USB. Scores/items gpab has fields for are filled
+— empty fields only; a field that already holds a different value is kept
+and listed in the post-import summary. Every PROM, item by item, is also
+rendered into `intake_raw` (bar-first rows, no wrap) for the report. Scoring and
+rendering live in ../intake_import.py.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
+from .. import intake_import
 from ..section_base import SectionBase
 from ..widgets import (
     CheckButton, AutoTextView, TouchEntry, CycleField,
@@ -160,7 +163,13 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
         title = Gtk.Label(label="Outcome Measures")
         title.add_css_class("section-title")
         title.set_halign(Gtk.Align.START)
-        self.append(title)
+        title_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        title_row.append(title)
+        import_btn = Gtk.Button(label="Import intake…")
+        import_btn.set_tooltip_text("Import a pab-intake _intake.json (e.g. from USB)")
+        import_btn.connect("clicked", lambda _b: self._choose_intake_file())
+        title_row.append(import_btn)
+        self.append(title_row)
 
         self.append(self._make_block("psfs", "PSFS — Patient Specific Functional Scale", self._build_psfs))
         self.append(self._make_block("bpi", "BPI — Brief Pain Inventory", self._build_bpi))
@@ -171,6 +180,9 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
         self.append(self._make_block("pcl5", "PCL-5 — PTSD Checklist", self._build_pcl5))
         self.append(self._make_block("sleep", "Sleep Outcome Measures", self._build_sleep))
         self.append(self._make_block("additional", "Additional Measures", self._build_additional))
+
+        self.append(_header("Patient Intake — imported responses"))
+        self.append(self._build_intake_raw())
 
         self.append(_header("Measures Selected for Ongoing Hypothesis Testing", "om_hypothesis"))
         hyp_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
@@ -384,6 +396,83 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
         body.append(self._check("DUDIT (drug use) — administered?", "add_dudit"))
         body.append(self._labeled("ePPOC components (specify):", self._text("add_epoc")))
         body.append(self._labeled("Other:", self._text("add_other")))
+
+    def _build_intake_raw(self) -> AutoTextView:
+        # One unwrapped line per PROM item (bar, [n/max], item text) — never
+        # wrap text under a bar; scroll horizontally rather than letting the
+        # long lines push the section wider.
+        w = self._text("intake_raw", min_lines=2)
+        w._max_h = 30 * w._LINE_PX
+        w.no_spellcheck = True  # PROM wording + bar glyphs, not clinician prose
+        w.textview.set_wrap_mode(Gtk.WrapMode.NONE)
+        w.textview.set_monospace(True)
+        w.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        return w
+
+    # ------------------------------------------------------------------
+    # pab-intake import
+    # ------------------------------------------------------------------
+
+    def _choose_intake_file(self) -> None:
+        dialog = Gtk.FileDialog(title="Import pab-intake file")
+        json_filter = Gtk.FileFilter(name="Intake files (*.json)")
+        json_filter.add_pattern("*.json")
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        filters.append(json_filter)
+        dialog.set_filters(filters)
+        # USB sticks mount under /run/media/<user> on Fedora.
+        media = Path("/run/media") / GLib.get_user_name()
+        if media.is_dir():
+            dialog.set_initial_folder(Gio.File.new_for_path(str(media)))
+
+        def _done(dlg, result) -> None:
+            try:
+                f = dlg.open_finish(result)
+            except GLib.Error:
+                return  # cancelled
+            if f is not None:
+                self._report_intake(self.apply_intake(f.get_path()))
+
+        dialog.open(self.get_root(), None, _done)
+
+    def apply_intake(self, path: str) -> dict:
+        """Fill outcome-measure fields from an intake file — empty fields
+        only. Returns {"error"} or {"filled", "conflicts", "session_code"};
+        conflicts are (field_id, kept_value, intake_value)."""
+        try:
+            intake = intake_import.load_intake(path)
+        except intake_import.IntakeError as e:
+            return {"error": str(e)}
+        values = intake_import.compute_fields(intake)
+        values["intake_raw"] = intake_import.render_raw(intake)
+        filled, conflicts = [], []
+        for fid, new in values.items():
+            w = self._entries.get(fid) or self._texts.get(fid)
+            current = w.text.strip()
+            if not current:
+                w.text = new  # fires "changed" -> autosave + auto-interp
+                filled.append(fid)
+            elif current != new.strip():
+                conflicts.append((fid, current, new))
+        return {"filled": filled, "conflicts": conflicts,
+                "session_code": intake.get("session_code", "")}
+
+    def _report_intake(self, result: dict) -> None:
+        if "error" in result:
+            Gtk.AlertDialog(message="Intake not imported", detail=result["error"]).show(self.get_root())
+            return
+        filled, conflicts = result["filled"], result["conflicts"]
+        lines = [f"Filled {len(filled)} field(s)."]
+        if conflicts:
+            lines += ["", "Kept your existing entry (intake value differs):"]
+            for fid, kept, new in conflicts:
+                if fid == "intake_raw":
+                    lines.append("  • Imported responses text — already has content")
+                else:
+                    lines.append(f"  • {fid}: kept {kept!r}, intake had {new!r}")
+        message = f"Intake {result['session_code']} imported" if result["session_code"] else "Intake imported"
+        Gtk.AlertDialog(message=message, detail="\n".join(lines)).show(self.get_root())
+        self.status_label.set_label(f"Intake imported: {len(filled)} filled, {len(conflicts)} kept")
 
     # ------------------------------------------------------------------
     # Hypothesis-testing table — grows whenever the last row gets content

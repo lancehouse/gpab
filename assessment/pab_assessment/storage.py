@@ -383,8 +383,20 @@ def _apply_emr_clean_layout(text: str) -> str:
     """
     out: list[str] = []
     cur_indent = ""
+    in_fence = False
     for line in text.split("\n"):
         stripped = line.strip()
+
+        # Fenced code block (the pab-intake PROM render): its alignment IS
+        # the content — no NBSP prefix (would break the ``` fence itself)
+        # and no '---'/heading handling inside it.
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        if in_fence:
+            out.append(line)
+            continue
 
         if stripped == "---":
             # Dropped — didn't survive the paste. Reset defensively: every
@@ -438,6 +450,16 @@ def _row(*pairs) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # Objective section report rendering
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _md_text(s: str) -> str:
+    """Escape "*" and "_" in free text bound for Markdown, so pandoc doesn't
+    read pairs of them as emphasis and silently drop them from the .docx
+    (found 2026-10-30: the pab-intake PROM render's |____*____| bars lost
+    their "*" when pasted into a free-text field — any clinician note with
+    an asterisk or underscore was exposed to the same loss). Idempotent:
+    already-escaped characters are left alone."""
+    return re.sub(r"(?<!\\)([*_])", r"\\\1", s)
+
 
 def _md_cell(v) -> str:
     """Make free text safe inside one pipe-table cell: a raw "\n" ends the
@@ -3067,7 +3089,7 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         if val is False: return "No"
         if val is None:  return "*(not answered)*"
         s = str(val).strip()
-        return s if s else "*(empty)*"
+        return _md_text(s) if s else "*(empty)*"
 
     def _emit(*ls: str) -> None:
         if _pending:
@@ -3117,7 +3139,7 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         _emit(line + "  " if clean else line)
 
     def txt(fid, d):
-        val = (d.get(fid) or "").strip()
+        val = _md_text((d.get(fid) or "").strip())
         if clean and not val:
             return
         label = _label(fid)
@@ -3139,6 +3161,19 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
             _emit(line + "  " if clean else line)
         else:
             _emit(f"**{label}:** *(empty)*")
+
+    def pre(fid, d):
+        # Preformatted text (the pab-intake PROM render) whose columns must
+        # stay aligned: a fenced code block, emitted as ONE lines[] entry so
+        # the per-line heading shift never sees its contents. pandoc sets it
+        # in the .docx monospace "Source Code" style.
+        val = (d.get(fid) or "").rstrip()
+        if clean and not val.strip():
+            return
+        if not val.strip():
+            _emit(f"**{_label(fid)}:** *(empty)*")
+            return
+        _emit(f"**{_label(fid)}:**", "", "```text\n" + val + "\n```", "")
 
     # ── header ──────────────────────────────────────────────────────────────
     c_hdr = a.get("consent", {}) or {}
@@ -3817,6 +3852,9 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     f("add_dudit",  om)
     txt("add_epoc", om)
     txt("add_other", om)
+
+    sub("Patient Intake — imported responses")
+    pre("intake_raw", om)
 
     sub("Planned Outcome Measures")
     f("plan_psfs",       om)
@@ -4644,6 +4682,7 @@ LABELS: dict[str, str] = {
     "add_dudit":                        "DUDIT administered",
     "add_epoc":                         "EPPOC notes",
     "add_other":                        "Additional measures notes",
+    "intake_raw":                       "Patient intake responses (pab-intake)",
     "plan_psfs":                        "Plan: PSFS",
     "plan_bpi":                         "Plan: BPI",
     "plan_dass":                        "Plan: DASS-21",
@@ -5500,6 +5539,9 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     f("add_dudit",    om)
     txt("add_epoc",   om)
     txt("add_other",  om)
+
+    sub("Patient Intake — imported responses")
+    txt("intake_raw", om)
 
     sub("Planned Outcome Measures")
     f("plan_psfs",       om)

@@ -341,6 +341,10 @@ def collect_fields(win) -> list[tuple[object, str]]:
         # hidden mirror corrected here would overwrite that real field.
         if getattr(w, "is_link_mirror", False):
             continue
+        # Imported pab-intake render (outcome_measures intake_raw): validated
+        # PROM wording and ASCII bars, not clinician prose — nothing to fix.
+        if getattr(w, "no_spellcheck", False):
+            continue
         if isinstance(w, (AutoTextView, TouchEntry)):
             fields.append((w, field_label(getattr(w, "field_id", ""))))
     return fields

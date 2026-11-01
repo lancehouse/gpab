@@ -430,6 +430,7 @@ _FIELD_LABELS: dict[str, tuple[str, str | None, str]] = {
     "add_dudit":     ("05_outcome_measures", "om_additional", "DUDIT administered"),
     "add_epoc":      ("05_outcome_measures", "om_additional", "EPOC notes"),
     "add_other":     ("05_outcome_measures", "om_additional", "Other measures notes"),
+    "intake_raw":    ("05_outcome_measures", None,            "Patient intake responses (imported)"),
     "plan_psfs":     ("05_outcome_measures", "om_psfs",       "Plan: PSFS"),
     "plan_bpi":      ("05_outcome_measures", "om_bpi",        "Plan: BPI"),
     "plan_dass":     ("05_outcome_measures", "om_dass",  "Plan: DASS-21"),
