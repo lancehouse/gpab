@@ -58,7 +58,8 @@ live-updated per active region, click-to-KB wired), the Ctrl+D full Clinical KB 
 (`objective/kb_db_screen.py`, region list + condition/cluster/test tree + detail panel + its own
 fuzzy search), Ctrl+F fuzzy jump-search across every assessment/objective field
 (`search.py` + `search_widget.py`), a heading-map overview (`grid_overview.py`, Ctrl+T), a
-Ctrl+G ROM/goniometer import wizard, and a Ctrl+S spell-check pass (`spellcheck.py` +
+Ctrl+G ROM/goniometer import wizard, Ctrl+M ROM Ring graph import (`rom_graphs.py`: today's
+`romring_*.png` from ~/GSConnectInbox or ~/Downloads onto the open session's Objective bodychart, no wizard), and a Ctrl+S spell-check pass (`spellcheck.py` +
 `spellcheck_modal.py`, dictionary-backed via `enchant`, walking every free-text field live in the
 widget tree and correcting in place; suggestions re-ranked by word frequency
 (`spell_freq_en.json`, rebuilt with `scripts/build_spell_freq.py`), and every suggestion picked is
