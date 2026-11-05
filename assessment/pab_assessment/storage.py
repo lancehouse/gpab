@@ -349,6 +349,116 @@ def _emr_indent_for_level(level: int) -> str:
     return ""
 
 
+# Pipe-table separator row, e.g. "| ---- | :---: |".
+_EMR_TABLE_SEP_RE = re.compile(r'^\|(\s*:?-+:?\s*\|)+\s*$')
+# Cell divider: an unescaped '|' (an escaped "\\|" is literal cell text).
+_EMR_CELL_SPLIT_RE = re.compile(r'(?<!\\)\|')
+# Literal column line put at the start of every cell (U+2502 box-drawing).
+_EMR_CELL_BAR = "\u2502"
+
+
+# Tables whose column headings add nothing to read in the DMR — a lone
+# "Finding"/"Result"/"Barrier", or a blank first heading. Chosen by the
+# user 2026-11-05 from the full list of report tables; in the clean report
+# these are written as plain "**Label:** value" lines (one-column tables:
+# one plain line per row) instead of a table, which also takes them out of
+# the DMR's lost-table-border problem entirely. Matched on the exact
+# heading row, so a new table only joins this list by being added here.
+_EMR_UNTABLE_HEADERS = {
+    ("Factor",),                  # CVD risk factors
+    ("Barrier",),                 # every Barriers subsection
+    ("Field", "Value"),           # retired Pain Classification fields
+    ("", "Finding"),              # Posture; AD tab blocks with no L/R
+    ("Movement", "Findings"),     # Overpressure, Cervical OP
+    ("Direction", "Findings"),    # GH Accessory
+    ("Sign", "Result"),           # UMN Signs
+    ("Test", "Result"),           # Hypo/Hypersensitivity, SIJ, Timed Capability
+    ("Test", "Finding"),          # Muscle Activation, Movement Observation
+}
+
+
+def _emr_split_cells(row: str) -> list[str]:
+    row = row.strip()
+    inner = row[1:-1] if row.endswith("|") and not row.endswith("\\|") else row[1:]
+    return [c.strip() for c in _EMR_CELL_SPLIT_RE.split(inner)]
+
+
+def _emr_untable(src: list[str]) -> list[str]:
+    """Rewrite every _EMR_UNTABLE_HEADERS table in `src` as plain lines.
+
+    Each line ends in two spaces (a Markdown hard line break) so the rows
+    stay on separate lines without the extra paragraph spacing a blank line
+    between each would add in the .docx. Fenced blocks are left alone."""
+    out: list[str] = []
+    in_fence = False
+    i = 0
+    while i < len(src):
+        line = src[i]
+        st = line.strip()
+        if st.startswith("```"):
+            in_fence = not in_fence
+        if (not in_fence and st.startswith("|") and i + 1 < len(src)
+                and _EMR_TABLE_SEP_RE.match(src[i + 1].strip())
+                and tuple(_emr_split_cells(st)) in _EMR_UNTABLE_HEADERS):
+            i += 2
+            while i < len(src) and src[i].strip().startswith("|"):
+                cells = _emr_split_cells(src[i])
+                label = cells[0]
+                value = cells[1] if len(cells) > 1 else ""
+                if label and value:
+                    out.append(f"**{label}:** {value}  ")
+                elif label or value:
+                    out.append(f"{label or value}  ")
+                i += 1
+            continue
+        out.append(line)
+        i += 1
+    return out
+
+
+def _emr_table_row(row: str, is_header: bool) -> str:
+    """Make one pipe-table row readable once pasted into the DMR.
+
+    The DMR drops table borders on paste (same mechanism as the lost
+    paragraph indents/callouts — see _apply_emr_clean_layout), which made
+    larger tables hard to read. Literal text and bold survive, so:
+
+      - header row (the one directly above the separator row): every cell
+        bold, no bar
+      - first column (test/row names): bold, no bar
+      - every other cell: a leading "\u2502 " — the bars line up down each
+        column because cells are left-aligned. No closing bar after the
+        last column: cell lengths differ, so it could never line up.
+      - separator row: every column forced to explicit left alignment
+        (":---"), so pandoc writes a left justification into each .docx
+        cell. Without it the header row came out centred in the DMR while
+        the body rows were left-justified.
+
+    History: 2026-11-05 the user picked "bar before every cell + bold
+    header" from a six-style paste test; after a real-data trial the same
+    day, asked for the bars off the header row and first column and the
+    first column bolded too.
+    """
+    if _EMR_TABLE_SEP_RE.match(row):
+        segs = row.strip().strip("|").split("|")
+        fixed = []
+        for seg in segs:
+            seg = seg.strip()
+            if not seg.startswith(":"):
+                seg = ":" + seg[1:] if len(seg) > 1 else ":-"
+            fixed.append(seg)
+        return "| " + " | ".join(fixed) + " |"
+    cells = []
+    for i, c in enumerate(_emr_split_cells(row)):
+        if is_header or i == 0:
+            if c and not c.startswith("**"):
+                c = f"**{c}**"
+        else:
+            c = f"{_EMR_CELL_BAR} {c}".rstrip()
+        cells.append(c)
+    return "| " + " | ".join(cells) + " |"
+
+
 def _apply_emr_clean_layout(text: str) -> str:
     """
     Reformat a finished *_clean.md body for the real docx -> Google Docs ->
@@ -384,7 +494,8 @@ def _apply_emr_clean_layout(text: str) -> str:
     out: list[str] = []
     cur_indent = ""
     in_fence = False
-    for line in text.split("\n"):
+    src = _emr_untable(text.split("\n"))
+    for idx, line in enumerate(src):
         stripped = line.strip()
 
         # Fenced code block (the pab-intake PROM render): its alignment IS
@@ -412,11 +523,16 @@ def _apply_emr_clean_layout(text: str) -> str:
             cur_indent = _emr_indent_for_level(len(m.group(1)))
             continue
 
-        if not stripped or line.lstrip().startswith("|"):
-            # Blank lines and table rows pass through unindented — a pipe
-            # table's leading '|' needs to stay unobstructed, and existing
-            # tables in this report aren't part of this change.
+        if not stripped:
             out.append(line)
+            continue
+
+        if stripped.startswith("|"):
+            # Table rows stay unindented (a pipe table's leading '|' must
+            # stay unobstructed) but get visible column lines — see
+            # _emr_table_row.
+            nxt = src[idx + 1].strip() if idx + 1 < len(src) else ""
+            out.append(_emr_table_row(stripped, is_header=bool(_EMR_TABLE_SEP_RE.match(nxt))))
             continue
 
         m = _EMR_FIELD_RE.match(line)
