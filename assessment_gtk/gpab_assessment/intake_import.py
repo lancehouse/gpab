@@ -4,16 +4,21 @@ No GTK import: pure data in, data out, so it's testable without a window.
 The Outcome Measures section owns the file dialog and the fill-blanks-only
 apply step; this module only answers "what would this file put where".
 
-Only PROMs gpab already has fields for are scored (DASS-21, PCS, PSEQ /
-PSEQ-2, PCL-5, ISI) or copied (BPI interference, PHQ-4 items, PSFS activity
-names). Every other PROM — and every answer with no gpab field — goes into
-the `intake_raw` text field only, via render_raw(). PBAS is never scored:
-pab-intake items 3–10 are still placeholder text.
+PROMs gpab has fields for are scored into them (DASS-21, PCS, PSEQ /
+PSEQ-2, PCL-5, ISI, PBAS) or copied (BPI interference, PHQ-4 items, PSFS
+activity names). Every other PROM — and every answer with no
+gpab field — goes into the `intake_raw` text field only, via render_raw().
+PROMs with a scoring rule but no gpab field (BPI, PHQ-4, PHQ-9, DN4,
+painDETECT, NDI, LEFS, QuickDASH, UEFI) get their scores on the raw
+render's "Score:" line only, from compute_scores().
 
-Scoring rules (subscale item lists confirmed by the user, 2026-10-29):
-a score is only produced when every item it needs is answered — no
-prorating. Each score needs only its own items, so e.g. PSEQ-2 can import
-while the PSEQ total can't.
+Scoring rules (subscale item lists confirmed by the user, 2026-10-29;
+the later PROMs per prom-scoring-reference.md in pab-intake, reviewed by the
+user 2026-11-04): a score is only produced when every item it needs is
+answered — no prorating — except where the instrument itself allows
+missing items (BPI interference ≥4 of 7, QuickDASH ≥10 of 11). Each score
+needs only its own items, so e.g. PSEQ-2 can import while the PSEQ total
+can't.
 
 Requires schema_version 2 files: v2 embeds each PROM's item text and answer
 options (`prom_defs`), so the raw render never needs validated wording
@@ -42,8 +47,16 @@ _PCS_MAG = [6, 7, 13]
 _PCS_HELP = [1, 2, 3, 4, 5, 12]
 _PSEQ2 = [5, 9]
 
+_BPI_SEVERITY = ["worst", "least", "average", "now"]
 _BPI_INTERFERENCE = ["activity", "mood", "walking", "work", "relations", "sleep", "enjoyment"]
 _PHQ4_ITEMS = ["nervous", "worry", "noint", "depressed"]
+_PHQ9_ITEMS = ["noint", "depressed", "sleep", "tired", "appetite", "guilty",
+               "concentrating", "movement", "selfharm"]      # item 10 is not scored
+_DN4_ITEMS = ["q1_burning", "q1_cold", "q1_shocks", "q2_tingling", "q2_pins_needles",
+              "q2_numbness", "q2_itching"]               # interview items only (DN4i)
+_PDQ_SENSORY = ["burning", "tingling", "light_touch", "elec_shocks", "temp_pain",
+                "numbness", "pressure"]
+_PDQ_PATTERN = {"a": 0, "b": -1, "c": 1, "d": 1}
 
 
 def load_intake(path: str | Path) -> dict:
@@ -101,8 +114,21 @@ def _sum(intake: dict, prom: str, items_1based: list[int]) -> int | None:
     return None if any(v is None for v in vals) else sum(vals)
 
 
+def _sum_keys(intake: dict, prom: str, keys: list) -> int | None:
+    vals = [_answer(intake, prom, k) for k in keys]
+    return None if any(v is None for v in vals) else sum(vals)
+
+
+def _item_keys(intake: dict, prom: str) -> list:
+    return [it["key"] for it in (intake.get("prom_defs") or {}).get(prom, {}).get("items", [])]
+
+
 def _n_items(intake: dict, prom: str) -> int:
-    return len((intake.get("prom_defs") or {}).get(prom, {}).get("items", []))
+    return len(_item_keys(intake, prom))
+
+
+def _mean(vals: list[int]) -> str:
+    return f"{sum(vals) / len(vals):.1f}"
 
 
 # ── Field mapping ────────────────────────────────────────────────────────────
@@ -120,6 +146,9 @@ def compute_fields(intake: dict) -> dict[str, str]:
 
     if "psfs" in proms:
         r = proms["psfs"] or {}
+        # Names only: the GTK form has no psfs_act_N_score widgets. Each
+        # activity's score stays separate (the PSFS is not summed) and shows
+        # in the raw render.
         for n in (1, 2, 3):
             put(f"psfs_act_{n}", (r.get(f"act_{n}_name") or "").strip())
 
@@ -155,7 +184,120 @@ def compute_fields(intake: dict) -> dict[str, str]:
     if "isi" in proms:
         put("isi_score", _sum(intake, "isi", list(range(1, 8))))
 
+    if "pbas" in proms:
+        # Mean of the 10 items, /10 (Afolalu 2016: "the total score is based
+        # on the average score of all items").
+        s = _sum(intake, "pbas", list(range(1, 11)))
+        put("pbas_score", None if s is None else f"{s / 10:.1f}")
+
     return out
+
+
+# ── Scores with no gpab field ────────────────────────────────────────────────
+# Shown on the raw render's "Score:" line only. Each function returns the
+# line's parts, or None when the PROM can't be scored at all.
+
+def _band(s: float, bands: list[tuple[float, str]]) -> str:
+    """bands: (upper bound inclusive, label), ascending; last label catches the rest."""
+    for hi, label in bands:
+        if s <= hi:
+            return label
+    return bands[-1][1]
+
+
+def _score_bpi(intake: dict) -> list[str]:
+    sev = [_answer(intake, "bpi", k) for k in _BPI_SEVERITY]
+    parts = [f"Severity {_mean(sev)}/10" if None not in sev else "Severity – (incomplete)"]
+    intf = [v for v in (_answer(intake, "bpi", k) for k in _BPI_INTERFERENCE) if v is not None]
+    parts.append(f"Interference {_mean(intf)}/10" if len(intf) >= 4
+                 else "Interference – (fewer than 4 of 7 answered)")
+    worst = _answer(intake, "bpi", "worst")
+    if worst is not None:
+        parts.append("Worst pain " + _band(worst, [(0, "none"), (4, "mild"), (6, "moderate"),
+                                                    (10, "severe")]))
+    return parts
+
+
+def _score_phq4(intake: dict) -> list[str]:
+    parts = []
+    for label, keys in (("Anxiety (GAD-2)", ["nervous", "worry"]),
+                        ("Depression (PHQ-2)", ["noint", "depressed"])):
+        s = _sum_keys(intake, "phq4", keys)
+        parts.append(f"{label} – (incomplete)" if s is None else
+                     f"{label} {s}/6 {'positive (≥3)' if s >= 3 else 'negative (<3)'}")
+    return parts
+
+
+def _score_phq9(intake: dict) -> list[str]:
+    s = _sum_keys(intake, "phq9", _PHQ9_ITEMS)
+    parts = ["Total – (incomplete)" if s is None else
+             f"Total {s}/27 " + _band(s, [(4, "minimal"), (9, "mild"), (14, "moderate"),
+                                          (19, "moderately severe"), (27, "severe")])]
+    item9 = _answer(intake, "phq9", "selfharm")
+    if item9:
+        parts.append(f"ITEM 9 (self-harm) = {item9}/3 — FOLLOW UP")
+    return parts
+
+
+def _score_dn4(intake: dict) -> list[str]:
+    s = _sum_keys(intake, "dn4", _DN4_ITEMS)
+    if s is None:
+        return ["DN4 interview – (incomplete)"]
+    return [f"DN4 interview {s}/7 {'positive (≥3)' if s >= 3 else 'negative (<3)'}"]
+
+
+def _score_paindetect(intake: dict) -> list[str]:
+    sensory = _sum_keys(intake, "paindetect", _PDQ_SENSORY)
+    pattern = ((intake.get("proms") or {}).get("paindetect") or {}).get("pattern")
+    radiation = _answer(intake, "paindetect", "radiation")
+    if sensory is None or pattern not in _PDQ_PATTERN or radiation is None:
+        return ["Total – (incomplete)"]
+    s = sensory + _PDQ_PATTERN[pattern] + 2 * radiation
+    return [f"Total {s} (−1 to 38) neuropathic component "
+            + _band(s, [(12, "unlikely"), (18, "unclear"), (38, "likely")])]
+
+
+def _score_ndi(intake: dict) -> list[str]:
+    s = _sum_keys(intake, "ndi", _item_keys(intake, "ndi"))
+    if s is None:
+        return ["Total – (incomplete)"]
+    return [f"Total {s}/50 ({s * 2}%) " + _band(s, [(4, "no disability"), (14, "mild"),
+                                                   (24, "moderate"), (34, "severe"),
+                                                   (50, "complete")])]
+
+
+def _score_raw_sum(prom: str, hi: int):
+    def score(intake: dict) -> list[str]:
+        s = _sum_keys(intake, prom, _item_keys(intake, prom))
+        return ["Total – (incomplete)" if s is None else f"Total {s}/{hi}"]
+    return score
+
+
+def _score_quickdash(intake: dict) -> list[str]:
+    vals = [v for v in (_answer(intake, "quickdash", k) for k in _item_keys(intake, "quickdash"))
+            if v is not None]
+    if len(vals) < 10:
+        return ["Score – (more than 1 item missing)"]
+    return [f"Score {(sum(vals) / len(vals) - 1) * 25:.1f}/100 (n = {len(vals)})"]
+
+
+_SCORE_FUNCS = {
+    "bpi": _score_bpi,
+    "phq4": _score_phq4,
+    "phq9": _score_phq9,
+    "dn4": _score_dn4,
+    "paindetect": _score_paindetect,
+    "ndi": _score_ndi,
+    "lefs": _score_raw_sum("lefs", 80),
+    "uefi": _score_raw_sum("uefi", 80),
+    "quickdash": _score_quickdash,
+}
+
+
+def compute_scores(intake: dict) -> dict[str, list[str]]:
+    """PROM key -> score-line parts, for answered PROMs gpab has no field for."""
+    proms = intake.get("proms") or {}
+    return {k: f(intake) for k, f in _SCORE_FUNCS.items() if k in proms}
 
 
 # ── Raw-text render ──────────────────────────────────────────────────────────
@@ -292,8 +434,8 @@ def _render_prom(intake: dict, key: str, d: dict) -> list[str]:
     return out
 
 
-# Score lines reuse compute_fields, so the render only ever shows scores
-# gpab actually calculates — no extra scoring rules live here.
+# Score lines reuse compute_fields (and compute_scores for PROMs with no
+# gpab field), so the render only ever shows scores gpab actually calculates.
 _SCORE_LINES = {
     "dass21": [("Depression", "dass_dep_score", 42), ("Anxiety", "dass_anx_score", 42),
                ("Stress", "dass_str_score", 42)],
@@ -302,15 +444,20 @@ _SCORE_LINES = {
     "pseq":   [("PSEQ", "pseq_score", 60), ("PSEQ-2 (items 5, 9)", "pseq2_score", 12)],
     "pcl5":   [("Total", "pcl5_score", 80)],
     "isi":    [("Total", "isi_score", 28)],
+    "pbas":   [("Mean", "pbas_score", 10)],
 }
 
 
-def _score_line(fields: dict[str, str], key: str) -> str:
+def _score_line(fields: dict[str, str], key: str, scores: dict[str, list[str]]) -> str:
+    if key in scores:
+        return "Score: " + " · ".join(scores[key])
     if key not in _SCORE_LINES:
         return "Score: not calculated (no scoring rule in gpab)"
     parts = [f"{label} {fields[fid]}/{hi}" if fid in fields else f"{label} – (incomplete)"
              for label, fid, hi in _SCORE_LINES[key]]
-    note = " (×2, DASS-42 scale)" if key == "dass21" else ""
+    note = {"dass21": " (×2, DASS-42 scale)",
+            "pbas": f" (sum {round(float(fields['pbas_score']) * 10)}/100)"
+                    if "pbas_score" in fields else ""}.get(key, "")
     return "Score: " + " · ".join(parts) + note
 
 
@@ -321,6 +468,7 @@ def render_raw(intake: dict) -> str:
     order = [k for k in intake.get("battery", []) if k in proms] + \
             [k for k in proms if k not in intake.get("battery", [])]
     fields = compute_fields(intake)
+    scores = compute_scores(intake)
     blocks = [f"Patient intake {intake.get('session_code', '')}".rstrip()]
     for key in order:
         if key not in defs:
@@ -328,6 +476,6 @@ def render_raw(intake: dict) -> str:
             continue
         lines = _render_prom(intake, key, defs[key])
         if defs[key].get("flow") != "psfs":
-            lines.append(_score_line(fields, key))
+            lines.append(_score_line(fields, key, scores))
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)

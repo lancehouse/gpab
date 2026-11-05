@@ -66,6 +66,7 @@ from .report_timer import ReportTimer
 from .timer_widget import SessionTimerWidget
 from .objective.sections.lumbar_tables import sij_report_compat
 from .goniometer_import import importer as gonio_importer
+from . import rom_graphs
 from .goniometer_import.matcher import match_batch
 from .goniometer_import.wizard_screen import GonioImportWizard, GonioPatientPickerWindow
 
@@ -997,6 +998,9 @@ class TrialWindow(Gtk.ApplicationWindow):
         if ctrl_held and name.lower() == "g":
             self._open_gonio_import()
             return True
+        if ctrl_held and name.lower() == "m":
+            self._import_rom_graphs()
+            return True
         if alt_held and name.lower() in self._ALT_KEY_MAP:
             self._show_section("02_subjective")
             self.subjective.jump_to(self._ALT_KEY_MAP[name.lower()])
@@ -1023,6 +1027,40 @@ class TrialWindow(Gtk.ApplicationWindow):
         at a time. Corrections edit each field's buffer in place, so they
         ride the normal autosave path exactly like typed edits."""
         SpellcheckModal(self, self).present()
+
+    def _import_rom_graphs(self) -> None:
+        """Ctrl+M — put today's ROM Ring movement graphs (PNGs sent from the
+        phone to ~/GSConnectInbox) onto this session's Objective bodychart.
+        No wizard and no field values: the phone sends no patient code, so
+        the open session IS the patient. See rom_graphs.py.
+
+        Flush every pending debounced save first: _load() below reloads from
+        disk, and an edit typed in the last couple of seconds would otherwise
+        be dropped."""
+        if self._save_source_id is not None:
+            GLib.source_remove(self._save_source_id)
+            self._save_source_id = None
+            self._do_save()
+        if self._save_source_id_obj is not None:
+            GLib.source_remove(self._save_source_id_obj)
+            self._save_source_id_obj = None
+            self._do_save_obj()
+        if self._save_source_id_chart_notes is not None:
+            GLib.source_remove(self._save_source_id_chart_notes)
+            self._save_source_id_chart_notes = None
+            self._do_save_chart_notes()
+
+        res = rom_graphs.attach(self.session_file)
+        older = (f"; {res.older_left} older graph(s) left in ~/GSConnectInbox or ~/Downloads"
+                 if res.older_left else "")
+        if not res.attached:
+            self.save_status.set_label(f"No ROM graphs from today waiting{older}")
+            return
+        # Rep times, so a graph left over from an earlier patient today stands out.
+        times = ", ".join(rom_graphs.rep_time(n) for n in sorted(res.attached))
+        self.save_status.set_label(
+            f"Placed {len(res.attached)} ROM graph(s) ({times}) on the Objective bodychart{older}")
+        self._load()
 
     def _open_gonio_import(self) -> None:
         """Ctrl+G — import goniometer ROM measurements for the open patient
