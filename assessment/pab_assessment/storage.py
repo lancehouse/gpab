@@ -339,6 +339,10 @@ _EMR_NBSP_UNIT = " " * 4
 
 _EMR_HEADING_RE = re.compile(r'^(#{1,6})\s+(.*)$')
 _EMR_FIELD_RE   = re.compile(r'^\*\*(.+?):\*\*(.*)$')
+# A whole line that is just a bold label with no colon — how the clean
+# report writes a Yes button (export_session_report's f()). Kept flush
+# left like any other label line.
+_EMR_BARE_LABEL_RE = re.compile(r'^\*\*[^*]+\*\*\s*$')
 
 
 def _emr_indent_for_level(level: int) -> str:
@@ -535,6 +539,16 @@ def _apply_emr_clean_layout(text: str) -> str:
             out.append(_emr_table_row(stripped, is_header=bool(_EMR_TABLE_SEP_RE.match(nxt))))
             continue
 
+        if _EMR_BARE_LABEL_RE.match(line):
+            # Bare Yes label — flush left, like a label; a red flag keeps
+            # the same "!!!" emphasis as its "**Label:**" form below.
+            if "⚠️" in line or "RED FLAG" in line.upper():
+                bare = line.replace("**", "").replace("⚠️", "").strip()
+                out.append(f"**!!! {bare} !!!**  ")
+            else:
+                out.append(line)
+            continue
+
         m = _EMR_FIELD_RE.match(line)
         if m:
             label_text, rest = m.group(1), m.group(2)
@@ -703,6 +717,71 @@ _TRIPLET_LEGACY = {
 }
 
 
+# Per-subsection Special Tests notes (added 2026-11-10 — one free-text
+# field at the end of every special-tests group, all six regions). Keyed by
+# the group's FIRST test id, which is identical in the YAML
+# (objective/sections/yaml/<region>.yaml, notes_id) and in both report
+# mirrors below (_XX_ST_GROUPS / _XX_ST_GROUPS_R) — so one table serves
+# both and a group label tweak can't break the link. Cervical Motor Control
+# is absent on purpose: it already had st_ccft_notes, rendered separately.
+_ST_GROUP_NOTES: dict[str, str] = {
+    # lumbar
+    "st_slr": "st_lx_disc_notes", "st_slump": "st_lx_neuro_notes",
+    "st_faber": "st_lx_hip_notes", "st_prone_inst": "st_lx_instab_notes",
+    # cervical (Motor Control already has st_ccft_notes)
+    "st_spurling": "st_cx_radic_notes", "st_ulnt1": "st_cx_neuro_notes",
+    "st_frt": "st_cx_cgh_notes", "st_sharp_purser": "st_cx_sharp_purser_notes",
+    "st_ant_shear": "st_cx_alar_notes", "st_vbi_sus_rot": "st_cx_vbi_notes",
+    # shoulder
+    "st_hawkins": "st_sh_imp_notes", "st_empty_can": "st_sh_rc_notes",
+    "st_cross_body": "st_sh_acj_notes", "st_speeds": "st_sh_biceps_notes",
+    "st_apprehension": "st_sh_instab_notes", "st_sulcus": "st_sh_sulcus_notes",
+    "st_scap_assist": "st_sh_scap_assist_notes", "st_wall_pushup": "st_sh_serratus_notes",
+    "st_adson": "st_sh_tos_notes",
+    # hip
+    "st_hp_fadir": "st_hp_fai_notes", "st_hp_faber": "st_hp_oa_notes",
+    "st_hp_ober": "st_hp_gtps_notes", "st_hp_puranen_orava": "st_hp_hamstring_notes",
+    "st_hp_squeeze": "st_hp_adductor_notes",
+    # knee
+    "st_kn_lachman": "st_kn_acl_notes", "st_kn_post_draw": "st_kn_pcl_notes",
+    "st_kn_mcmurray": "st_kn_meniscus_notes", "st_kn_valgus_0": "st_kn_mcl_notes",
+    "st_kn_varus_0": "st_kn_lcl_notes", "st_kn_clarkes": "st_kn_pfj_notes",
+    # ankle
+    "st_ak_ant_draw": "st_ak_lat_lig_notes", "st_ak_thompson": "st_ak_achilles_notes",
+    "st_ak_squeeze": "st_ak_syndesmosis_notes", "st_ak_ott_lat_mal": "st_ak_ottawa_notes",
+    "st_ak_per_prov": "st_ak_peroneal_notes",
+}
+
+
+# Clean report (2026-11-10, user's choice from real-data previews): a note
+# that belongs to ONE item is printed indented directly under that item's
+# line with no heading of its own — "**Behaviour: Boom-Bust**" then the note
+# text — instead of a second "**Boom-Bust (notes):**" label. Only when the
+# owner's line was the line written immediately before; otherwise (owner
+# empty and left out) the note keeps its own label so it still reads on its
+# own. Every "<fid>_note" checklist note (fn() in Rx Plan) pairs with <fid>
+# automatically; these are the others.
+_CLEAN_NOTE_OWNER: dict[str, str] = {
+    "cause_understanding_detail": "cause_understanding",
+    "behaviour_boom_bust_text":   "behaviour_boom_bust",
+    "behaviour_avoidance_text":   "behaviour_avoidance",
+    "behaviour_endurance_text":   "behaviour_endurance",
+    "behaviour_flareups_text":    "behaviour_flareups",
+    "sleep_overall_comments":     "sleep_overall_rating",
+}
+
+
+def _clean_note_owner(fid: str) -> str | None:
+    return _CLEAN_NOTE_OWNER.get(fid) or (fid[:-5] if fid.endswith("_note") else None)
+
+
+# Notes that cover a whole subsection's list — shortened to a plain
+# "**Notes:**" in the clean report once that list has printed above them
+# (the subsection heading already says what they're about); with nothing
+# above them they keep their full label.
+_CLEAN_GROUP_NOTES = {"belief_notes", "add_other"}
+
+
 def _trip_val(d: dict, prefix: str, col: str) -> str:
     v = str(d.get(f"{prefix}_{col}") or "").strip()
     legacy = _TRIPLET_LEGACY.get((prefix, col))
@@ -798,7 +877,23 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
         if clean:
             sl.append("")
 
-    def _maybe_note(sl: list, lbl: str, v: str) -> None:
+    def _maybe_note(sl: list, lbl: str, v: str, table_note: bool = False,
+                    pair_prefix: str | None = None) -> None:
+        # Clean report only (2026-11-10, see _CLEAN_NOTE_OWNER for the
+        # subjective side): table_note=True — a note about the single table
+        # directly above it — reads as plain "*Notes*" when that table was
+        # actually printed just before (its own label otherwise, so it
+        # still makes sense on its own). pair_prefix — a note about the one
+        # line starting with this text — prints indented under that line,
+        # no label, when it's the line just written.
+        if v and clean and pair_prefix and sl and sl[-1].startswith(pair_prefix):
+            sl[-1] = sl[-1].rstrip() + "  "
+            sl.extend((r + "  ") if r.strip() else r for r in v.split("\n"))
+            sl.append("")
+            return
+        if (v and clean and table_note and len(sl) >= 2 and sl[-1] == ""
+                and sl[-2].lstrip().startswith("|")):
+            lbl = "*Notes*"
         if v:
             # Data-purity fix: embedded "\n"s used to be joined straight into
             # the output list, which CommonMark then renders as a *soft*
@@ -845,7 +940,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             cmt = gen.get(f"{key}_cmt", "").strip()
             posture_rows.append([lbl, f"{v} — {cmt}" if cmt else v])
         _maybe_table(sl, "Posture", ["", "Finding"], posture_rows)
-        _maybe_note(sl, "*Posture notes*", gen.get("go_posture_notes", "").strip())
+        _maybe_note(sl, "*Posture notes*", gen.get("go_posture_notes", "").strip(), table_note=True)
         _flush_section("### 01 General Observation", sl)
 
     # ── 02 Active Movement ────────────────────────────────────────────────────
@@ -929,7 +1024,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             hp_tbl = [[lbl, _hp_cell(p,"ax_l"), _hp_cell(p,"ax_r")]
                       for lbl, p in hp_rom_def]
             _maybe_table(sl, "Hip ROM", ["","Ax L","Ax R"], hp_tbl)
-            _maybe_note(sl, "*Hip notes*", act.get("am_hp_notes", "").strip())
+            _maybe_note(sl, "*Hip notes*", act.get("am_hp_notes", "").strip(), table_note=True)
         if any(k.startswith("kn_") for k in act):
             def _kn_cell(p, s):
                 v  = act.get(f"{p}_{s}_range", "") or ""
@@ -939,7 +1034,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             kn_tbl = [[lbl, _kn_cell(p,"ax_l"), _kn_cell(p,"ax_r")]
                       for lbl, p in kn_rom_def]
             _maybe_table(sl, "Knee ROM", ["","Ax L","Ax R"], kn_tbl)
-            _maybe_note(sl, "*Knee notes*", act.get("am_kn_notes", "").strip())
+            _maybe_note(sl, "*Knee notes*", act.get("am_kn_notes", "").strip(), table_note=True)
         if any(k.startswith("ak_") for k in act):
             def _ak_cell(p, s):
                 v  = act.get(f"{p}_{s}_range", "") or ""
@@ -951,7 +1046,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             ak_tbl = [[lbl, _ak_cell(p,"ax_l"), _ak_cell(p,"ax_r")]
                       for lbl, p in ak_rom_def]
             _maybe_table(sl, "Ankle ROM", ["","Ax L","Ax R"], ak_tbl)
-            _maybe_note(sl, "*Ankle notes*", act.get("am_ak_notes", "").strip())
+            _maybe_note(sl, "*Ankle notes*", act.get("am_ak_notes", "").strip(), table_note=True)
         _flush_section("### 02 Active Movement", sl)
 
     # ── 03 Passive Movement ───────────────────────────────────────────────────
@@ -1094,26 +1189,26 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
         ul_reflex_rows = [[lbl, neu.get(f"{p}_l") or "—", neu.get(f"{p}_r") or "—"]
                           for lbl, p in ul_reflex_def]
         _maybe_table(sl, "UL Reflexes", ["Test", "Left", "Right"], ul_reflex_rows)
-        _maybe_note(sl, "*UL Reflex Notes:*", neu.get("nr_ul_reflex_notes", "").strip())
+        _maybe_note(sl, "*UL Reflex Notes:*", neu.get("nr_ul_reflex_notes", "").strip(), table_note=True)
         ul_myotome_def = [("C5 Shldr abd","nr_c5"),("C6 Wrist ext","nr_c6"),
                           ("C7 Elbow ext","nr_c7"),("C8 Finger flx","nr_c8"),
                           ("T1 Finger abd","nr_t1")]
         ul_myotome_rows = [[lbl, neu.get(f"{p}_l") or "—", neu.get(f"{p}_r") or "—"]
                            for lbl, p in ul_myotome_def]
         _maybe_table(sl, "UL Myotomes", ["Level", "Left", "Right"], ul_myotome_rows)
-        _maybe_note(sl, "*UL Myotome Notes:*", neu.get("nr_ul_myotome_notes", "").strip())
+        _maybe_note(sl, "*UL Myotome Notes:*", neu.get("nr_ul_myotome_notes", "").strip(), table_note=True)
         ul_derm_def = [("C5 Lat arm/delt","sn_c5"),("C6 Thumb & index","sn_c6"),
                        ("C7 Middle finger","sn_c7"),("C8 Little/ulnar","sn_c8"),
                        ("T1 Med forearm","sn_t1")]
         ul_derm_rows = [[lbl, neu.get(f"{p}_l") or "—", neu.get(f"{p}_r") or "—"]
                         for lbl, p in ul_derm_def]
         _maybe_table(sl, "UL Dermatomes", ["Level", "Left", "Right"], ul_derm_rows)
-        _maybe_note(sl, "*UL Dermatome Notes:*", neu.get("nr_ul_derm_notes", "").strip())
+        _maybe_note(sl, "*UL Dermatome Notes:*", neu.get("nr_ul_derm_notes", "").strip(), table_note=True)
         ulnt_def = [("ULNT1","nr_ulnt1"),("ULNT2a","nr_ulnt2a"),("ULNT3","nr_ulnt3")]
         ulnt_rows = [[lbl, neu.get(f"{p}_l_resp","") or "—", neu.get(f"{p}_r_resp","") or "—"]
                      for lbl, p in ulnt_def]
         _maybe_table(sl, "Upper Limb Neurodynamics", ["Test", "L Response", "R Response"], ulnt_rows)
-        _maybe_note(sl, "*UL Neurodynamics Notes:*", neu.get("nr_ul_nd_notes", "").strip())
+        _maybe_note(sl, "*UL Neurodynamics Notes:*", neu.get("nr_ul_nd_notes", "").strip(), table_note=True)
         neuro_def = [
             ("Knee jerk L3/4","nr_knee"),("Ankle jerk S1","nr_ankle"),
             ("L2 Hip flex","nr_l2"),("L3 Knee ext","nr_l3"),("L4 Ankle DF","nr_l4"),
@@ -1130,7 +1225,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
         derm_rows_nr = [[lbl, neu.get(f"{p}_l") or "—", neu.get(f"{p}_r") or "—"]
                         for lbl, p in _derm_def_nr]
         _maybe_table(sl, "LL Dermatomes", ["Level", "Left", "Right"], derm_rows_nr)
-        _maybe_note(sl, "*LL Dermatome Notes:*", neu.get("nr_ll_derm_notes", "").strip())
+        _maybe_note(sl, "*LL Dermatome Notes:*", neu.get("nr_ll_derm_notes", "").strip(), table_note=True)
         nd_def = [("SLR","nr_slr"),("Slump","nr_slump"),("PKF","nr_pkf")]
         nd_rows = []
         for lbl, p in nd_def:
@@ -1139,7 +1234,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             nd_rows.append([lbl, f"{ld}°" if ld else "—", lr,
                                   f"{rd}°" if rd else "—", rr])
         _maybe_table(sl, "LL Neurodynamics", ["Test", "L °", "L Resp", "R °", "R Resp"], nd_rows)
-        _maybe_note(sl, "*LL Neurodynamics Notes:*", neu.get("nr_ll_nd_notes", "").strip())
+        _maybe_note(sl, "*LL Neurodynamics Notes:*", neu.get("nr_ll_nd_notes", "").strip(), table_note=True)
         umn_items = [("Hyperreflexia","nr_umn_hyper"),("Babinski +","nr_umn_bab"),
                      ("Clonus","nr_umn_clonus"),("Romberg +","nr_umn_romberg"),
                      ("Coord impaired","nr_umn_coord"),
@@ -1148,7 +1243,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
         umn_rows = [[lbl, "Yes" if neu.get(uid) is True else "No" if neu.get(uid) is False else "*(not answered)*"]
                     for lbl, uid in umn_items]
         _maybe_table(sl, "UMN Signs", ["Sign", "Result"], umn_rows)
-        _maybe_note(sl, "*UMN Notes:*", neu.get("nr_umn_notes", "").strip())
+        _maybe_note(sl, "*UMN Notes:*", neu.get("nr_umn_notes", "").strip(), table_note=True)
         _maybe_note(sl, "*Notes:*", neu.get("nr_notes", "").strip())
         _flush_section("### 04 Neurological", sl)
 
@@ -1340,6 +1435,8 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 lx_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Lumbar — {grp_lbl}", ["Test","Left","Right"], lx_st_rows)
+                _maybe_note(sl, f"*Lumbar — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip(), table_note=True)
         _CX_ST_GROUPS = [
             ("Radiculopathy",  [("Spurling","st_spurling"),("Distraction","st_distraction")]),
             ("Neurodynamics",  [("ULNT1","st_ulnt1"),("ULNT2a","st_ulnt2a"),("ULNT3","st_ulnt3")]),
@@ -1355,8 +1452,10 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 cx_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Cervical — {grp_lbl}", ["Test","Left","Right"], cx_st_rows)
-        for key, lbl in [("st_lx_notes","*Lumbar notes:*"),("st_cx_notes","*Cervical notes:*"),
-                          ("st_ccft_notes","*CCFT notes (Lean angle · Nod · Lift · Hover):*")]:
+                _maybe_note(sl, f"*Cervical — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip(), table_note=True)
+        for key, lbl in [("st_lx_notes","*Lumbar notes*"),("st_cx_notes","*Cervical notes*"),
+                          ("st_ccft_notes","*CCFT notes (Lean angle · Nod · Lift · Hover)*")]:
             _maybe_note(sl, lbl, spl.get(key, "").strip())
         _SH_ST_GROUPS = [
             ("Impingement",  [("Hawkins","st_hawkins"),("Neer","st_neer"),
@@ -1383,6 +1482,8 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 sh_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Shoulder — {grp_lbl}", ["Test","Left","Right"], sh_st_rows)
+                _maybe_note(sl, f"*Shoulder — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip(), table_note=True)
             _maybe_note(sl, "*Shoulder test notes*", spl.get("st_sh_notes", "").strip())
         _HP_ST_GROUPS = [
             ("FAI/Impingement", [("FADIR","st_hp_fadir"),("Ant Impingement","st_hp_ant_imp")]),
@@ -1398,6 +1499,8 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 hp_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Hip — {grp_lbl}", ["Test","Left","Right"], hp_st_rows)
+                _maybe_note(sl, f"*Hip — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip(), table_note=True)
             _maybe_note(sl, "*Hip test notes*", spl.get("st_hp_notes", "").strip())
         _KN_ST_GROUPS = [
             ("ACL",     [("Lachman","st_kn_lachman"),("Ant Drawer","st_kn_ant_draw"),
@@ -1415,6 +1518,8 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 kn_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Knee — {grp_lbl}", ["Test","Left","Right"], kn_st_rows)
+                _maybe_note(sl, f"*Knee — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip(), table_note=True)
             _maybe_note(sl, "*Knee test notes*", spl.get("st_kn_notes", "").strip())
         _AK_ST_GROUPS = [
             ("Lateral Lig",  [("Ant Drawer","st_ak_ant_draw"),("Talar Tilt","st_ak_talar_tilt")]),
@@ -1431,6 +1536,8 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 ak_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Ankle — {grp_lbl}", ["Test","Left","Right"], ak_st_rows)
+                _maybe_note(sl, f"*Ankle — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip(), table_note=True)
             _maybe_note(sl, "*Ankle test notes*", spl.get("st_ak_notes", "").strip())
         _flush_section("### 08 Special Tests", sl)
 
@@ -1487,7 +1594,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
         }
         if not clean or crps.get("crps_disp_pain") is not None:
             sl.append(f"**Rule 1 — Disproportionate pain:** {_crps_flag(crps.get('crps_disp_pain'))}")
-        _maybe_note(sl, "*Disp. pain notes*", crps.get("crps_disp_pain_notes", "").strip())
+        _maybe_note(sl, "*Disp. pain notes*", crps.get("crps_disp_pain_notes", "").strip(), pair_prefix="**Rule 1")
 
         sx_t = crps.get("crps_sx_domains_triggered", 0)
         sx_rows = []
@@ -1499,7 +1606,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             sx_rows.append([dom_lbl, "Yes" if triggered else "No", present])
         _maybe_table(sl, f"Rule 2 — Symptoms ({sx_t}/4 domains; need ≥ 3)",
                      ["Domain", "Triggered", "Items present"], sx_rows, data_from=0)
-        _maybe_note(sl, "*Symptom notes*", crps.get("crps_sx_notes", "").strip())
+        _maybe_note(sl, "*Symptom notes*", crps.get("crps_sx_notes", "").strip(), table_note=True)
 
         sg_t = crps.get("crps_sg_domains_triggered", 0)
         sg_rows = []
@@ -1511,11 +1618,11 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
             sg_rows.append([dom_lbl, "Yes" if triggered else "No", present])
         _maybe_table(sl, f"Rule 3 — Signs ({sg_t}/4 domains; need ≥ 2)",
                      ["Domain", "Triggered", "Items present"], sg_rows, data_from=0)
-        _maybe_note(sl, "*Sign notes*", crps.get("crps_sg_notes", "").strip())
+        _maybe_note(sl, "*Sign notes*", crps.get("crps_sg_notes", "").strip(), table_note=True)
 
         if not clean or crps.get("crps_no_alt_dx") is not None:
             sl.append(f"**Rule 4 — No other diagnosis:** {_crps_flag(crps.get('crps_no_alt_dx'))}")
-        _maybe_note(sl, "*No-alt-dx notes*", crps.get("crps_no_alt_dx_notes", "").strip())
+        _maybe_note(sl, "*No-alt-dx notes*", crps.get("crps_no_alt_dx_notes", "").strip(), pair_prefix="**Rule 4")
 
         _crps_flags_answered = any(crps.get(f) is not None for f in ("crps_disp_pain", "crps_no_alt_dx"))
         if not clean or _crps_flags_answered or crps.get("crps_criteria_met"):
@@ -1525,7 +1632,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
         subtype_val = crps.get("crps_subtype")
         if subtype_val:
             sl.append(f"**Subtype:** {_crps_subtype_full.get(subtype_val, subtype_val)}")
-        _maybe_note(sl, "*Subtype notes*", crps.get("crps_subtype_notes", "").strip())
+        _maybe_note(sl, "*Subtype notes*", crps.get("crps_subtype_notes", "").strip(), pair_prefix="**Subtype:**")
         _maybe_note(sl, "*General notes*", crps.get("crps_notes", "").strip())
 
         tpd = crps.get("crps_tpd_notes", "").strip()
@@ -1562,7 +1669,7 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
         ]
         _maybe_table(sl, "Laterality", ["Task","L acc","L speed","R acc","R speed"],
                      _lat_rows_md, data_from=1)
-        _maybe_note(sl, "*Laterality notes*", crps.get("crps_lat_notes", "").strip())
+        _maybe_note(sl, "*Laterality notes*", crps.get("crps_lat_notes", "").strip(), table_note=True)
         _flush_section("### 09 CRPS (Budapest / Valencia Criteria)", sl)
 
     # ── 10 AD position-ordered forms ─────────────────────────────────────────
@@ -2308,6 +2415,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 lx_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Lumbar {grp_lbl}","Left","Right"], lx_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Lumbar {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Lumbar {grp_lbl} notes: (empty)")
         _CX_ST_GROUPS_R = [
             ("Radiculopathy",  [("Spurling","st_spurling"),("Distraction","st_distraction")]),
             ("Neurodynamics",  [("ULNT1","st_ulnt1"),("ULNT2a","st_ulnt2a"),("ULNT3","st_ulnt3")]),
@@ -2323,6 +2435,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 cx_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Cervical {grp_lbl}","Left","Right"], cx_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Cervical {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Cervical {grp_lbl} notes: (empty)")
         for key, lbl in [("st_lx_notes","Lumbar notes"),("st_cx_notes","Cervical notes"),
                           ("st_ccft_notes","CCFT notes (Lean angle / Nod / Lift / Hover)")]:
             v = spl.get(key, "").strip()
@@ -2355,6 +2472,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 sh_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Shoulder {grp_lbl}","Left","Right"], sh_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Shoulder {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Shoulder {grp_lbl} notes: (empty)")
             v = spl.get("st_sh_notes", "").strip()
             if v:
                 sl.append(f"  Shoulder test notes: {v}")
@@ -2374,6 +2496,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 hp_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Hip {grp_lbl}","Left","Right"], hp_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Hip {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Hip {grp_lbl} notes: (empty)")
             v = spl.get("st_hp_notes", "").strip()
             if v:
                 sl.append(f"  Hip test notes: {v}")
@@ -2395,6 +2522,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 kn_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Knee {grp_lbl}","Left","Right"], kn_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Knee {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Knee {grp_lbl} notes: (empty)")
             v = spl.get("st_kn_notes", "").strip()
             if v:
                 sl.append(f"  Knee test notes: {v}")
@@ -2415,6 +2547,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 ak_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Ankle {grp_lbl}","Left","Right"], ak_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Ankle {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Ankle {grp_lbl} notes: (empty)")
             v = spl.get("st_ak_notes", "").strip()
             if v:
                 sl.append(f"  Ankle test notes: {v}")
@@ -3207,13 +3344,35 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         s = str(val).strip()
         return _md_text(s) if s else "*(empty)*"
 
+    # Clean-report note pairing (see _CLEAN_NOTE_OWNER): which field f()
+    # wrote last — cleared by any other output — and how many lines the
+    # current subsection has written so far (for _CLEAN_GROUP_NOTES).
+    _last_f: list = [None]
+    _since_sub: list = [0]
+
     def _emit(*ls: str) -> None:
         if _pending:
             lines.extend(_pending)
             _pending.clear()
         lines.extend(ls)
+        _last_f[0] = None
+        _since_sub[0] += len(ls)
+
+    def _paired_note(fid: str, text: str) -> bool:
+        """Clean report: print `text` straight under its owner's line, no
+        heading, when the owner was the line just written. Returns False
+        (caller prints it normally, with its label) otherwise."""
+        owner = _clean_note_owner(fid)
+        if not clean or not text or owner is None or owner != _last_f[0]:
+            return False
+        rows = text.split("\n")
+        _emit(*[(r + "  ") if r.strip() else r for r in rows])
+        if len(rows) > 1:
+            _emit("")
+        return True
 
     def sec(title):
+        _since_sub[0] = 0
         if clean:
             if title == "Body Chart Summary":
                 _pending[:] = []  # suppress entirely in clean mode
@@ -3232,6 +3391,7 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
             lines.append(f"\n---\n\n## {title}\n")
 
     def sub(title):
+        _since_sub[0] = 0
         clean_title = title.replace(" (ICE+)", "") if clean else title
         if clean:
             while _pending and _pending[-1].lstrip().startswith("### "):
@@ -3251,14 +3411,30 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         val = d.get(fid)
         if clean and _empty(val):
             return
+        if clean and isinstance(val, str) and _paired_note(fid, _md_text(val.strip())):
+            return
+        if clean and (val is True or val == "Yes"):  # "Yes": 3-state Yes/No/N/A buttons
+            # Clean report: a Yes button reads as just its label — the bold
+            # label already says it's present, ": Yes" was noise (user
+            # request 2026-11-10). No stays explicit ("**Label:** No"): no
+            # one negative wording ("Not"/"Denies") reads right for every
+            # label. The full report keeps "Yes" as the complete record.
+            _emit(f"**{_label(fid)}**  ")
+            _last_f[0] = fid
+            return
         line = f"**{_label(fid)}:** {_v(val)}"
         _emit(line + "  " if clean else line)
+        _last_f[0] = fid
 
     def txt(fid, d):
         val = _md_text((d.get(fid) or "").strip())
         if clean and not val:
             return
+        if _paired_note(fid, val):
+            return
         label = _label(fid)
+        if clean and fid in _CLEAN_GROUP_NOTES and _since_sub[0] > 0:
+            label = "Notes"
         if val and "\n" in val:
             _emit(f"**{label}:**  ")
             # Data-purity fix: hard-break markers used to be gated on
@@ -3474,7 +3650,9 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         act_rows.append(["Pre-injury", *_act_trip("pre_activity")])
     if not clean or _act_trip_has_data("current_activity"):
         act_rows.append(["Current", *_act_trip("current_activity")])
-    if not clean or _act_trip_has_data("exercise_type"):
+    # Exercise type: field retired from the Subjective tab 2026-11-10 — row
+    # shown only where an older session still holds data for it.
+    if _act_trip_has_data("exercise_type"):
         act_rows.append(["Exercise type", *_act_trip("exercise_type")])
     if not clean or _act_trip_has_data("exercise_dose"):
         act_rows.append(["Exercise dose", *_act_trip("exercise_dose")])
@@ -5192,7 +5370,8 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
 
     _trip_raw("pre_activity", "Pre-injury activity level")
     _trip_raw("current_activity", "Current activity level")
-    _trip_raw("exercise_type", "Exercise type")
+    if any(_trip_val(s, "exercise_type", c) for c in ("vigorous", "moderate", "strengthening")):
+        _trip_raw("exercise_type", "Exercise type")  # retired 2026-11-10 — data-only
     _trip_raw("exercise_dose", "Exercise dose")
     txt("exercise_response", s)
 

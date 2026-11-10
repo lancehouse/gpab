@@ -152,6 +152,7 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self.set_margin_bottom(8)
         self.set_margin_start(8)
         self.set_margin_end(8)
+        self._retired: dict = {}
         self._loading = False
         self._on_changed = None
         self._on_chart_note_changed = None
@@ -290,13 +291,10 @@ class SubjectiveSection(Gtk.Box, SectionBase):
             self.current_activity_vigorous, self.current_activity_moderate, self.current_activity_strengthening,
         )))
 
-        self.append(_triplet_header_row())
-        self.exercise_type_vigorous = AutoTextView("exercise_type_vigorous", min_lines=1)
-        self.exercise_type_moderate = AutoTextView("exercise_type_moderate", min_lines=1)
-        self.exercise_type_strengthening = AutoTextView("exercise_type_strengthening", min_lines=1)
-        self.append(_triplet_row("EXERCISE TYPE", (
-            self.exercise_type_vigorous, self.exercise_type_moderate, self.exercise_type_strengthening,
-        )))
+        # EXERCISE TYPE row and the repeated column-header row above it
+        # removed 2026-11-10 per direct request — the one header row above
+        # PREINJURY now serves all three rows. Saved exercise_type_* values
+        # are kept, not dropped: see _RETIRED_KEYS.
         self.exercise_dose_vigorous = AutoTextView("exercise_dose_vigorous", min_lines=1)
         self.exercise_dose_moderate = AutoTextView("exercise_dose_moderate", min_lines=1)
         self.exercise_dose_strengthening = AutoTextView("exercise_dose_strengthening", min_lines=1)
@@ -411,7 +409,6 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         "behaviour_boom_bust_text", "behaviour_avoidance_text",
         "behaviour_endurance_text", "behaviour_flareups_text",
         "flareup_prevention", "management_strategies",
-        "exercise_type_vigorous", "exercise_type_moderate", "exercise_type_strengthening",
         "exercise_dose_vigorous", "exercise_dose_moderate", "exercise_dose_strengthening",
         "exercise_response",
         "pre_injury_role", "pre_injury_duties",
@@ -440,9 +437,21 @@ class SubjectiveSection(Gtk.Box, SectionBase):
     _LEGACY_ACTIVITY_MIGRATION = {
         "pre_activity_level":     "pre_activity_moderate",
         "current_activity_level": "current_activity_moderate",
-        "exercise_type":          "exercise_type_moderate",
         "exercise_dose":          "exercise_dose_moderate",
     }
+
+    # Fields no longer on screen whose saved values must still survive a
+    # save (save_all_sections replaces the whole section, so anything
+    # collect() doesn't return is deleted from the JSON). load() keeps
+    # whatever of these the file holds and collect() writes them back
+    # unchanged; the reports keep rendering them where present. Same
+    # pattern as pain_classification.py's _retired. exercise_type is the
+    # pre-2026-10-08 single-field form, which used to migrate into
+    # exercise_type_moderate.
+    _RETIRED_KEYS = (
+        "exercise_type_vigorous", "exercise_type_moderate", "exercise_type_strengthening",
+        "exercise_type",
+    )
 
     def _wire_change_events(self) -> None:
         for attr in self._TOGGLE_ATTRS:
@@ -691,12 +700,14 @@ class SubjectiveSection(Gtk.Box, SectionBase):
             data[attr] = getattr(self, attr).text
 
         data.update(self.sleep_subsection.collect())
+        data.update(self._retired)
         return data
 
     def load(self, data: dict) -> None:
         self._loading = True
         try:
             subjective = data if isinstance(data, dict) else {}
+            self._retired = {k: subjective[k] for k in self._RETIRED_KEYS if k in subjective}
 
             prefill: dict = {}
             if self.session_file:

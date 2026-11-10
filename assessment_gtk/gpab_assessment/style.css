@@ -125,12 +125,14 @@ window.theme-dark .radio-group.rg-focused {
    "keyboard cursor here") — a dashed purple outline reads as "about to be
    set, not committed yet", matching this project's "never lose data
    silently" rule (the actual bulk-set only applies on drag release). */
-.radio-group.grid-drag-hover {
+.radio-group.grid-drag-hover,
+.grid-drag-hover {
     outline: 3px dashed #8e24aa;
     outline-offset: 2px;
     border-radius: 4px;
 }
-window.theme-dark .radio-group.grid-drag-hover {
+window.theme-dark .radio-group.grid-drag-hover,
+window.theme-dark .grid-drag-hover {
     outline: 3px dashed #ce93d8;
     outline-offset: 2px;
     border-radius: 4px;

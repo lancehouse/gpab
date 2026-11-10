@@ -31,6 +31,7 @@ from gi.repository import Gtk  # noqa: E402
 from ...widgets import AutoTextView, CheckButton, CycleField, FlagButton, RadioGroup, TouchEntry
 from ...section_base import SectionBase
 from ..block_layout import BlockCard, PositionSection
+from ..grid_drag_select import GridDragSelect
 from ..field_link import (
     LinkResolver, clone_field_widget, connect_changed, set_widget_value, widget_value,
 )
@@ -42,9 +43,26 @@ from pab_assessment.objective.ad_forms import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
-class ADFormSection(Gtk.Box, SectionBase):
+def _drag_kind(w: Gtk.Widget):
+    """What a cell must match to share a drag column: same widget type and
+    the same option list (so a drag can't paint a reflex grade onto a
+    sensation cell). None = not draggable (entries, notes, flags)."""
+    if isinstance(w, RadioGroup):
+        return ("radio", tuple(label for label, _ in w._options))
+    if isinstance(w, CycleField):
+        return ("cycle", tuple(w.CYCLE))
+    return None
+
+
+class ADFormSection(Gtk.Box, GridDragSelect, SectionBase):
+    """Tap-and-drag bulk-set (grid_drag_select.py) on every table column,
+    added 2026-11-10: each card's cells are grouped by column position, and
+    each run of same-kind cells (_drag_kind) in a column drags together —
+    e.g. a myotome L column, or one modality/side of Sensation by level."""
+
     def __init__(self, form_id: str, tab_label: str, resolver: LinkResolver) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self._init_drag_select()
         self.set_margin_top(8)
         self.set_margin_bottom(8)
         self.set_margin_start(8)
@@ -113,9 +131,12 @@ class ADFormSection(Gtk.Box, SectionBase):
         elif all_sided:
             card.add_column_headers(["", "L", "R"])
 
+        columns: dict[int, list[Gtk.Widget]] = {}
         for r_idx, row in enumerate(block.rows):
             solo = len(row.cells) == 1
             widgets = [self._cell_widget(c, row.label, solo) for c in row.cells]
+            for i, w in enumerate(widgets):
+                columns.setdefault(i, []).append(w)
             if row.sides:
                 half = len(widgets) // len(row.sides)
                 groups = [widgets[i * half:(i + 1) * half] for i in range(len(row.sides))]
@@ -133,11 +154,13 @@ class ADFormSection(Gtk.Box, SectionBase):
             keys = [f"{r_idx}:{i}" for i in range(len(widgets))]
             captions = [s.upper() for s in row.sides] if (row.sides and not all_sided) else None
             card.add_row(label, groups, hint=row.hint, nav_keys=keys, group_labels=captions)
+        self._register_drag_columns(columns)
         return card
 
     def _build_level_grid(self, card: BlockCard, block: Block) -> None:
         lg = block.level_grid
         card.add_column_headers([""] + [f"{lbl}\nL · R" for _, lbl in lg["modalities"]])
+        columns: dict[int, list[Gtk.Widget]] = {}
         for r_idx, (lvl, lvl_lbl) in enumerate(lg["levels"]):
             groups = []
             for mod, _ in lg["modalities"]:
@@ -150,6 +173,22 @@ class ADFormSection(Gtk.Box, SectionBase):
                 groups.append(pair)
             keys = [f"{r_idx}:{i}" for i in range(2 * len(groups))]
             card.add_row(lvl_lbl, groups, nav_keys=keys)
+            for i, w in enumerate(w for pair in groups for w in pair):
+                columns.setdefault(i, []).append(w)
+        self._register_drag_columns(columns)
+
+    def _register_drag_columns(self, columns: dict[int, list[Gtk.Widget]]) -> None:
+        """One drag column per run of same-kind cells at each column
+        position — see _drag_kind. A lone cell has nothing to drag onto."""
+        for widgets in columns.values():
+            runs: dict = {}
+            for w in widgets:
+                kind = _drag_kind(w)
+                if kind is not None:
+                    runs.setdefault(kind, []).append(w)
+            for run in runs.values():
+                if len(run) >= 2:
+                    self._register_drag_column(run)
 
     def _cell_widget(self, cell: Cell, row_label: str, solo: bool) -> Gtk.Widget:
         # A flag/check button alone in its row IS the row (label inside the

@@ -61,6 +61,7 @@ special_tests:
   groups:
     - label: "Radiculopathy"
       cluster_id: cx_radiculopathy
+      notes_id: st_cx_radic_notes
       db_cluster_name: "Wainner CPR (recommended threshold: 3 of 4)"
       rows:
         - {id: spurling,    label: "Spurling"}
@@ -68,6 +69,7 @@ special_tests:
 
     - label: "Neurodynamics"
       cluster_id: cx_neurodynamics
+      notes_id: st_cx_neuro_notes
       db_cluster_name: "ULTT Battery (ULTT-1 + ULTT-2b + ULTT-3)"
       rows:
         - {id: ulnt1,  label: "ULNT1"}
@@ -76,18 +78,21 @@ special_tests:
 
     - label: "CGH"
       cluster_id: cx_cgh
+      notes_id: st_cx_cgh_notes
       db_cluster_name: "CGH Diagnostic Cluster (CFRT + Upper Cervical Palpation + DCF Control)"
       rows:
         - {id: frt, label: "FRT"}
 
     - label: "Sharp-Purser"
       cluster_id: cx_sharp_purser
+      notes_id: st_cx_sharp_purser_notes
       db_cluster_name: "Sharp-Purser (Transverse Ligament Assessment)"
       rows:
         - {id: sharp_purser, label: "Sharp-Purser"}
 
     - label: "Alar Ligament"
       cluster_id: cx_alar_ligament
+      notes_id: st_cx_alar_notes
       db_cluster_name: "Alar Ligament Cluster (> 2 of 3 tests positive)"
       rows:
         - {id: ant_shear,    label: "Ant Shear"}
@@ -97,6 +102,7 @@ special_tests:
 
     - label: "VBI"
       cluster_id: cx_vbi
+      notes_id: st_cx_vbi_notes
       rows:
         - {id: vbi_sus_rot, label: "VBI Sus Rot"}
 

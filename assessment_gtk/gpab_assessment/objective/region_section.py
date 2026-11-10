@@ -424,7 +424,11 @@ class BilateralGridSpecialTestsWidget(Gtk.Box):
                 self.append(hrow)
             group_notes_id = group.get("notes_id")
             if group_notes_id:
-                self.append(Gtk.Label(label=group.get("notes_label", "Notes:"), halign=Gtk.Align.START))
+                # Every group has its own notes field since 2026-11-10;
+                # named after the group so it can't be confused with the
+                # region-wide "General notes" below.
+                default_lbl = f"{group.get('label', '')} notes:".strip()
+                self.append(Gtk.Label(label=group.get("notes_label", default_lbl), halign=Gtk.Align.START))
                 ta = AutoTextView(group_notes_id, min_lines=2)
                 self._group_notes[group_notes_id] = ta
                 self._grid_pos[group_notes_id] = len(self._grid)
@@ -433,7 +437,7 @@ class BilateralGridSpecialTestsWidget(Gtk.Box):
 
         self.notes: AutoTextView | None = None
         if self._notes_id:
-            self.append(Gtk.Label(label="Notes:", halign=Gtk.Align.START))
+            self.append(Gtk.Label(label="General notes:", halign=Gtk.Align.START))
             self.notes = AutoTextView(self._notes_id, min_lines=2)
             self._grid_pos[self._notes_id] = len(self._grid)
             self._grid.append(self._notes_id)

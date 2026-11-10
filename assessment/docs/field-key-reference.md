@@ -80,11 +80,18 @@ Jump to a section:
 
 | Key | Description |
 |---|---|
-| `pre_activity_level` | Pre-injury activity level |
-| `current_activity_level` | Current activity level |
-| `exercise_type` | Type of exercise currently doing |
-| `exercise_dose` | Exercise dose (frequency, duration) |
+| `pre_activity_vigorous` / `_moderate` / `_strengthening` | Pre-injury activity level (Vigorous / Moderate / Strength-other) |
+| `current_activity_vigorous` / `_moderate` / `_strengthening` | Current activity level |
+| `exercise_dose_vigorous` / `_moderate` / `_strengthening` | Exercise dose (frequency, duration) |
 | `exercise_response` | Symptomatic response to exercise |
+
+Retired — no longer on screen, but kept in the JSON and rendered in reports where a
+session holds data (`subjective.py` `_RETIRED_KEYS`; `storage.py` `_TRIPLET_LEGACY`):
+
+| Key | Description |
+|---|---|
+| `exercise_type_vigorous` / `_moderate` / `_strengthening` | Exercise type (removed from the tab 2026-11-10) |
+| `pre_activity_level`, `current_activity_level`, `exercise_type`, `exercise_dose` | Pre-2026-10-08 single-field forms; migrated into the Moderate column on load (exercise_type is kept as-is instead) |
 
 ### Work
 
@@ -691,7 +698,11 @@ active movement / muscle testing RadioGroups; `st_` prefix for special tests).
 | `st_faber_l` | `st_faber_r` | `faber` | Hip Screen | FABER (Patrick's) |
 | `st_fadir_l` | `st_fadir_r` | `fadir` | Hip Screen | FADIR |
 | `st_prone_inst_l` | `st_prone_inst_r` | `prone_inst` | Instability | Prone instability test |
-| `st_lx_notes` | — | — | — | Special tests notes (TextArea) |
+| `st_lx_notes` | — | — | — | General special tests notes (TextArea) — region-wide, below the last group |
+| `st_lx_disc_notes` | — | — | — | Disc / Herniation notes (TextArea; per-group, added 2026-11-10) |
+| `st_lx_neuro_notes` | — | — | — | Neurodynamics notes (TextArea; per-group, added 2026-11-10) |
+| `st_lx_hip_notes` | — | — | — | Hip Screen notes (TextArea; per-group, added 2026-11-10) |
+| `st_lx_instab_notes` | — | — | — | Instability notes (TextArea; per-group, added 2026-11-10) |
 
 ---
 
@@ -796,7 +807,13 @@ storage key. KB entry key is the stem (the loader strips `_l`/`_r`).
 | `st_vbi_sus_rot_l` | `st_vbi_sus_rot_r` | `vbi_sus_rot` | VBI sustained rotation |
 | `st_ccft_l` | `st_ccft_r` | DB-backed | CCFT (motor control) — L used clinically, R unused |
 | `st_ccft_notes` | — | — | CCFT reminder notes (TextArea, heading "Lean angle · Nod · Lift · Hover") |
-| `st_cx_notes` | — | — | Special tests notes (TextArea) |
+| `st_cx_notes` | — | — | General special tests notes (TextArea) — region-wide, below the last group |
+| `st_cx_radic_notes` | — | — | Radiculopathy notes (TextArea; per-group, added 2026-11-10) |
+| `st_cx_neuro_notes` | — | — | Neurodynamics notes (TextArea; per-group, added 2026-11-10) |
+| `st_cx_cgh_notes` | — | — | CGH notes (TextArea; per-group, added 2026-11-10) |
+| `st_cx_sharp_purser_notes` | — | — | Sharp-Purser notes (TextArea; per-group, added 2026-11-10) |
+| `st_cx_alar_notes` | — | — | Alar Ligament notes (TextArea; per-group, added 2026-11-10) |
+| `st_cx_vbi_notes` | — | — | VBI notes (TextArea; per-group, added 2026-11-10) |
 
 Hoffman's sign moved to Neurological → UMN Signs (`nr_umn_hoffman`) along with Tromner,
 Babinski, Lhermitte's, and Inverted Supinator — all five are Cook Myelopathy Cluster
@@ -931,7 +948,16 @@ Field IDs: `sh_acc_{direction}_{side}_{type}` — direction: `inf`, `post`, `ant
 | `st_roos_l` | `st_roos_r` | DB-backed | Roos/EAST (TOS) |
 | `st_wright_l` | `st_wright_r` | DB-backed | Wright's (TOS) |
 | `st_crlf_l` | `st_crlf_r` | DB-backed | CRLF — helps rule cervical spine in/out of TOS |
-| `st_sh_notes` | — | — | Special tests notes (TextArea) |
+| `st_sh_notes` | — | — | General special tests notes (TextArea) — region-wide, below the last group |
+| `st_sh_imp_notes` | — | — | Impingement notes (TextArea; per-group, added 2026-11-10) |
+| `st_sh_rc_notes` | — | — | Rotator Cuff notes (TextArea; per-group, added 2026-11-10) |
+| `st_sh_acj_notes` | — | — | AC Joint notes (TextArea; per-group, added 2026-11-10) |
+| `st_sh_biceps_notes` | — | — | Biceps / SLAP notes (TextArea; per-group, added 2026-11-10) |
+| `st_sh_instab_notes` | — | — | Instability notes (TextArea; per-group, added 2026-11-10) |
+| `st_sh_sulcus_notes` | — | — | Sulcus notes (TextArea; per-group, added 2026-11-10) |
+| `st_sh_scap_assist_notes` | — | — | Scapular Assistance notes (TextArea; per-group, added 2026-11-10) |
+| `st_sh_serratus_notes` | — | — | Serratus Anterior notes (TextArea; per-group, added 2026-11-10) |
+| `st_sh_tos_notes` | — | — | TOS notes (TextArea; per-group, added 2026-11-10) |
 
 Shoulder is fully DB-backed as of this pass (`_DB_BACKED_REGIONS` in `kb_loader.py`) —
 existing rows above still resolve via `kb/shoulder.yaml` as a fallback if the DB is
@@ -996,7 +1022,12 @@ for them), so they show nothing rather than stale content if the DB is missing.
 | `st_hp_puranen_orava_l` | `st_hp_puranen_orava_r` | `hp_puranen_orava` | Puranen-Orava |
 | `st_hp_bks_l` | `st_hp_bks_r` | `hp_bks` | Bent Knee Stretch |
 | `st_hp_squeeze_l` | `st_hp_squeeze_r` | `hp_squeeze` | Squeeze (adductor) |
-| `st_hp_notes` | — | — | Special tests notes (TextArea) |
+| `st_hp_notes` | — | — | General special tests notes (TextArea) — region-wide, below the last group |
+| `st_hp_fai_notes` | — | — | FAI / Impingement notes (TextArea; per-group, added 2026-11-10) |
+| `st_hp_oa_notes` | — | — | Hip OA notes (TextArea; per-group, added 2026-11-10) |
+| `st_hp_gtps_notes` | — | — | GTPS / Lateral Hip notes (TextArea; per-group, added 2026-11-10) |
+| `st_hp_hamstring_notes` | — | — | Hamstring Origin notes (TextArea; per-group, added 2026-11-10) |
+| `st_hp_adductor_notes` | — | — | Adductor notes (TextArea; per-group, added 2026-11-10) |
 
 ---
 
@@ -1050,7 +1081,13 @@ for them), so they show nothing rather than stale content if the DB is missing.
 | `st_kn_clarkes_l` | `st_kn_clarkes_r` | `kn_clarkes` | Clarke's (PFJ) |
 | `st_kn_pat_tilt_l` | `st_kn_pat_tilt_r` | `kn_pat_tilt` | Patella Tilt (PFJ) |
 | `st_kn_pat_grind_l` | `st_kn_pat_grind_r` | `kn_pat_grind` | Patella Grind (PFJ) |
-| `st_kn_notes` | — | — | Special tests notes (TextArea) |
+| `st_kn_notes` | — | — | General special tests notes (TextArea) — region-wide, below the last group |
+| `st_kn_acl_notes` | — | — | ACL notes (TextArea; per-group, added 2026-11-10) |
+| `st_kn_pcl_notes` | — | — | PCL notes (TextArea; per-group, added 2026-11-10) |
+| `st_kn_meniscus_notes` | — | — | Meniscus notes (TextArea; per-group, added 2026-11-10) |
+| `st_kn_mcl_notes` | — | — | MCL notes (TextArea; per-group, added 2026-11-10) |
+| `st_kn_lcl_notes` | — | — | LCL notes (TextArea; per-group, added 2026-11-10) |
+| `st_kn_pfj_notes` | — | — | PFJ notes (TextArea; per-group, added 2026-11-10) |
 
 ---
 
@@ -1106,7 +1143,12 @@ for them), so they show nothing rather than stale content if the DB is missing.
 | `st_ak_ott_nav_l` | `st_ak_ott_nav_r` | `ak_ott_nav` | Ottawa: Navicular |
 | `st_ak_ott_5mt_l` | `st_ak_ott_5mt_r` | `ak_ott_5mt` | Ottawa: 5th Met Base |
 | `st_ak_per_prov_l` | `st_ak_per_prov_r` | `ak_per_prov` | Peroneal Provocation |
-| `st_ak_notes` | — | — | Special tests notes (TextArea) |
+| `st_ak_notes` | — | — | General special tests notes (TextArea) — region-wide, below the last group |
+| `st_ak_lat_lig_notes` | — | — | Lateral Ligament notes (TextArea; per-group, added 2026-11-10) |
+| `st_ak_achilles_notes` | — | — | Achilles notes (TextArea; per-group, added 2026-11-10) |
+| `st_ak_syndesmosis_notes` | — | — | Syndesmosis notes (TextArea; per-group, added 2026-11-10) |
+| `st_ak_ottawa_notes` | — | — | Ottawa Rules notes (TextArea; per-group, added 2026-11-10) |
+| `st_ak_peroneal_notes` | — | — | Peroneal Tendon notes (TextArea; per-group, added 2026-11-10) |
 
 ---
 

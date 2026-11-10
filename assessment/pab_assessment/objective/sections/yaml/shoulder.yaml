@@ -65,6 +65,7 @@ special_tests:
   groups:
     - label: "Impingement"
       cluster_id: sh_impingement
+      notes_id: st_sh_imp_notes
       db_cluster_name: "3-of-5 Impingement Cluster"
       rows:
         - {id: hawkins,     label: "Hawkins"}
@@ -74,6 +75,7 @@ special_tests:
 
     - label: "Rotator Cuff"
       cluster_id: sh_rc_integrity
+      notes_id: st_sh_rc_notes
       db_cluster_name: "Full RCT Lag Sign Battery"
       rows:
         - {id: empty_can,   label: "Empty Can"}
@@ -88,6 +90,7 @@ special_tests:
 
     - label: "AC Joint"
       cluster_id: sh_ac_joint
+      notes_id: st_sh_acj_notes
       db_cluster_name: "AC Joint Confirm Cluster (CBA + O'Brien + Resisted Extension)"
       rows:
         - {id: cross_body,  label: "Cross-body"}
@@ -96,6 +99,7 @@ special_tests:
 
     - label: "Biceps / SLAP"
       cluster_id: sh_biceps_slap
+      notes_id: st_sh_biceps_notes
       db_cluster_name: "Biceps TIC (Speed's + Yergason's + Palpation)"
       rows:
         - {id: speeds,        label: "Speed's"}
@@ -106,6 +110,7 @@ special_tests:
 
     - label: "Instability"
       cluster_id: sh_instability
+      notes_id: st_sh_instab_notes
       db_cluster_name: "Anterior Instability (Apprehension + Relocation)"
       rows:
         - {id: apprehension, label: "Apprehension"}
@@ -113,24 +118,28 @@ special_tests:
 
     - label: "Sulcus"
       cluster_id: sh_sulcus
+      notes_id: st_sh_sulcus_notes
       db_cluster_name: "Sulcus Sign (Inferior Instability Screen)"
       rows:
         - {id: sulcus, label: "Sulcus"}
 
     - label: "Scapular Assistance"
       cluster_id: sh_scap_assist
+      notes_id: st_sh_scap_assist_notes
       db_cluster_name: "Scapular Assistance Test (SAT)"
       rows:
         - {id: scap_assist, label: "Scap Assist"}
 
     - label: "Serratus Anterior"
       cluster_id: sh_serratus
+      notes_id: st_sh_serratus_notes
       db_cluster_name: "Serratus Anterior Strength Screen (Wall Push-up)"
       rows:
         - {id: wall_pushup, label: "Wall Pushup"}
 
     - label: "TOS"
       cluster_id: sh_tos
+      notes_id: st_sh_tos_notes
       db_cluster_name: "TOS Battery (Adson + Eden + Wright + Roos + Tinel)"
       rows:
         - {id: adson, label: "Adson's"}
