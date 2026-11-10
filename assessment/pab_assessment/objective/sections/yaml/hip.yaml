@@ -30,12 +30,14 @@ special_tests:
   groups:
     - label: "FAI / Impingement"
       cluster_id: hip_fai
+      notes_id: st_hp_fai_notes
       rows:
         - {id: hp_fadir,   label: "FADIR"}
         - {id: hp_ant_imp, label: "Ant Impingement"}
 
     - label: "Hip OA"
       cluster_id: hip_oa
+      notes_id: st_hp_oa_notes
       rows:
         - {id: hp_faber,     label: "FABER"}
         - {id: hp_hip_scour, label: "Hip Scour"}
@@ -43,6 +45,7 @@ special_tests:
 
     - label: "GTPS / Lateral Hip"
       cluster_id: gtps
+      notes_id: st_hp_gtps_notes
       rows:
         - {id: hp_ober,         label: "Ober"}
         - {id: hp_trendelenburg, label: "Trendelenburg"}
@@ -50,11 +53,13 @@ special_tests:
 
     - label: "Hamstring Origin"
       cluster_id: hamstring_origin
+      notes_id: st_hp_hamstring_notes
       rows:
         - {id: hp_puranen_orava, label: "Puranen-Orava"}
         - {id: hp_bks,           label: "BKS"}
 
     - label: "Adductor"
       cluster_id: hip_adductor
+      notes_id: st_hp_adductor_notes
       rows:
         - {id: hp_squeeze, label: "Squeeze"}

@@ -703,6 +703,42 @@ _TRIPLET_LEGACY = {
 }
 
 
+# Per-subsection Special Tests notes (added 2026-11-10 — one free-text
+# field at the end of every special-tests group, all six regions). Keyed by
+# the group's FIRST test id, which is identical in the YAML
+# (objective/sections/yaml/<region>.yaml, notes_id) and in both report
+# mirrors below (_XX_ST_GROUPS / _XX_ST_GROUPS_R) — so one table serves
+# both and a group label tweak can't break the link. Cervical Motor Control
+# is absent on purpose: it already had st_ccft_notes, rendered separately.
+_ST_GROUP_NOTES: dict[str, str] = {
+    # lumbar
+    "st_slr": "st_lx_disc_notes", "st_slump": "st_lx_neuro_notes",
+    "st_faber": "st_lx_hip_notes", "st_prone_inst": "st_lx_instab_notes",
+    # cervical (Motor Control already has st_ccft_notes)
+    "st_spurling": "st_cx_radic_notes", "st_ulnt1": "st_cx_neuro_notes",
+    "st_frt": "st_cx_cgh_notes", "st_sharp_purser": "st_cx_sharp_purser_notes",
+    "st_ant_shear": "st_cx_alar_notes", "st_vbi_sus_rot": "st_cx_vbi_notes",
+    # shoulder
+    "st_hawkins": "st_sh_imp_notes", "st_empty_can": "st_sh_rc_notes",
+    "st_cross_body": "st_sh_acj_notes", "st_speeds": "st_sh_biceps_notes",
+    "st_apprehension": "st_sh_instab_notes", "st_sulcus": "st_sh_sulcus_notes",
+    "st_scap_assist": "st_sh_scap_assist_notes", "st_wall_pushup": "st_sh_serratus_notes",
+    "st_adson": "st_sh_tos_notes",
+    # hip
+    "st_hp_fadir": "st_hp_fai_notes", "st_hp_faber": "st_hp_oa_notes",
+    "st_hp_ober": "st_hp_gtps_notes", "st_hp_puranen_orava": "st_hp_hamstring_notes",
+    "st_hp_squeeze": "st_hp_adductor_notes",
+    # knee
+    "st_kn_lachman": "st_kn_acl_notes", "st_kn_post_draw": "st_kn_pcl_notes",
+    "st_kn_mcmurray": "st_kn_meniscus_notes", "st_kn_valgus_0": "st_kn_mcl_notes",
+    "st_kn_varus_0": "st_kn_lcl_notes", "st_kn_clarkes": "st_kn_pfj_notes",
+    # ankle
+    "st_ak_ant_draw": "st_ak_lat_lig_notes", "st_ak_thompson": "st_ak_achilles_notes",
+    "st_ak_squeeze": "st_ak_syndesmosis_notes", "st_ak_ott_lat_mal": "st_ak_ottawa_notes",
+    "st_ak_per_prov": "st_ak_peroneal_notes",
+}
+
+
 def _trip_val(d: dict, prefix: str, col: str) -> str:
     v = str(d.get(f"{prefix}_{col}") or "").strip()
     legacy = _TRIPLET_LEGACY.get((prefix, col))
@@ -1340,6 +1376,8 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 lx_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Lumbar — {grp_lbl}", ["Test","Left","Right"], lx_st_rows)
+                _maybe_note(sl, f"*Lumbar — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip())
         _CX_ST_GROUPS = [
             ("Radiculopathy",  [("Spurling","st_spurling"),("Distraction","st_distraction")]),
             ("Neurodynamics",  [("ULNT1","st_ulnt1"),("ULNT2a","st_ulnt2a"),("ULNT3","st_ulnt3")]),
@@ -1355,8 +1393,10 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 cx_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Cervical — {grp_lbl}", ["Test","Left","Right"], cx_st_rows)
-        for key, lbl in [("st_lx_notes","*Lumbar notes:*"),("st_cx_notes","*Cervical notes:*"),
-                          ("st_ccft_notes","*CCFT notes (Lean angle · Nod · Lift · Hover):*")]:
+                _maybe_note(sl, f"*Cervical — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip())
+        for key, lbl in [("st_lx_notes","*Lumbar notes*"),("st_cx_notes","*Cervical notes*"),
+                          ("st_ccft_notes","*CCFT notes (Lean angle · Nod · Lift · Hover)*")]:
             _maybe_note(sl, lbl, spl.get(key, "").strip())
         _SH_ST_GROUPS = [
             ("Impingement",  [("Hawkins","st_hawkins"),("Neer","st_neer"),
@@ -1383,6 +1423,8 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 sh_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Shoulder — {grp_lbl}", ["Test","Left","Right"], sh_st_rows)
+                _maybe_note(sl, f"*Shoulder — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip())
             _maybe_note(sl, "*Shoulder test notes*", spl.get("st_sh_notes", "").strip())
         _HP_ST_GROUPS = [
             ("FAI/Impingement", [("FADIR","st_hp_fadir"),("Ant Impingement","st_hp_ant_imp")]),
@@ -1398,6 +1440,8 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 hp_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Hip — {grp_lbl}", ["Test","Left","Right"], hp_st_rows)
+                _maybe_note(sl, f"*Hip — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip())
             _maybe_note(sl, "*Hip test notes*", spl.get("st_hp_notes", "").strip())
         _KN_ST_GROUPS = [
             ("ACL",     [("Lachman","st_kn_lachman"),("Ant Drawer","st_kn_ant_draw"),
@@ -1415,6 +1459,8 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 kn_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Knee — {grp_lbl}", ["Test","Left","Right"], kn_st_rows)
+                _maybe_note(sl, f"*Knee — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip())
             _maybe_note(sl, "*Knee test notes*", spl.get("st_kn_notes", "").strip())
         _AK_ST_GROUPS = [
             ("Lateral Lig",  [("Ant Drawer","st_ak_ant_draw"),("Talar Tilt","st_ak_talar_tilt")]),
@@ -1431,6 +1477,8 @@ def _render_objective_md(obj: dict, clean: bool = False) -> list:
                 ak_st_rows = [[lbl, spl.get(f"{sid}_l") or "—", spl.get(f"{sid}_r") or "—"]
                               for lbl, sid in rows]
                 _maybe_table(sl, f"Ankle — {grp_lbl}", ["Test","Left","Right"], ak_st_rows)
+                _maybe_note(sl, f"*Ankle — {grp_lbl} notes*",
+                           spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip())
             _maybe_note(sl, "*Ankle test notes*", spl.get("st_ak_notes", "").strip())
         _flush_section("### 08 Special Tests", sl)
 
@@ -2308,6 +2356,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 lx_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Lumbar {grp_lbl}","Left","Right"], lx_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Lumbar {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Lumbar {grp_lbl} notes: (empty)")
         _CX_ST_GROUPS_R = [
             ("Radiculopathy",  [("Spurling","st_spurling"),("Distraction","st_distraction")]),
             ("Neurodynamics",  [("ULNT1","st_ulnt1"),("ULNT2a","st_ulnt2a"),("ULNT3","st_ulnt3")]),
@@ -2323,6 +2376,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 cx_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Cervical {grp_lbl}","Left","Right"], cx_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Cervical {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Cervical {grp_lbl} notes: (empty)")
         for key, lbl in [("st_lx_notes","Lumbar notes"),("st_cx_notes","Cervical notes"),
                           ("st_ccft_notes","CCFT notes (Lean angle / Nod / Lift / Hover)")]:
             v = spl.get(key, "").strip()
@@ -2355,6 +2413,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 sh_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Shoulder {grp_lbl}","Left","Right"], sh_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Shoulder {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Shoulder {grp_lbl} notes: (empty)")
             v = spl.get("st_sh_notes", "").strip()
             if v:
                 sl.append(f"  Shoulder test notes: {v}")
@@ -2374,6 +2437,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 hp_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Hip {grp_lbl}","Left","Right"], hp_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Hip {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Hip {grp_lbl} notes: (empty)")
             v = spl.get("st_hp_notes", "").strip()
             if v:
                 sl.append(f"  Hip test notes: {v}")
@@ -2395,6 +2463,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 kn_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Knee {grp_lbl}","Left","Right"], kn_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Knee {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Knee {grp_lbl} notes: (empty)")
             v = spl.get("st_kn_notes", "").strip()
             if v:
                 sl.append(f"  Knee test notes: {v}")
@@ -2415,6 +2488,11 @@ def _render_objective_raw(obj: dict, lines: list, SEP: str, SEP2: str,
                 ak_st_rows_r = [[lbl, spl.get(f"{sid}_l") or "-", spl.get(f"{sid}_r") or "-"]
                                 for lbl, sid in rows]
                 _maybe_table(sl, [f"Ankle {grp_lbl}","Left","Right"], ak_st_rows_r)
+                _gv = spl.get(_ST_GROUP_NOTES.get(rows[0][1], ""), "").strip()
+                if _gv:
+                    sl.append(f"  Ankle {grp_lbl} notes: {_gv}")
+                elif not clean and rows[0][1] in _ST_GROUP_NOTES:
+                    sl.append(f"  Ankle {grp_lbl} notes: (empty)")
             v = spl.get("st_ak_notes", "").strip()
             if v:
                 sl.append(f"  Ankle test notes: {v}")
@@ -3474,7 +3552,9 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
         act_rows.append(["Pre-injury", *_act_trip("pre_activity")])
     if not clean or _act_trip_has_data("current_activity"):
         act_rows.append(["Current", *_act_trip("current_activity")])
-    if not clean or _act_trip_has_data("exercise_type"):
+    # Exercise type: field retired from the Subjective tab 2026-11-10 — row
+    # shown only where an older session still holds data for it.
+    if _act_trip_has_data("exercise_type"):
         act_rows.append(["Exercise type", *_act_trip("exercise_type")])
     if not clean or _act_trip_has_data("exercise_dose"):
         act_rows.append(["Exercise dose", *_act_trip("exercise_dose")])
@@ -5192,7 +5272,8 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
 
     _trip_raw("pre_activity", "Pre-injury activity level")
     _trip_raw("current_activity", "Current activity level")
-    _trip_raw("exercise_type", "Exercise type")
+    if any(_trip_val(s, "exercise_type", c) for c in ("vigorous", "moderate", "strengthening")):
+        _trip_raw("exercise_type", "Exercise type")  # retired 2026-11-10 — data-only
     _trip_raw("exercise_dose", "Exercise dose")
     txt("exercise_response", s)
 

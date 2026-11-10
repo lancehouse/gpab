@@ -56,23 +56,27 @@ special_tests:
   groups:
     - label: "Disc / Herniation"
       cluster_id: lx_disc
+      notes_id: st_lx_disc_notes
       rows:
         - {id: slr,         label: "SLR"}
         - {id: crossed_slr, label: "Crossed SLR"}
 
     - label: "Neurodynamics"
       cluster_id: lx_neurodynamics
+      notes_id: st_lx_neuro_notes
       rows:
         - {id: slump,   label: "Slump"}
         - {id: femoral, label: "Femoral"}
 
     - label: "Hip Screen"
       cluster_id: lx_hip_screen
+      notes_id: st_lx_hip_notes
       rows:
         - {id: faber, label: "FABER"}
         - {id: fadir, label: "FADIR"}
 
     - label: "Instability"
       cluster_id: lx_instability
+      notes_id: st_lx_instab_notes
       rows:
         - {id: prone_inst, label: "Prone Inst"}

@@ -24,6 +24,7 @@ special_tests:
   groups:
     - label: "ACL"
       cluster_id: knee_acl
+      notes_id: st_kn_acl_notes
       rows:
         - {id: kn_lachman,  label: "Lachman"}
         - {id: kn_ant_draw, label: "Ant Drawer"}
@@ -31,12 +32,14 @@ special_tests:
 
     - label: "PCL"
       cluster_id: knee_pcl
+      notes_id: st_kn_pcl_notes
       rows:
         - {id: kn_post_draw, label: "Post Drawer"}
         - {id: kn_post_sag,  label: "Post Sag"}
 
     - label: "Meniscus"
       cluster_id: knee_meniscus
+      notes_id: st_kn_meniscus_notes
       rows:
         - {id: kn_mcmurray, label: "McMurray"}
         - {id: kn_thessaly, label: "Thessaly"}
@@ -44,18 +47,21 @@ special_tests:
 
     - label: "MCL"
       cluster_id: knee_mcl
+      notes_id: st_kn_mcl_notes
       rows:
         - {id: kn_valgus_0,  label: "Valgus 0°"}
         - {id: kn_valgus_30, label: "Valgus 30°"}
 
     - label: "LCL"
       cluster_id: knee_lcl
+      notes_id: st_kn_lcl_notes
       rows:
         - {id: kn_varus_0,  label: "Varus 0°"}
         - {id: kn_varus_30, label: "Varus 30°"}
 
     - label: "PFJ"
       cluster_id: knee_pfj
+      notes_id: st_kn_pfj_notes
       rows:
         - {id: kn_clarkes,   label: "Clarke's"}
         - {id: kn_pat_tilt,  label: "Patella Tilt"}

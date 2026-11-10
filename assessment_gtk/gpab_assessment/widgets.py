@@ -494,6 +494,27 @@ class CycleField(Gtk.Box):
             self._on_clicked(self.button)
             self.emit("navigate", "next")
             return True
+        # Y/N: the app-wide standard (CheckButton) — set the "Yes"/"No"
+        # state directly and move on. Only for fields whose states include
+        # that label (special tests, SIJ, Rx debunk...); a scale like
+        # Low/Moderate/High ignores the keys. Added 2026-11-10: special
+        # tests could only be cycled by click or Space.
+        if name in ("y", "Y", "n", "N"):
+            target = "Yes" if name in ("y", "Y") else "No"
+            if target not in self.CYCLE:
+                return False
+            self._value = target
+            self._apply()
+            self.emit("changed")
+            # Same advance as CheckButton._set_and_advance: step focus
+            # forward, then let a containing GridNav grid override the
+            # target via "navigate" (it works from this field, not from
+            # wherever focus now is, so it can't double-advance).
+            root = self.get_root()
+            if root is not None:
+                root.child_focus(Gtk.DirectionType.TAB_FORWARD)
+            self.emit("navigate", "next")
+            return True
         return False
 
     @property
