@@ -25,6 +25,16 @@ def _is_autocorrect_trigger(keyval: int) -> bool:
     each widget's own navigation logic instead).
     """
     ch = chr(Gdk.keyval_to_unicode(keyval)) if Gdk.keyval_to_unicode(keyval) else ""
+    # Editing keys also map to (control) characters — BackSpace "\x08",
+    # Delete "\x7f", Escape "\x1b" — and were triggering a correction too.
+    # With BackSpace that could trap the cursor: "all" -> BackSpace -> "al",
+    # which is itself a known typo for "all", so the next BackSpace first
+    # re-corrected it to "all" and then deleted the "l" again, forever
+    # (found 2026-11-10 as "sometimes I can't backspace"; 20 entries in the
+    # correction tables loop like this). Only real word-ending characters
+    # count: printable punctuation/space, plus Return and Tab.
+    if ch in ("\x08", "\x7f", "\x1b"):
+        return False
     return bool(ch) and not ch.isalnum() and ch not in ("'", "-")
 
 # RadioGroup/MultiSelectGroup chip minimum width. A RadioGroup chip's natural
@@ -980,13 +990,21 @@ class AutoTextView(Gtk.ScrolledWindow):
             return False
         buf = self.textview.get_buffer()
         cursor = buf.get_iter_at_mark(buf.get_insert())
+        # Up/Down leave the field only from its first/last VISUAL row. This
+        # used to compare logical lines (paragraphs), so in a wrapped
+        # paragraph — most notes are one — Up/Down jumped straight out of
+        # the field instead of moving the cursor a row (found 2026-11-10 as
+        # "occasionally I can't cursor-navigate within text fields"; the
+        # F10 panel's grid_nav=False opt-out above was the earlier workaround
+        # for the same thing).
+        cur_y = self.textview.get_iter_location(cursor).y
         if name == "Up":
-            if cursor.get_line() == 0:
+            if cur_y <= self.textview.get_iter_location(buf.get_start_iter()).y:
                 self.emit("navigate", "up")
                 return True
             return False
         if name == "Down":
-            if cursor.get_line() == buf.get_line_count() - 1:
+            if cur_y >= self.textview.get_iter_location(buf.get_end_iter()).y:
                 self.emit("navigate", "down")
                 return True
             return False
@@ -1017,6 +1035,7 @@ class AutoTextView(Gtk.ScrolledWindow):
         buf.delete(start, cursor)
         buf.insert(start, corrected)
         buf.place_cursor(start)
+        self.textview.reset_im_context()
 
     @property
     def text(self) -> str:
@@ -1026,7 +1045,20 @@ class AutoTextView(Gtk.ScrolledWindow):
 
     @text.setter
     def text(self, value: str) -> None:
-        self.textview.get_buffer().set_text(value or "")
+        # Never rewrite unchanged text: set_text() moves the cursor to the
+        # end, and many callers re-set every field wholesale — Subjective's
+        # note slots are rebuilt on every body-chart poll (~30s heartbeat,
+        # and on every edit to a note's "brief", which writes the chart),
+        # so a clinician mid-sentence had the cursor yanked to the end
+        # ("type too quickly and the cursor jumps", 2026-11-10). Same rule
+        # field_link.set_widget_value already applied for its own writes.
+        value = value or ""
+        if value == self.text:
+            return
+        self.textview.get_buffer().set_text(value)
+        # The input method caches the text around the cursor; after a real
+        # programmatic replace that cache is stale, so reset it.
+        self.textview.reset_im_context()
 
 
 # ---------------------------------------------------------------------------
@@ -1086,6 +1118,7 @@ class TouchEntry(Gtk.Entry):
         self.delete_text(start, pos)
         self.insert_text(corrected, start)
         self.set_position(start + len(corrected))
+        self.reset_im_context()
 
     @property
     def text(self) -> str:
@@ -1093,4 +1126,10 @@ class TouchEntry(Gtk.Entry):
 
     @text.setter
     def text(self, value: str) -> None:
-        self.set_text(value or "")
+        # See AutoTextView.text: never rewrite unchanged text (moves the
+        # cursor), and reset the input method after a real replace.
+        value = value or ""
+        if value == self.get_text():
+            return
+        self.set_text(value)
+        self.reset_im_context()

@@ -53,7 +53,11 @@ def set_widget_value(w, value, notify: bool = False) -> None:
     typed in."""
     if isinstance(w, (TouchEntry, AutoTextView)):
         text = value or ""
-        if w.text != text:
+        # Compare ignoring outer whitespace: widget_value() strips a
+        # TouchEntry, so a mirror holding "word " (space just typed) must
+        # not be "corrected" back to "word" — that ate the space and moved
+        # the cursor mid-typing.
+        if w.text.strip() != text.strip():
             w.text = text
         return
     if isinstance(w, MultiSelectGroup):
