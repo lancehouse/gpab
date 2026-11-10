@@ -41,8 +41,10 @@ bash scripts/run.sh <name>                       # launch against it (checks ~/P
 (the Sleep subsection's declarative field spec — rendered here by a brand-new GTK renderer,
 `gpab_assessment/sections/yaml_subsection.py`, consuming the *same* YAML file the TUI uses); the
 six regional objective YAML files (`objective/sections/yaml/*.yaml`); `objective/kb_db.py` and
-`objective/kb_loader.py` (clinical KB resolution — DB-backed for cervical/shoulder/CRPS/pain-
-sensitisation/lumbar SIJ, YAML fallback elsewhere, unchanged from the TUI).
+`objective/kb_loader.py` (clinical KB resolution — DB-backed for cervical/shoulder/hip/knee/ankle,
+CRPS, pain-sensitisation, lumbar SIJ and the clean lumbar special tests; YAML fallback per field
+where no KB test is linked, and for hip/knee/ankle/lumbar the YAML Sn/Sp is shown, marked "from
+gpab notes", where the KB entry has none. hip/knee/ankle/lumbar added 2026-11-10 on `dev`).
 
 ## What's built (see `CONVERSION_PLAN.md` for the authoritative, up-to-date phase list)
 

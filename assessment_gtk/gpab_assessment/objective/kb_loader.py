@@ -9,7 +9,7 @@ migrated, no other region's behavior changes until it's added here.
 
 from __future__ import annotations
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import yaml
@@ -38,7 +38,19 @@ _ASSESSMENT_KB_FILES = {
 
 _STRIP_SUFFIXES = ("_l", "_r", "_left", "_right")
 
-_DB_BACKED_REGIONS = {"cervical", "shoulder"}
+# hip/knee/ankle added 2026-11-10 together with their test_field_map rows in
+# ~/Projects/kb (source/msk_clusters_pab.csv). Rows with no KB test yet (e.g.
+# Thompson, Ober, the Squeeze tests) still fall back to kb/<region>.yaml per field.
+# lumbar stays per-field via _GLOBAL_DB_FIELDS: st_faber_l/_r still maps to two
+# conflicting KB tests (36 and 68), see the note there.
+_DB_BACKED_REGIONS = {"cervical", "shoulder", "hip", "knee", "ankle"}
+
+# Lumbar Special Tests rows wired into _GLOBAL_DB_FIELDS below (2026-11-10).
+_LUMBAR_DB_FIELDS = frozenset({
+    "slr_l", "slr_r", "crossed_slr_l", "crossed_slr_r",
+    "slump_l", "slump_r", "fadir_l", "fadir_r",
+    "prone_inst_l", "prone_inst_r",
+})
 
 # Fields that are DB-resolvable regardless of which region is active — these
 # aren't tied to a body-region tab (they're Neurological section UMN signs,
@@ -108,7 +120,27 @@ _GLOBAL_DB_FIELDS = {
     # live-mirrored buttons in both sections, so Ctrl+K resolves from either.
     "goal_type_treatment_seeking", "goal_type_self_sufficiency",
     "goal_type_social_validation",
+    # Lumbar Special Tests rows with a single, clean KB mapping (added
+    # 2026-11-10 when hip/knee/ankle joined _DB_BACKED_REGIONS). Field ids are
+    # unique to the lumbar tab. faber_l/_r is deliberately left out until the
+    # KB's duplicate FABER mapping (tests 36 and 68) is resolved, see the
+    # SIJ note above. femoral_l/_r has no KB test yet.
+    *_LUMBAR_DB_FIELDS,
 }
+
+# Regions/fields switched to the DB on 2026-11-10. Where the KB entry has no
+# Sn/Sp yet but the older kb/<region>.yaml note does (e.g. Valgus/Varus,
+# Clarke's, Posterior Sag, Royal London, Prone Instability), Ctrl+K keeps
+# showing the YAML figures, labelled as such, instead of dropping them. Kept to
+# these regions so cervical/shoulder (switched earlier) show exactly what they
+# did before. Remove an entry once the KB carries its own figures.
+_YAML_FIGURE_FALLBACK_REGIONS = {"hip", "knee", "ankle"}
+
+# Field ids never resolved from the DB via a DB-backed region. Lumbar FABER maps
+# to two conflicting KB tests (36 and 68), so it stays on its YAML entry. Without
+# this, focusing it while any DB-backed region is active (the app resolves
+# against every active region) would show an arbitrary one of the two.
+_NOT_DB_RESOLVABLE = frozenset({"faber_l", "faber_r"})
 
 
 # Sensory's "Pressure Pain Threshold" button (field id sn_secondary_hyper —
@@ -356,11 +388,37 @@ class KBRegistry:
 
         YAML lookup tries exact match first, then strips _l/_r suffixes.
         """
-        if region in _DB_BACKED_REGIONS or field_id in _GLOBAL_DB_FIELDS:
+        if (
+            region in _DB_BACKED_REGIONS and field_id not in _NOT_DB_RESOLVABLE
+        ) or field_id in _GLOBAL_DB_FIELDS:
             db_entry = _resolve_from_db(field_id)
             if db_entry is not None:
+                if "Sn" not in db_entry.sn_sp and "Sp" not in db_entry.sn_sp:
+                    # No Sn/Sp in the KB (it may still have an LR, e.g. Patellar Tilt)
+                    figures = self._fallback_figures(field_id)
+                    if figures:
+                        kb_part = f"{db_entry.sn_sp}  ·  " if db_entry.sn_sp else ""
+                        db_entry = replace(
+                            db_entry, sn_sp=f"{kb_part}{figures} (from gpab notes)"
+                        )
                 return db_entry
+        return self._resolve_yaml(region, field_id)
 
+    def _fallback_figures(self, field_id: str) -> str:
+        """YAML sn_sp for a DB-resolved field whose KB entry has no figures, from
+        whichever fallback region owns the field (see _YAML_FIGURE_FALLBACK_REGIONS).
+        Independent of the region being resolved: the app resolves a field once per
+        active region, so the result must not depend on which region asked."""
+        homes = sorted(_YAML_FIGURE_FALLBACK_REGIONS)
+        if field_id in _LUMBAR_DB_FIELDS:
+            homes = ["lumbar"]
+        for home in homes:
+            entry = self._resolve_yaml(home, field_id)
+            if entry is not None and entry.sn_sp:
+                return entry.sn_sp
+        return ""
+
+    def _resolve_yaml(self, region: str, field_id: str) -> KBEntry | None:
         region_data = self._data.get(region, {})
         if not region_data:
             return None
