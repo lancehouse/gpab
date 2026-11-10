@@ -535,6 +535,17 @@ class CycleField(Gtk.Box):
         self._value = value if value in self.CYCLE else None
         self._apply()
 
+    def select_value(self, value: str | None) -> None:
+        """Set value the way a real tap would — emits "changed" so autosave
+        and linked mirrors follow (set_value above is the silent load()
+        path). Used by grid_drag_select.py's drag-paint."""
+        value = value if value in self.CYCLE else None
+        if value == self._value:
+            return
+        self._value = value
+        self._apply()
+        self.emit("changed")
+
     def _apply(self) -> None:
         self.button.set_label(self._value or "?")
         for cls in self.CSS_CLASS.values():

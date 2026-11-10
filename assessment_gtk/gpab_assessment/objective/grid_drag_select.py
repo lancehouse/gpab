@@ -49,7 +49,15 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Gtk, Graphene  # noqa: E402
 
-from ..widgets import RadioGroup
+from ..widgets import CycleField, RadioGroup
+
+# CycleField support added 2026-11-10 for the AD Lx/SIJ tab's tables (its
+# Sensation-by-level grid, SIJ/special-test and PAIVM columns are single
+# cycling buttons, not chip gangs). A CycleField has no chip to start on,
+# so a drag paints the STARTING cell's current value onto every cell it
+# crosses — set the first cell (tap), then drag it down the column. Same
+# threshold, live highlight and commit-on-release as RadioGroup.
+_DRAGGABLE = (RadioGroup, CycleField)
 
 _DRAG_HOVER_CSS = "grid-drag-hover"
 _DRAG_THRESHOLD_PX = 5  # below this, treat as a plain tap — see module docstring.
@@ -92,7 +100,12 @@ class GridDragSelect:
     # ------------------------------------------------------------------
 
     def _on_drag_begin(self, gesture: Gtk.GestureDrag, x: float, y: float, group: RadioGroup) -> None:
-        idx = group.chip_index_at(x, y)
+        if isinstance(group, CycleField):
+            # Whatever the cell shows right now is what gets painted; the
+            # value itself rides in _drag_start_idx (any non-None marker).
+            idx = ("value", group.value)
+        else:
+            idx = group.chip_index_at(x, y)
         if idx is None:
             # Landed in a gap between chips, not on a settable cell — deny
             # immediately so nothing about this touch is claimed here.
@@ -137,7 +150,10 @@ class GridDragSelect:
     def _on_drag_end(self, gesture: Gtk.GestureDrag, offset_x: float, offset_y: float, group: RadioGroup) -> None:
         if self._drag_claimed and self._drag_start_idx is not None:
             for g in self._drag_hovered:
-                g.select_by_index(self._drag_start_idx)
+                if isinstance(g, CycleField):
+                    g.select_value(self._drag_start_idx[1])
+                else:
+                    g.select_by_index(self._drag_start_idx)
         self._clear_drag_state()
 
     def _on_drag_cancel(self, gesture: Gtk.GestureDrag, sequence) -> None:
@@ -169,7 +185,7 @@ class GridDragSelect:
         target = root.pick(root_point.x, root_point.y, Gtk.PickFlags.DEFAULT)
         w = target
         while w is not None:
-            if isinstance(w, RadioGroup) and w in self._drag_active_column:
+            if isinstance(w, _DRAGGABLE) and w in self._drag_active_column:
                 return w
             w = w.get_parent()
         return None
