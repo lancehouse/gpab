@@ -478,6 +478,15 @@ entry {
     min-height: 48px;
 }
 
+/* Subjective note Location/Nature "↻ chart" button (subjective.py
+   _chart_field_row) — replaces the field with freshly generated body-chart
+   text. Small: it sits under the field label in the left column. */
+.chart-text-btn {
+    min-height: 28px;
+    padding: 0 8px;
+    font-size: 0.8rem;
+}
+
 /* Session-length clock (timer_widget.py) — pinned at the bottom of the left
    sidebar column, persistent across assessment AND objective tabs. New
    feature, no TUI equivalent; dialled in with the user 2026-08-24. The

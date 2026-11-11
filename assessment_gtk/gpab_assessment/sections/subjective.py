@@ -89,6 +89,48 @@ def _triplet_row(label_text: str, widgets: tuple) -> Gtk.Box:
     return row
 
 
+def _chart_field_row(label_text: str, widget: AutoTextView) -> Gtk.Box:
+    """Like field_row, plus a small "↻ chart" button under the label that
+    replaces the field with the text freshly generated from the body chart
+    (mapping.build_prefill). Saved text always wins over generated text on
+    reload, so this is how an older or hand-edited note picks up new chart
+    wording — only when tapped, one field at a time (Ctrl+Z undoes it).
+    The generated text is also the button's tooltip, for comparison."""
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    field_left_slot(left)
+    lbl = Gtk.Label(label=label_text)
+    lbl.add_css_class("field-label")
+    lbl.set_halign(Gtk.Align.START)
+    lbl.set_wrap(True)
+    left.append(lbl)
+    btn = Gtk.Button(label="↻ chart")
+    btn.add_css_class("chart-text-btn")
+    btn.set_halign(Gtk.Align.START)
+    btn.set_sensitive(False)
+    left.append(btn)
+    row.append(left)
+    row.append(widget)
+
+    widget.chart_text = ""
+    widget.chart_btn = btn
+
+    def refresh(*_a):
+        btn.set_sensitive(bool(widget.chart_text) and widget.chart_text != widget.text)
+
+    btn.connect("clicked", lambda _b: setattr(widget, "text", widget.chart_text))
+    widget.textview.get_buffer().connect("changed", refresh)
+    widget.refresh_chart_btn = refresh
+    return row
+
+
+def _set_chart_text(widget: AutoTextView, text: str) -> None:
+    widget.chart_text = text or ""
+    widget.chart_btn.set_tooltip_text(
+        f"Body chart text:\n{text}" if text else "No body chart text")
+    widget.refresh_chart_btn()
+
+
 class _NoteSlot(Gtk.Box):
     """One dynamic per-note slot. full=True renders loc/nat/agg/ease; else loc/nat only."""
 
@@ -122,9 +164,9 @@ class _NoteSlot(Gtk.Box):
             self.brief = None
 
         self.loc = AutoTextView(f"note_{index}_loc", min_lines=2)
-        self.append(_field_row("Location & distribution:", self.loc))
+        self.append(_chart_field_row("Location & distribution:", self.loc))
         self.nat = AutoTextView(f"note_{index}_nat", min_lines=2)
-        self.append(_field_row("Nature of symptoms:" if full else "Nature:", self.nat))
+        self.append(_chart_field_row("Nature of symptoms:" if full else "Nature:", self.nat))
 
         if full:
             self.agg = AutoTextView(f"note_{index}_agg", min_lines=2)
@@ -199,9 +241,9 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         misc_hdr.set_halign(Gtk.Align.START)
         self.misc_slot.append(misc_hdr)
         self.misc_loc = AutoTextView("misc_loc", min_lines=2)
-        self.misc_slot.append(_field_row("Location & distribution:", self.misc_loc))
+        self.misc_slot.append(_chart_field_row("Location & distribution:", self.misc_loc))
         self.misc_nat = AutoTextView("misc_nat", min_lines=2)
-        self.misc_slot.append(_field_row("Nature:", self.misc_nat))
+        self.misc_slot.append(_chart_field_row("Nature:", self.misc_nat))
         self.misc_agg = AutoTextView("misc_agg", min_lines=2)
         self.misc_slot.append(_field_row("Aggravating factors:", self.misc_agg))
         self.misc_ease = AutoTextView("misc_ease", min_lines=2)
@@ -646,6 +688,8 @@ class SubjectiveSection(Gtk.Box, SectionBase):
                 slot.header_label.set_label(f"Misc symptoms ({num})")
 
             slot.loc.text = loc
+            _set_chart_text(slot.loc, pf_loc)
+            _set_chart_text(slot.nat, pf_nat)
             slot.nat.text = nat
 
         # Misc is always present now (Aggravating/Easing have no body-chart
@@ -663,6 +707,8 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         misc_ease = saved_note_fields.get("misc_ease", "")
         self.misc_loc.text = misc_loc
         self.misc_nat.text = misc_nat
+        _set_chart_text(self.misc_loc, pf_mloc)
+        _set_chart_text(self.misc_nat, pf_mnat)
         self.misc_agg.text = misc_agg
         self.misc_ease.text = misc_ease
 
