@@ -443,6 +443,9 @@ void svg_regions_load(SvgRegions *sr)
     int         loaded = 0;
 
     static const char *SEARCH_DIRS[] = {
+#ifdef GPAB_REGIONS_DIR
+        GPAB_REGIONS_DIR,   /* this checkout's own views/ (see meson.build) */
+#endif
         NULL,   /* filled from home below */
         "/usr/local/share/pab/views",
         "/usr/share/pab/views",
@@ -454,8 +457,13 @@ void svg_regions_load(SvgRegions *sr)
              "%s/.local/share/pab/views", home);
     snprintf(home_dev,  sizeof(home_dev),
              "%s/Projects/pab/bodychart/views", home);
-    SEARCH_DIRS[0] = home_user;
-    SEARCH_DIRS[3] = home_dev;
+#ifdef GPAB_REGIONS_DIR
+    const int off = 1;
+#else
+    const int off = 0;
+#endif
+    SEARCH_DIRS[0 + off] = home_user;
+    SEARCH_DIRS[3 + off] = home_dev;
 
     int n_dirs  = (int)(sizeof(SEARCH_DIRS) / sizeof(SEARCH_DIRS[0]));
     int n_files = (int)(sizeof(SVG_REGION_FILES) / sizeof(SVG_REGION_FILES[0]));
@@ -473,6 +481,18 @@ void svg_regions_load(SvgRegions *sr)
         else
             fprintf(stderr, "svg_regions: %s not found in any search dir\n",
                     SVG_REGION_FILES[fi]);
+    }
+
+    for (int i = 0; i < sr->n_layers; i++) {
+        SvgRegionLayer *ly = &sr->layers[i];
+        ly->min_x = ly->min_y =  1e9f;
+        ly->max_x = ly->max_y = -1e9f;
+        for (int p = 0; p < ly->n_pts; p++) {
+            ly->min_x = fminf(ly->min_x, ly->pts[p][0]);
+            ly->max_x = fmaxf(ly->max_x, ly->pts[p][0]);
+            ly->min_y = fminf(ly->min_y, ly->pts[p][1]);
+            ly->max_y = fmaxf(ly->max_y, ly->pts[p][1]);
+        }
     }
 
     sr->loaded = (loaded > 0);
@@ -509,8 +529,57 @@ const SvgRegionLayer *svg_regions_hit(const SvgRegions *sr, int file_index,
         if (ly->svg_w <= 0.0f || ly->svg_h <= 0.0f) continue;
         float sx = bx * (ly->svg_w / 200.0f);
         float sy = by * (ly->svg_h / 400.0f);
+        if (sx < ly->min_x || sx > ly->max_x || sy < ly->min_y || sy > ly->max_y)
+            continue;   /* bbox reject — this now runs per stroke point on save */
         if (point_in_polygon(ly->pts, ly->n_pts, sx, sy))
             return ly;
     }
     return NULL;
+}
+
+/* Squared distance from (x,y) to segment (ax,ay)-(bx,by). */
+static float seg_dist2(float x, float y, float ax, float ay, float bx, float by)
+{
+    float dx = bx - ax, dy = by - ay;
+    float l2 = dx * dx + dy * dy;
+    float t = l2 > 0.0f ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0.0f;
+    if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+    float px = ax + t * dx - x, py = ay + t * dy - y;
+    return px * px + py * py;
+}
+
+const SvgRegionLayer *svg_regions_hit_near(const SvgRegions *sr, int file_index,
+                                           float bx, float by, float max_bu)
+{
+    const SvgRegionLayer *hit = svg_regions_hit(sr, file_index, bx, by);
+    if (hit || !sr->loaded || max_bu <= 0.0f) return hit;
+
+    const SvgRegionLayer *best = NULL;
+    float best_d2 = 1e30f;
+    for (int i = 0; i < sr->n_layers; i++) {
+        const SvgRegionLayer *ly = &sr->layers[i];
+        if (ly->file_index != file_index || ly->n_pts < 3) continue;
+        if (ly->svg_w <= 0.0f || ly->svg_h <= 0.0f) continue;
+        float kx = ly->svg_w / 200.0f, ky = ly->svg_h / 400.0f;
+        float sx = bx * kx, sy = by * ky;
+        float mx = max_bu * kx, my = max_bu * ky;
+        if (sx < ly->min_x - mx || sx > ly->max_x + mx ||
+            sy < ly->min_y - my || sy > ly->max_y + my) continue;
+        /* Measure in body units so x/y scale differences don't skew it */
+        for (int p = 0, q = ly->n_pts - 1; p < ly->n_pts; q = p++) {
+            float d2 = seg_dist2(bx, by,
+                                 ly->pts[q][0] / kx, ly->pts[q][1] / ky,
+                                 ly->pts[p][0] / kx, ly->pts[p][1] / ky);
+            if (d2 < best_d2) { best_d2 = d2; best = ly; }
+        }
+    }
+    return (best && best_d2 <= max_bu * max_bu) ? best : NULL;
+}
+
+float svg_regions_frac_y(const SvgRegionLayer *ly, float by)
+{
+    if (!ly || ly->svg_h <= 0.0f || ly->max_y <= ly->min_y) return 0.5f;
+    float sy = by * (ly->svg_h / 400.0f);
+    float f = (sy - ly->min_y) / (ly->max_y - ly->min_y);
+    return f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
 }

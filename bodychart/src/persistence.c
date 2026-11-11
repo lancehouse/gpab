@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <math.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <errno.h>
@@ -255,6 +256,20 @@ static json_object *gonio_charts_to_json(AppState *app)
 
 #define STROKE_CLUSTER_PADDING_BU 5.0f
 #define NOTE_ASSOC_THRESHOLD_BU   30.0f  /* max body-unit dist: note → cluster centroid */
+#define REGION_NEAR_BU            4.0f   /* points this close outside a region count to it */
+#define CLUSTER_MAX_COV           48
+
+/* Per-region point coverage of one cluster (2026-11-11). Every stroke point
+ * is located, not just the centroid, so a stroke drawn thigh → foot reports
+ * all the regions it crosses. Points are ink samples, not area — consumers
+ * use n only to rank/drop trace regions, never as a percentage of area.
+ * top/bottom: how far through the region (vertically, 0 = top edge,
+ * 1 = bottom edge of its bbox) the cluster's points reach. */
+typedef struct {
+    const SvgRegionLayer *ly;
+    int   n;
+    float top, bottom;
+} ClusterCov;
 
 typedef struct {
     int    id;
@@ -265,7 +280,59 @@ typedef struct {
     char   region_label[80];
     int   *stroke_ids;
     int    n_stroke_ids;
+    ClusterCov cov[CLUSTER_MAX_COV];
+    int    n_cov;
+    int    n_pts;
+    int    n_unlabelled;
 } ClusterMeta;
+
+static gboolean type_is_symptom(int type)
+{
+    return type != SYMPTOM_TICK && type != SYMPTOM_PENCIL;
+}
+
+static void cluster_cover_point(AppState *app, ClusterMeta *m, float x, float y)
+{
+    m->n_pts++;
+    const SvgRegionLayer *ly = app->svg_regions.loaded
+        ? svg_regions_hit_near(&app->svg_regions, m->view, x, y, REGION_NEAR_BU)
+        : NULL;
+    if (!ly) { m->n_unlabelled++; return; }
+    float f = svg_regions_frac_y(ly, y);
+    int k = 0;
+    while (k < m->n_cov && m->cov[k].ly != ly) k++;
+    if (k == m->n_cov) {
+        if (m->n_cov == CLUSTER_MAX_COV) return;
+        m->cov[k] = (ClusterCov){ ly, 0, f, f };
+        m->n_cov++;
+    }
+    m->cov[k].n++;
+    if (f < m->cov[k].top)    m->cov[k].top    = f;
+    if (f > m->cov[k].bottom) m->cov[k].bottom = f;
+}
+
+/* Walk the stroke's polyline in COVER_STEP_BU steps rather than only at its
+ * recorded points — some fills (e.g. the paraesthesia X marks) are long
+ * straight segments with few samples, which would otherwise skip every
+ * region they cross between samples. n then measures ink length. */
+#define COVER_STEP_BU 2.0f
+static void cluster_cover_stroke(AppState *app, ClusterMeta *m, const Stroke *sk)
+{
+    if (sk->n_pts == 0) return;
+    cluster_cover_point(app, m, sk->pts[0].x, sk->pts[0].y);
+    float carry = 0.0f;
+    for (size_t p = 1; p < sk->n_pts; p++) {
+        float x0 = sk->pts[p - 1].x, y0 = sk->pts[p - 1].y;
+        float dx = sk->pts[p].x - x0, dy = sk->pts[p].y - y0;
+        float len = sqrtf(dx * dx + dy * dy);
+        float t = COVER_STEP_BU - carry;
+        while (t <= len) {
+            cluster_cover_point(app, m, x0 + dx * t / len, y0 + dy * t / len);
+            t += COVER_STEP_BU;
+        }
+        carry = len - (t - COVER_STEP_BU);
+    }
+}
 
 static void cluster_meta_free(ClusterMeta *meta, int n)
 {
@@ -366,6 +433,9 @@ static ClusterMeta *compute_clusters(AppState *app, int *n_out)
         m->region_label[0] = '\0';
         m->stroke_ids    = NULL;
         m->n_stroke_ids  = 0;
+        m->n_cov         = 0;
+        m->n_pts         = 0;
+        m->n_unlabelled  = 0;
 
         /* Count member strokes first, then allocate */
         int n_sk = 0;
@@ -383,6 +453,7 @@ static ClusterMeta *compute_clusters(AppState *app, int *n_out)
                 m->centroid_by += sk->pts[p].y;
                 pt_count++;
             }
+            cluster_cover_stroke(app, m, sk);
         }
         if (pt_count > 0) {
             m->centroid_bx /= pt_count;
@@ -419,6 +490,22 @@ static json_object *clusters_meta_to_json(const ClusterMeta *meta, int n)
         for (int k = 0; k < m->n_stroke_ids; k++)
             json_object_array_add(ids, json_object_new_int(m->stroke_ids[k]));
         json_object_object_add(c, "stroke_ids", ids);
+
+        /* Point-level region coverage — see ClusterCov. Additive key; old
+         * readers ignore it. n_pts/n_unlabelled let a reader tell "mostly
+         * on a lateral view (no region map)" from "fully labelled". */
+        json_object *cov = json_object_new_array();
+        for (int k = 0; k < m->n_cov; k++) {
+            json_object *e = json_object_new_object();
+            json_object_object_add(e, "name",   json_object_new_string(m->cov[k].ly->name));
+            json_object_object_add(e, "n",      json_object_new_int(m->cov[k].n));
+            json_object_object_add(e, "top",    json_object_new_double(m->cov[k].top));
+            json_object_object_add(e, "bottom", json_object_new_double(m->cov[k].bottom));
+            json_object_array_add(cov, e);
+        }
+        json_object_object_add(c, "region_coverage", cov);
+        json_object_object_add(c, "n_pts",        json_object_new_int(m->n_pts));
+        json_object_object_add(c, "n_unlabelled", json_object_new_int(m->n_unlabelled));
         json_object_array_add(arr, c);
     }
     return arr;
@@ -458,8 +545,9 @@ static json_object *notes_to_json(AppState *app,
         /* Spatial association: region the note dot sits in */
         const char *region_label = "";
         if (app->svg_regions.loaded) {
-            const SvgRegionLayer *ly = svg_regions_hit(
-                &app->svg_regions, n->view, (float)n->bx, (float)n->by);
+            const SvgRegionLayer *ly = svg_regions_hit_near(
+                &app->svg_regions, n->view, (float)n->bx, (float)n->by,
+                REGION_NEAR_BU);
             if (ly) region_label = ly->name;
         }
         json_object_object_add(o, "region_label", json_object_new_string(region_label));
@@ -473,6 +561,7 @@ static json_object *notes_to_json(AppState *app,
         for (int ci = 0; ci < n_clusters; ci++) {
             const ClusterMeta *m = &clusters[ci];
             if (m->view != n->view) continue;
+            if (!type_is_symptom(m->type)) continue;   /* ticks/pencil aren't symptoms */
             double dx = m->centroid_bx - n->bx;
             double dy = m->centroid_by - n->by;
             if (dx * dx + dy * dy > thresh2) continue;
@@ -505,6 +594,7 @@ static json_object *misc_cluster_ids_json(AppState *app,
     json_object *arr = json_object_new_array();
     for (int ci = 0; ci < n_clusters; ci++) {
         const ClusterMeta *m = &clusters[ci];
+        if (!type_is_symptom(m->type)) continue;   /* ticks/pencil aren't symptoms */
         gboolean claimed = FALSE;
         for (int ni = 0; ni < app->note_count && !claimed; ni++) {
             NoteAnnotation *na = &app->notes[ni];

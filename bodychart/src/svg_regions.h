@@ -20,6 +20,7 @@ typedef struct {
     int   file_index;            /* which SVG file: 0=anterior, 1=posterior, etc. */
     float svg_w;                 /* viewBox width of the source SVG (e.g. 873) */
     float svg_h;                 /* viewBox height of the source SVG (e.g. 1974) */
+    float min_x, min_y, max_x, max_y;   /* polygon bbox in SVG coords (set after load) */
 } SvgRegionLayer;
 
 typedef struct {
@@ -37,3 +38,13 @@ void svg_regions_load(SvgRegions *sr);
  * bx/by are in body coordinates (0–200 × 0–400). */
 const SvgRegionLayer *svg_regions_hit(const SvgRegions *sr, int file_index,
                                       float bx, float by);
+
+/* As svg_regions_hit(), but a point inside no region is given the region
+ * whose outline is nearest, if within max_bu body units — drawing routinely
+ * runs a little past the body outline or into the gaps between regions. */
+const SvgRegionLayer *svg_regions_hit_near(const SvgRegions *sr, int file_index,
+                                           float bx, float by, float max_bu);
+
+/* Vertical position of body-space y within the layer's bbox: 0 = top edge,
+ * 1 = bottom edge (clamped). For limbs/trunk this is proximal → distal. */
+float svg_regions_frac_y(const SvgRegionLayer *ly, float by);
