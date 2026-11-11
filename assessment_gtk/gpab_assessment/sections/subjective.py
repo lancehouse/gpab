@@ -625,7 +625,9 @@ class SubjectiveSection(Gtk.Box, SectionBase):
 
             pf_loc = note["location_distribution"] or ""
             pf_nat = note["nature"] or ""
-            region = pf_loc or f"Note {num}"
+            # Header shows just the dot's region (primary site); the full
+            # chart-derived Location sentence is too long for a header.
+            region = note.get("region") or f"Note {num}"
             loc = _follow_chart(str(sid), "loc", saved.get("loc"), pf_loc) or pf_loc
             nat = _follow_chart(str(sid), "nat", saved.get("nat"), pf_nat) or pf_nat
             self._last_prefill[str(sid)] = {"loc": pf_loc, "nat": pf_nat}

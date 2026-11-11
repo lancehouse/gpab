@@ -38,6 +38,14 @@ sources = files(
   'src/overlay_data/somatic.c',
 )
 
+# gpab maintains its own copy of the body-region SVGs (wrists, R dorsal thumb
+# added 2026-11-11). Without this the loader would only find
+# ~/Projects/pab/bodychart/views (pab's copy, never edited from here). The
+# path is this checkout's own views/ dir, so dev and the gpab-stable worktree
+# each load their own copy with no per-branch edit.
+add_project_arguments('-DGPAB_REGIONS_DIR="' + meson.current_source_dir() / 'views' + '"',
+  language : 'c')
+
 executable('bodychart',
   sources,
   dependencies : [gtk4_dep, cairo_dep, rsvg_dep, jsonc_dep, m_dep, python_dep],
