@@ -136,6 +136,11 @@ struct _AppState {
 
     /* Note/link-summary dragging state */
     int              note_drag_idx;      /* -1=none */
+    gboolean         note_swallow;       /* rest of a double-tap press (it opened the Note form) is ignored */
+    gboolean         note_drag_dot;      /* TRUE = moving the placement dot, FALSE = the label box */
+    int              note_tap_sid;       /* double-tap detection: last tapped note's stable_id, -1=none */
+    gint64           note_tap_us;
+    double           note_tap_x, note_tap_y;
     double           note_drag_bx_off;
     double           note_drag_by_off;
     gboolean         link_drag_active;
@@ -170,6 +175,8 @@ struct _AppState {
 
     /* Note wizard callback — set by window.c */
     void (*show_note_wizard_cb)(AppState *, int view, double bx, double by);
+    /* Edit-existing-note callback (double-tap a note box) — set by window.c */
+    void (*edit_note_cb)(AppState *, int stable_id);
 
     /* Clear confirmation callback — set by window.c */
     void (*request_clear_cb)(AppState *);
@@ -280,6 +287,10 @@ GtkWidget  *canvas_new(AppState *app);
 void        canvas_invalidate(AppState *app);
 void        canvas_clear(AppState *app);
 void        canvas_undo(AppState *app);
+/* Delete note idx, compacting links/report fields keyed by note index. */
+void        canvas_delete_note(AppState *app, int idx);
+/* Current array index of the note with this stable_id, or -1. */
+int         canvas_note_index_by_sid(AppState *app, int stable_id);
 void        canvas_set_layout(AppState *app, LayoutMode mode);
 void        canvas_cycle_right_slot(AppState *app, int slot);
 void        canvas_reset_all_zoom(AppState *app);

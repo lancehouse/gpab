@@ -158,6 +158,14 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         self._on_chart_note_changed = None
         self.session_file = ""
         self._slot_to_stable_id: dict[int, int] = {}
+        # Last chart-derived Location/Nature shown per note (str(stable_id),
+        # plus "misc"), in memory only. Bodychart notes became editable
+        # (2026-11-11: move the dot, re-open the Note form), so the chart-
+        # derived text can change after it was first shown here. A field
+        # whose text still equals what the chart last gave it hasn't been
+        # touched by the clinician, so it follows the chart; anything
+        # hand-edited stays as typed.
+        self._last_prefill: dict[str, dict[str, str]] = {}
         # Anchor key -> widget to focus, for Alt+letter subsection jumps
         # (mirrors main.py's action_sub_* -> BaseSection._jump_to anchors).
         self._jump_targets: dict[str, Gtk.Widget] = {}
@@ -599,6 +607,14 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         notes = prefill.get("notes", [])
         total_slots = len(self._note_slots)
 
+        def _follow_chart(key: str, field: str, saved_val, new_prefill: str):
+            # Drop the saved value if it's just the previous chart prefill
+            # (untouched), so the fresh chart value takes its place.
+            prev = self._last_prefill.get(key, {}).get(field)
+            if prev is not None and saved_val == prev:
+                return None
+            return saved_val
+
         for i, note in enumerate(notes[:total_slots]):
             slot = self._note_slots[i]
             sid = note["stable_id"]
@@ -607,9 +623,12 @@ class SubjectiveSection(Gtk.Box, SectionBase):
             self._slot_to_stable_id[i] = sid
             slot.set_visible(True)
 
-            region = note["location_distribution"] or f"Note {num}"
-            loc = saved.get("loc") or note["location_distribution"] or ""
-            nat = saved.get("nat") or note["nature"] or ""
+            pf_loc = note["location_distribution"] or ""
+            pf_nat = note["nature"] or ""
+            region = pf_loc or f"Note {num}"
+            loc = _follow_chart(str(sid), "loc", saved.get("loc"), pf_loc) or pf_loc
+            nat = _follow_chart(str(sid), "nat", saved.get("nat"), pf_nat) or pf_nat
+            self._last_prefill[str(sid)] = {"loc": pf_loc, "nat": pf_nat}
 
             if slot.full:
                 slot.header_label.set_label(f"Note {num} — {region}")
@@ -633,8 +652,11 @@ class SubjectiveSection(Gtk.Box, SectionBase):
         # the same sticky-prefill behaviour as every note slot; Aggravating/
         # Easing are purely clinician-entered, same as a note's own agg/ease.
         misc = prefill.get("misc", {})
-        misc_loc = saved_note_fields.get("misc_loc") or misc.get("location_distribution", "")
-        misc_nat = saved_note_fields.get("misc_nat") or misc.get("nature", "")
+        pf_mloc = misc.get("location_distribution", "") or ""
+        pf_mnat = misc.get("nature", "") or ""
+        misc_loc = _follow_chart("misc", "loc", saved_note_fields.get("misc_loc"), pf_mloc) or pf_mloc
+        misc_nat = _follow_chart("misc", "nat", saved_note_fields.get("misc_nat"), pf_mnat) or pf_mnat
+        self._last_prefill["misc"] = {"loc": pf_mloc, "nat": pf_mnat}
         misc_agg = saved_note_fields.get("misc_agg", "")
         misc_ease = saved_note_fields.get("misc_ease", "")
         self.misc_loc.text = misc_loc

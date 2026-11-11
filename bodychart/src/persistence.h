@@ -21,6 +21,10 @@ void     persistence_build_paths(AppState *app, const char *patient_id,
  * Creates session_dir if it does not exist.  Returns FALSE on I/O error. */
 gboolean persistence_save(AppState *app);
 
+/* Rebuild a note's on-chart text (header + body) from its fields. Body
+ * precedence: chart_note_text (gpab Brief) > voice_note > quality words. */
+void     persistence_regen_note_text(NoteAnnotation *n);
+
 /* Load AppState data from a session JSON file.
  * Clears all existing strokes/notes/arrows/links before loading.
  * Also sets app->session_file / session_dir / session_name from the path.

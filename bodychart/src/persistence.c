@@ -778,6 +778,11 @@ static void regen_note_text(NoteAnnotation *n, const char *const *qs)
     snprintf(n->text, sizeof(n->text), "%s\n%s", header, line2);
 }
 
+void persistence_regen_note_text(NoteAnnotation *n)
+{
+    regen_note_text(n, NOTE_QUALITY_SHORT);
+}
+
 /* ── Load ─────────────────────────────────────────────────────────────────── */
 
 static void load_obj_data(AppState *app, json_object *obj_j)
