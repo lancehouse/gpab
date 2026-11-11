@@ -4,6 +4,7 @@
 #include "overlays.h"
 #include "overlay_svg.h"
 #include "obj_chart.h"
+#include "persistence.h"
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
@@ -394,7 +395,10 @@ static void label_anchor_resolve(const NoteAnnotation *na,
                                   double *out_lbx, double *out_lby);  /* fwd */
 static void draw_pencil_strokes_body(AppState *app, cairo_t *cr, int view, double zoom);  /* fwd */
 
-/* Returns index of the note whose label box contains (sx, sy), or -1 */
+static void note_label_size(const NoteAnnotation *na, double *bw, double *bh);  /* fwd */
+
+/* Returns index of the note whose label box contains (sx, sy), or -1.
+ * Walks newest-first so the box drawn on top wins where boxes overlap. */
 static int note_hit_screen(AppState *app, ColData *cd, double sx, double sy)
 {
     double w  = (double)gtk_widget_get_width(cd->da);
@@ -402,19 +406,114 @@ static int note_hit_screen(AppState *app, ColData *cd, double sx, double sy)
     double s  = col_base_scale(w, h) * (*cd->p_zoom);
     double cx = w / 2.0 + (*cd->p_pan_x);
     double cy = h / 2.0 + (*cd->p_pan_y);
-    for (int i = 0; i < app->note_count; i++) {
+    for (int i = app->note_count - 1; i >= 0; i--) {
         const NoteAnnotation *na = &app->notes[i];
         if (na->view != (int)cd->view) continue;
         double lbx, lby;
         label_anchor_resolve(na, &lbx, &lby);
         double lsx = (lbx - 100.0) * s + cx;
         double lsy = (lby - 200.0) * s + cy;
-        /* Approximate label box: bw~180, bh~40, box_ly = lsy - bh */
-        if (sx >= lsx        && sx <= lsx + 180 &&
-            sy >= lsy - 40   && sy <= lsy)
+        double bw, bh;
+        note_label_size(na, &bw, &bh);
+        /* Box is drawn above its reference point: box_ly = lsy - bh */
+        if (sx >= lsx - 2 && sx <= lsx + bw + 2 &&
+            sy >= lsy - bh - 2 && sy <= lsy + 2)
             return i;
     }
     return -1;
+}
+
+/* Returns index of the note whose placement dot is within a touch-sized
+ * radius of (sx, sy), or -1. Nearest dot wins. */
+#define NOTE_DOT_HIT_R 16.0
+static int note_dot_hit_screen(AppState *app, ColData *cd, double sx, double sy)
+{
+    double w  = (double)gtk_widget_get_width(cd->da);
+    double h  = (double)gtk_widget_get_height(cd->da);
+    double s  = col_base_scale(w, h) * (*cd->p_zoom);
+    double cx = w / 2.0 + (*cd->p_pan_x);
+    double cy = h / 2.0 + (*cd->p_pan_y);
+    int best = -1;
+    double best_d2 = NOTE_DOT_HIT_R * NOTE_DOT_HIT_R;
+    for (int i = app->note_count - 1; i >= 0; i--) {
+        const NoteAnnotation *na = &app->notes[i];
+        if (na->view != (int)cd->view) continue;
+        double dx = (na->bx - 100.0) * s + cx - sx;
+        double dy = (na->by - 200.0) * s + cy - sy;
+        double d2 = dx * dx + dy * dy;
+        if (d2 <= best_d2) { best_d2 = d2; best = i; }
+    }
+    return best;
+}
+
+/* Press on an existing note (Sx mode, any tool) — shared by the stylus
+ * handler and the touch/mouse drag gesture, which never see each other's
+ * events. Dot hit arms a dot drag (moves the note's body position); box hit
+ * arms a label drag. A second press on the same note's box within the
+ * double-click time opens the Note form to edit it. Returns TRUE if consumed. */
+static gboolean note_press(AppState *app, ColData *cd, double x, double y)
+{
+    double bx, by;
+    screen_to_body(cd, x, y, &bx, &by);
+
+    int dot = note_dot_hit_screen(app, cd, x, y);
+    if (dot >= 0) {
+        NoteAnnotation *na = &app->notes[dot];
+        app->note_drag_idx    = dot;
+        app->note_drag_dot    = TRUE;
+        app->note_drag_bx_off = na->bx - bx;
+        app->note_drag_by_off = na->by - by;
+        app->note_tap_sid     = -1;
+        return TRUE;
+    }
+
+    int hit = note_hit_screen(app, cd, x, y);
+    if (hit < 0) return FALSE;
+    NoteAnnotation *na = &app->notes[hit];
+
+    gint64 now = g_get_monotonic_time();
+    int dc_ms = 400;
+    GtkSettings *gs = gtk_settings_get_default();
+    if (gs) g_object_get(gs, "gtk-double-click-time", &dc_ms, NULL);
+    if (dc_ms < 400) dc_ms = 400;   /* fingers are slower than mice */
+    double ddx = x - app->note_tap_x, ddy = y - app->note_tap_y;
+    if (app->note_tap_sid == na->stable_id &&
+        now - app->note_tap_us <= (gint64)dc_ms * 1000 &&
+        ddx * ddx + ddy * ddy <= 30.0 * 30.0) {
+        app->note_tap_sid  = -1;
+        app->note_drag_idx = -1;      /* don't leave a drag armed */
+        app->note_swallow  = TRUE;    /* ...nor let the rest of this press draw/erase */
+        if (app->edit_note_cb) app->edit_note_cb(app, na->stable_id);
+        return TRUE;
+    }
+    app->note_tap_sid = na->stable_id;
+    app->note_tap_us  = now;
+    app->note_tap_x   = x;
+    app->note_tap_y   = y;
+
+    double lbx, lby;
+    label_anchor_resolve(na, &lbx, &lby);
+    app->note_drag_idx    = hit;
+    app->note_drag_dot    = FALSE;
+    app->note_drag_bx_off = lbx - bx;
+    app->note_drag_by_off = lby - by;
+    return TRUE;
+}
+
+/* Move whichever part of the dragged note was grabbed. */
+static void note_drag_to(AppState *app, double bx, double by)
+{
+    NoteAnnotation *na = &app->notes[app->note_drag_idx];
+    if (app->note_drag_dot) {
+        /* Body position. A user-placed label stays where it is; an unplaced
+         * one keeps its default offset and so follows the dot. */
+        na->bx = bx + app->note_drag_bx_off;
+        na->by = by + app->note_drag_by_off;
+    } else {
+        na->label.lx     = bx + app->note_drag_bx_off;
+        na->label.ly     = by + app->note_drag_by_off;
+        na->label.placed = 1;
+    }
 }
 
 static gboolean link_summary_hit_screen(AppState *app, ColData *cd,
@@ -1006,46 +1105,85 @@ static int wrap_note_body(cairo_t *cr, const char *body,
     return n;
 }
 
+/* Layout of one note's label box. Shared by draw_note_screen() and the
+ * hit test (note_hit_screen) so the tappable area is exactly the drawn box —
+ * the hit test used to assume a fixed 180x40 box, which missed most of a
+ * wrapped multi-row label. Sets the label font on cr (caller saves/restores). */
+#define NOTE_LABEL_PAD   4.0
+#define NOTE_LABEL_FSZ  14.0
+#define NOTE_LABEL_GAP   2.0
+typedef struct {
+    char   header[128];
+    char   body_rows[NOTE_LABEL_MAX_BODY_ROWS][128];
+    int    n_body;
+    cairo_text_extents_t eh;
+    double line_h, bw, bh;
+} NoteLabelLayout;
+
+static void note_label_layout(cairo_t *cr, const NoteAnnotation *na,
+                              NoteLabelLayout *L)
+{
+    memset(L, 0, sizeof(*L));
+    cairo_select_font_face(cr, "Sans",
+                           CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    cairo_set_font_size(cr, NOTE_LABEL_FSZ);
+
+    /* Header is line 1, always unwrapped; everything after the first '\n'
+     * is the body, word-wrapped below. */
+    const char *nl = strchr(na->text, '\n');
+    if (nl) {
+        int len1 = (int)(nl - na->text);
+        if (len1 >= (int)sizeof(L->header)) len1 = (int)sizeof(L->header) - 1;
+        memcpy(L->header, na->text, (size_t)len1);
+        L->n_body = wrap_note_body(cr, nl + 1, L->body_rows);
+    } else {
+        snprintf(L->header, sizeof(L->header), "%s", na->text);
+    }
+
+    cairo_text_extents(cr, L->header, &L->eh);
+    L->line_h = -L->eh.y_bearing;            /* ascent */
+
+    double bw = L->eh.width - L->eh.x_bearing;
+    for (int i = 0; i < L->n_body; i++) {
+        cairo_text_extents_t te;
+        cairo_text_extents(cr, L->body_rows[i], &te);
+        bw = fmax(bw, te.width - te.x_bearing);
+    }
+    L->bw = bw + 2.0 * NOTE_LABEL_PAD;
+    L->bh = (L->line_h * (1 + L->n_body) + NOTE_LABEL_GAP * L->n_body)
+            + 2.0 * NOTE_LABEL_PAD;
+}
+
+/* Label box size in screen pixels, measured on a scratch surface (for hit
+ * testing outside a draw callback). */
+static void note_label_size(const NoteAnnotation *na, double *bw, double *bh)
+{
+    static cairo_surface_t *surf = NULL;
+    if (!surf) surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
+    cairo_t *cr = cairo_create(surf);
+    NoteLabelLayout L;
+    note_label_layout(cr, na, &L);
+    cairo_destroy(cr);
+    *bw = L.bw;
+    *bh = L.bh;
+}
+
 static void draw_note_screen(cairo_t *cr, const NoteAnnotation *na,
                               double spot_sx, double spot_sy,
                               double label_sx, double label_sy)
 {
-    double pad = 4.0;
-    double fsz = 14.0;
+    double pad = NOTE_LABEL_PAD;
+    double gap = NOTE_LABEL_GAP;
 
     cairo_save(cr);
-    cairo_select_font_face(cr, "Sans",
-                           CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(cr, fsz);
-
-    /* Header is line 1, always unwrapped; everything after the first '\n'
-     * is the body, word-wrapped below. */
-    char header[128] = {0};
-    const char *nl = strchr(na->text, '\n');
-    char body_rows[NOTE_LABEL_MAX_BODY_ROWS][128] = {{0}};
-    int n_body = 0;
-    if (nl) {
-        int len1 = (int)(nl - na->text);
-        if (len1 >= (int)sizeof(header)) len1 = (int)sizeof(header) - 1;
-        memcpy(header, na->text, (size_t)len1);
-        n_body = wrap_note_body(cr, nl + 1, body_rows);
-    } else {
-        snprintf(header, sizeof(header), "%s", na->text);
-    }
-
-    cairo_text_extents_t eh;
-    cairo_text_extents(cr, header, &eh);
-    double line_h = -eh.y_bearing;            /* ascent */
-    double gap    = 2.0;
-
-    double bw = eh.width - eh.x_bearing;
-    for (int i = 0; i < n_body; i++) {
-        cairo_text_extents_t te;
-        cairo_text_extents(cr, body_rows[i], &te);
-        bw = fmax(bw, te.width - te.x_bearing);
-    }
-    bw += 2.0 * pad;
-    double bh = (line_h * (1 + n_body) + gap * n_body) + 2.0 * pad;
+    NoteLabelLayout L;
+    note_label_layout(cr, na, &L);
+    const char *header = L.header;
+    char (*body_rows)[128] = L.body_rows;
+    int n_body = L.n_body;
+    cairo_text_extents_t eh = L.eh;
+    double line_h = L.line_h;
+    double bw = L.bw, bh = L.bh;
 
     /* Label box is drawn with its reference point as its left-baseline */
     double box_lx = label_sx;
@@ -1809,7 +1947,9 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
             return TRUE;
         }
 
-        /* btn == 1: pen touch */
+        /* btn == 1: pen touch. A fresh press ends any swallowed double-tap
+         * press whose release went to the Note form instead of here. */
+        app->note_swallow   = FALSE;
         app->current_view   = cd->view;
         app->last_stylus_us = g_get_monotonic_time();
 
@@ -1845,13 +1985,8 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
                 app->link_drag_by_off = app->link_summary_by - by;
                 return TRUE;
             }
-            int hit = note_hit_screen(app, cd, x, y);
-            if (hit >= 0) {
-                double lbx, lby;
-                label_anchor_resolve(&app->notes[hit], &lbx, &lby);
-                app->note_drag_idx    = hit;
-                app->note_drag_bx_off = lbx - bx;
-                app->note_drag_by_off = lby - by;
+            if (note_press(app, cd, x, y)) {
+                canvas_invalidate(app);
                 return TRUE;
             }
         }
@@ -1953,6 +2088,7 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
     if (GDK_IS_EVENT_TYPE(event, GDK_MOTION_NOTIFY)) {
         app->last_stylus_us = g_get_monotonic_time();
 
+        if (app->note_swallow) return TRUE;
         if (gonio_motion(cd, x, y)) return TRUE;
 
         if (app->legend_drag_active) {
@@ -1966,11 +2102,8 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
         if (app->note_drag_idx >= 0) {
             double bx, by;
             screen_to_body(cd, x, y, &bx, &by);
-            NoteAnnotation *na = &app->notes[app->note_drag_idx];
-            na->label.lx     = bx + app->note_drag_bx_off;
-            na->label.ly     = by + app->note_drag_by_off;
-            na->label.placed = 1;
-            gtk_widget_queue_draw(cd->da);
+            note_drag_to(app, bx, by);
+            canvas_invalidate(app);
             return TRUE;
         }
         if (app->link_drag_active) {
@@ -2026,6 +2159,7 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
         if (btn != 1) return TRUE; /* consume barrel releases silently */
         app->last_stylus_us = g_get_monotonic_time();
 
+        if (app->note_swallow) { app->note_swallow = FALSE; return TRUE; }
         if (gonio_release(app)) return TRUE;
 
         if (app->legend_drag_active) {
@@ -2034,9 +2168,11 @@ static gboolean on_stylus_legacy(GtkEventControllerLegacy *ctrl,
             return TRUE;
         }
         if (app->note_drag_idx >= 0 || app->link_drag_active) {
+            gboolean was_note = app->note_drag_idx >= 0;
             app->note_drag_idx    = -1;
             app->link_drag_active = FALSE;
-            gtk_widget_queue_draw(cd->da);
+            if (was_note) persistence_save(app);
+            canvas_invalidate(app);
             return TRUE;
         }
         if (app->tool == TOOL_NOTE) {
@@ -2096,6 +2232,7 @@ static void on_drag_begin(GtkGestureDrag *gd, double x, double y, gpointer d)
     ColData  *cd  = d;
     AppState *app = cd->app;
     (void)gd;
+    app->note_swallow = FALSE;   /* see on_stylus_legacy's press */
 
     /* Floating ROM chart drag / resize / hide — beats every panel tool */
     if (gonio_press(cd, x, y)) return;
@@ -2125,13 +2262,8 @@ static void on_drag_begin(GtkGestureDrag *gd, double x, double y, gpointer d)
             app->link_drag_by_off = app->link_summary_by - by_hit;
             return;
         }
-        int hit = note_hit_screen(app, cd, x, y);
-        if (hit >= 0) {
-            double lbx, lby;
-            label_anchor_resolve(&app->notes[hit], &lbx, &lby);
-            app->note_drag_idx    = hit;
-            app->note_drag_bx_off = lbx - bx_hit;
-            app->note_drag_by_off = lby - by_hit;
+        if (note_press(app, cd, x, y)) {
+            canvas_invalidate(app);
             return;
         }
     }
@@ -2237,6 +2369,7 @@ static void on_drag_update(GtkGestureDrag *gd, double dx, double dy,
     double sx, sy;
     gtk_gesture_drag_get_start_point(gd, &sx, &sy);
 
+    if (app->note_swallow) return;
     if (gonio_motion(cd, sx + dx, sy + dy)) return;
 
     double bx, by;
@@ -2252,11 +2385,8 @@ static void on_drag_update(GtkGestureDrag *gd, double dx, double dy,
 
     /* Note label drag / link drag (any tool) */
     if (app->note_drag_idx >= 0) {
-        NoteAnnotation *na = &app->notes[app->note_drag_idx];
-        na->label.lx     = bx + app->note_drag_bx_off;
-        na->label.ly     = by + app->note_drag_by_off;
-        na->label.placed = 1;
-        gtk_widget_queue_draw(cd->da);
+        note_drag_to(app, bx, by);
+        canvas_invalidate(app);
         return;
     }
     if (app->link_drag_active) {
@@ -2296,6 +2426,7 @@ static void on_drag_end(GtkGestureDrag *gd, double dx, double dy, gpointer d)
     ColData  *cd  = d;
     AppState *app = cd->app;
 
+    if (app->note_swallow) { app->note_swallow = FALSE; return; }
     if (gonio_release(app)) return;
 
     /* Clear legend / note / link drag (any tool) */
@@ -2305,9 +2436,11 @@ static void on_drag_end(GtkGestureDrag *gd, double dx, double dy, gpointer d)
         return;
     }
     if (app->note_drag_idx >= 0 || app->link_drag_active) {
+        gboolean was_note = app->note_drag_idx >= 0;
         app->note_drag_idx      = -1;
         app->link_drag_active   = FALSE;
-        gtk_widget_queue_draw(cd->da);
+        if (was_note) persistence_save(app);
+        canvas_invalidate(app);
         return;
     }
 
@@ -2599,6 +2732,7 @@ static void on_gonio_layer_draw(GtkDrawingArea *da, cairo_t *cr,
 GtkWidget *canvas_new(AppState *app)
 {
     app->note_drag_idx        = -1;
+    app->note_tap_sid         = -1;
     app->link_drag_active     = FALSE;
     app->legend_drag_active   = FALSE;
     app->obj_point_drag_idx   = -1;
@@ -2786,6 +2920,61 @@ void canvas_clear(AppState *app)
     }
 
     canvas_invalidate(app);
+}
+
+/* Remove note idx and compact everything keyed by note array index:
+ * notes[] (renumbered 1..n), link_matrix rows/cols, link_relations
+ * (dropped if they involve the note, re-indexed otherwise) and
+ * report.note_subj[]. gpab keys its per-note fields by stable_id, so it
+ * just stops showing the deleted note's slot. */
+void canvas_delete_note(AppState *app, int idx)
+{
+    int n = app->note_count;
+    if (idx < 0 || idx >= n) return;
+
+    for (int i = idx; i < n - 1; i++) {
+        app->notes[i] = app->notes[i + 1];
+        app->report.note_subj[i] = app->report.note_subj[i + 1];
+    }
+    memset(&app->report.note_subj[n - 1], 0, sizeof(app->report.note_subj[0]));
+    app->note_count = n - 1;
+    for (int i = 0; i < app->note_count; i++) {
+        app->notes[i].number = i + 1;
+        persistence_regen_note_text(&app->notes[i]);   /* header holds (n) */
+    }
+
+    /* link_matrix: drop row idx and column idx */
+    for (int i = 0; i < n; i++) {
+        int si = i < idx ? i : i + 1;
+        for (int j = 0; j < n; j++) {
+            int sj = j < idx ? j : j + 1;
+            app->link_matrix[i][j] =
+                (si < n && sj < n) ? app->link_matrix[si][sj] : LINK_NEITHER;
+        }
+    }
+
+    int k = 0;
+    for (int r = 0; r < app->link_rel_count; r++) {
+        LinkRel lr = app->link_relations[r];
+        if (lr.from == idx || lr.to == idx) continue;
+        if (lr.from > idx) lr.from--;
+        if (lr.to   > idx) lr.to--;
+        app->link_relations[k++] = lr;
+    }
+    app->link_rel_count = k;
+    if (k == 0) app->link_summary_active = FALSE;
+
+    app->note_drag_idx = -1;
+    app->note_tap_sid  = -1;
+    app->stroke_version++;
+    canvas_invalidate(app);
+}
+
+int canvas_note_index_by_sid(AppState *app, int stable_id)
+{
+    for (int i = 0; i < app->note_count; i++)
+        if (app->notes[i].stable_id == stable_id) return i;
+    return -1;
 }
 
 void canvas_undo(AppState *app)

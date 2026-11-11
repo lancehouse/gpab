@@ -930,6 +930,8 @@ static void apply_css(void)
         "  border: 1px solid #6a4a4a; }"
         "#wiz-cancel:hover { background: #5a3a3a; color: #fff; }"
         "#wiz-window { background: #1a1a2e; }"
+        "#wiz-entry { font-size: 14px; min-height: 44px; background: #252535;"
+        "  color: #dde; border: 1px solid #445; border-radius: 4px; padding: 0 8px; }"
 
         /* ── Report view ── */
         "#report-root { background: #0a0a14; }"
@@ -1010,6 +1012,7 @@ typedef struct { WizardData *wd; int value; } WizIntBtn;
  * NOTE_UNSET and Save is always enabled. */
 struct _WizardData {
     AppState   *app;
+    int         edit_sid;   /* stable_id of the note being edited; -1 = new note */
     int         view;
     double      bx, by;
     GtkWidget  *window;
@@ -1033,11 +1036,11 @@ struct _WizardData {
     WBtnPair    c_q2[2];
     WizQualBtn  q3_btns[NOTE_QUALITY_COUNT];
     WizIntBtn   n_q4[11];
-    /* voice descriptor */
+    /* free-text descriptor — typed, or filled by voice; saved as voice_note */
+    GtkWidget  *desc_entry;
     gboolean    whis_available;
     gboolean    voice_busy;
     guint       voice_poll_id;
-    char        voice_text[256];
     GtkWidget  *mic_btn;
     GtkWidget  *voice_label;
     GtkWidget  *voice_reset_btn;
@@ -1152,78 +1155,119 @@ static void on_wizard_destroy(GtkWidget *w, gpointer d)
     g_free(d);
 }
 
-/* Full clinical words, not actually abbreviated any more (2026-09-26) — kept
- * the name QUALITY_SHORT to avoid touching every call site/comment that
- * references it. "Shot" -> "Shooting" etc. was the reported problem: too
- * cryptic on the chart itself. Matches mapping.py's _QUALITY_TERMS wording
- * on the gpab side (kept in sync by convention, not by a shared source). */
-static const char *QUALITY_SHORT[NOTE_QUALITY_COUNT] = {
-    "Throbbing", "Pressure",  "Aching",     "Stabbing",
-    "Tight",     "Burning",   "Freezing",   "Electrical",
-    "Shooting",  "Pins & Needles", "Numbness", "Itching",
-    "Sharp",     "Dull"
-};
+
+/* Copy the form's answers into na (everything the form edits, nothing
+ * else — position, label placement, stable_id and gpab's chart_note_text
+ * are left alone) and rebuild its on-chart text. */
+static void wizard_apply(WizardData *wd, NoteAnnotation *na)
+{
+    na->temporal      = wd->temporal;
+    na->depth         = wd->depth;
+    na->quality_count = wd->quality_count;
+    for (int i = 0; i < wd->quality_count; i++)
+        na->qualities[i] = wd->qualities[i];
+    na->low_intensity  = wd->low_int;    /* NOTE_UNSET if not answered */
+    na->high_intensity = wd->high_int;
+
+    /* Free-text descriptor (typed and/or dictated) — stored in voice_note,
+     * which chart, reports and gpab's mapping.py already prefer over the
+     * quality words. Empty string if unused. Truncated on a UTF-8
+     * character boundary so a long multibyte entry can't be cut mid-char. */
+    char *t = g_strstrip(g_strdup(
+        gtk_editable_get_text(GTK_EDITABLE(wd->desc_entry))));
+    const char *end = t;
+    while (*end) {
+        const char *nx = g_utf8_next_char(end);
+        if ((size_t)(nx - t) >= sizeof(na->voice_note)) break;
+        end = nx;
+    }
+    memcpy(na->voice_note, t, (size_t)(end - t));
+    na->voice_note[end - t] = '\0';
+    g_free(t);
+
+    persistence_regen_note_text(na);
+}
 
 static void wizard_commit(WizardData *wd)
 {
     AppState *app = wd->app;
-    if (app->note_count < MAX_NOTES) {
+    if (wd->edit_sid >= 0) {
+        /* Look the note up again by stable_id — never trust an index held
+         * across the form being open. Gone (e.g. chart cleared) → no-op. */
+        int idx = canvas_note_index_by_sid(app, wd->edit_sid);
+        if (idx >= 0) {
+            wizard_apply(wd, &app->notes[idx]);
+            persistence_save(app);
+        }
+    } else if (app->note_count < MAX_NOTES) {
         NoteAnnotation *na = &app->notes[app->note_count];
+        memset(na, 0, sizeof(*na));
         na->view          = wd->view;
         na->bx            = wd->bx;
         na->by            = wd->by;
         na->stable_id     = app->next_note_id++;
         na->number        = app->note_count + 1;
-        na->temporal      = wd->temporal;
-        na->depth         = wd->depth;
-        na->quality_count = wd->quality_count;
-        for (int i = 0; i < wd->quality_count; i++)
-            na->qualities[i] = wd->qualities[i];
-        na->low_intensity  = wd->low_int;    /* NOTE_UNSET if not answered */
-        na->high_intensity = wd->high_int;
-        na->label.placed   = 0;   /* default offset; user can drag later */
-
-        /* Copy voice transcript (empty string if voice was not used) */
-        g_strlcpy(na->voice_note, wd->voice_text, sizeof(na->voice_note));
-
-        /* A brand-new note never has a gpab chart-note-text override yet —
-         * zero defensively in case this array slot held a since-cleared
-         * note (app->note_count can be reset to 0 without clearing struct
-         * contents, e.g. canvas.c's clear-all path). */
-        na->chart_note_text[0] = '\0';
-
-        /* Build display body — prefer voice transcript over quality words.
-         * Body is word-wrapped to several rows as needed by canvas.c's
-         * draw_note_screen(), so it no longer needs the old tight 44-char
-         * truncation — just a generous cap so an extreme entry still ends
-         * cleanly rather than overflowing na->text. */
-        char line2[200] = {0};
-        if (na->voice_note[0]) {
-            snprintf(line2, sizeof(line2), "%.180s%s",
-                     na->voice_note,
-                     strlen(na->voice_note) > 180 ? "…" : "");
-        } else {
-            char qual_buf[160] = {0};
-            for (int i = 0; i < na->quality_count; i++) {
-                if (i > 0) strncat(qual_buf, ", ",
-                                   sizeof(qual_buf) - strlen(qual_buf) - 1);
-                strncat(qual_buf, QUALITY_SHORT[na->qualities[i]],
-                        sizeof(qual_buf) - strlen(qual_buf) - 1);
-            }
-            if (na->quality_count == 0)
-                strncat(qual_buf, "?", sizeof(qual_buf) - strlen(qual_buf) - 1);
-            g_strlcpy(line2, qual_buf, sizeof(line2));
-        }
-        /* Line 1 (header, never wrapped): number + whichever of temporal/
-         * depth/intensity were answered; body (line 2+, word-wrapped):
-         * descriptor */
-        char header[128];
-        note_format_header(na, header, sizeof(header));
-        snprintf(na->text, sizeof(na->text), "%s\n%s", header, line2);
+        na->label.placed  = 0;   /* default offset; user can drag later */
+        /* A brand-new note never has a gpab chart_note_text override yet
+         * (the memset above also clears any stale slot contents left by
+         * canvas.c's clear-all path, which only resets note_count). */
+        wizard_apply(wd, na);
         app->note_count++;
+        persistence_save(app);
     }
     canvas_invalidate(app);
     gtk_window_destroy(GTK_WINDOW(wd->window));  /* triggers on_wizard_destroy → g_free */
+}
+
+/* ── Delete (edit mode only) ──────────────────────────────────────────────── */
+
+typedef struct { AppState *app; int sid; GtkWidget *window; } WizDeleteCtx;
+
+static void on_wiz_delete_response(GObject *source, GAsyncResult *result,
+                                   gpointer data)
+{
+    WizDeleteCtx *ctx = data;
+    int btn = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source), result, NULL);
+    g_object_unref(source);
+    if (btn == 0) {   /* 0 = "Delete", 1 = "Cancel" */
+        int idx = canvas_note_index_by_sid(ctx->app, ctx->sid);
+        if (idx >= 0) {
+            canvas_delete_note(ctx->app, idx);
+            persistence_save(ctx->app);
+        }
+        if (gtk_widget_get_visible(ctx->window))
+            gtk_window_destroy(GTK_WINDOW(ctx->window));
+    }
+    g_object_unref(ctx->window);
+    g_free(ctx);
+}
+
+static void on_wiz_delete(GtkButton *b, gpointer data)
+{
+    (void)b;
+    WizardData *wd = data;
+    int idx = canvas_note_index_by_sid(wd->app, wd->edit_sid);
+    if (idx < 0) return;
+
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Delete note (%d)?", wd->app->notes[idx].number);
+    static const char *buttons[] = { "Delete", "Cancel", NULL };
+    GtkAlertDialog *dlg = gtk_alert_dialog_new("%s", msg);
+    gtk_alert_dialog_set_detail(dlg,
+        "The note is removed from the chart, and any links to it are removed. "
+        "Notes after it are renumbered. Anything typed for this note in "
+        "gpab's Subjective section (Brief, Aggravating, Easing) is also "
+        "removed. This cannot be undone.");
+    gtk_alert_dialog_set_buttons(dlg, buttons);
+    gtk_alert_dialog_set_default_button(dlg, 1);
+    gtk_alert_dialog_set_cancel_button(dlg, 1);
+
+    WizDeleteCtx *ctx = g_new0(WizDeleteCtx, 1);
+    ctx->app    = wd->app;
+    ctx->sid    = wd->edit_sid;
+    ctx->window = g_object_ref(wd->window);
+    gtk_alert_dialog_choose(dlg, GTK_WINDOW(wd->window), NULL,
+                            on_wiz_delete_response, ctx);
 }
 
 /* ── Voice helpers ─────────────────────────────────────────────────────────── */
@@ -1296,11 +1340,17 @@ static gboolean voice_poll_cb(gpointer data)
                  NULL, NULL, &clip, NULL, NULL, NULL);
 
     if (clip && clip[0]) {
-        g_strlcpy(wd->voice_text, clip, sizeof(wd->voice_text));
-        char preview[56];
-        snprintf(preview, sizeof(preview), "%.52s%s",
-                 clip, strlen(clip) > 52 ? "…" : "");
-        gtk_label_set_text(GTK_LABEL(wd->voice_label), preview);
+        /* Dictation lands in the text box (appended if something was already
+         * typed) so it can be corrected by keyboard before saving. */
+        const char *cur = gtk_editable_get_text(GTK_EDITABLE(wd->desc_entry));
+        char *joined = (cur && cur[0])
+            ? g_strconcat(cur, " ", g_strstrip(clip), NULL)
+            : g_strdup(g_strstrip(clip));
+        gtk_editable_set_text(GTK_EDITABLE(wd->desc_entry), joined);
+        gtk_editable_set_position(GTK_EDITABLE(wd->desc_entry), -1);
+        g_free(joined);
+        gtk_label_set_text(GTK_LABEL(wd->voice_label),
+                           "— added to the text box above —");
     } else {
         gtk_label_set_text(GTK_LABEL(wd->voice_label),
                            "No result — tap descriptors below");
@@ -1323,7 +1373,7 @@ static void on_voice_reset_clicked(GtkButton *b, gpointer data)
     if (wd->voice_busy || wd->voice_poll_id != 0) return;  /* mid-flow, don't touch */
     gtk_label_set_text(GTK_LABEL(wd->voice_label), "Resetting voice service…");
     whis_reset_daemon();
-    gtk_label_set_text(GTK_LABEL(wd->voice_label), "— or tap descriptors below —");
+    gtk_label_set_text(GTK_LABEL(wd->voice_label), "— or speak, or tap descriptors below —");
 }
 
 static void on_voice_btn_clicked(GtkButton *b, gpointer data)
@@ -1373,7 +1423,13 @@ static GtkWidget *wiz_choice_row(WBtnPair pairs[2], GtkWidget *btns[2],
     return row;
 }
 
-/* Voice row (if whis is available) + quality buttons, grouped by mechanism
+static void on_wiz_entry_activate(GtkEntry *e, gpointer data)
+{
+    (void)e;
+    wizard_commit(data);   /* Enter in the text box saves the note */
+}
+
+/* Free-text box + voice row (if whis is available) + quality buttons, grouped by mechanism
  * one row each. Display order is decoupled from the stored index (Sharp/Dull
  * were appended as 12/13 so existing sessions' indices keep their meaning). */
 static GtkWidget *wiz_quality_grid(WizardData *wd)
@@ -1395,6 +1451,22 @@ static GtkWidget *wiz_quality_grid(WizardData *wd)
 
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     gtk_widget_set_halign(vbox, GTK_ALIGN_CENTER);
+
+    /* Free-text descriptor. On-screen keyboard is left entirely to GNOME
+     * Shell: it only pops up for a touch-focused text field when Mutter's
+     * touch-mode is on (tablet-mode switch engaged), so in laptop mode a tap
+     * here focuses it for the physical keyboard with no OSK. This relies on
+     * org.gnome.desktop.a11y.applications screen-keyboard-enabled staying
+     * false — if that's on, the OSK appears in laptop mode too. */
+    wd->desc_entry = gtk_entry_new();
+    gtk_widget_set_name(wd->desc_entry, "wiz-entry");
+    gtk_entry_set_placeholder_text(GTK_ENTRY(wd->desc_entry),
+                                   "Type a description (replaces descriptors)");
+    gtk_entry_set_max_length(GTK_ENTRY(wd->desc_entry), 200);
+    gtk_widget_set_hexpand(wd->desc_entry, TRUE);
+    g_signal_connect(wd->desc_entry, "activate",
+                     G_CALLBACK(on_wiz_entry_activate), wd);
+    gtk_box_append(GTK_BOX(vbox), wd->desc_entry);
 
     /* Voice row — only if whis is available */
     if (wd->whis_available) {
@@ -1418,7 +1490,7 @@ static GtkWidget *wiz_quality_grid(WizardData *wd)
 
         gtk_box_append(GTK_BOX(vbox), voice_row);
 
-        wd->voice_label = gtk_label_new("— or tap descriptors below —");
+        wd->voice_label = gtk_label_new("— or speak, or tap descriptors below —");
         gtk_widget_set_name(wd->voice_label, "wiz-title");
         gtk_box_append(GTK_BOX(vbox), wd->voice_label);
     }
@@ -1474,13 +1546,18 @@ static GtkWidget *wiz_section(const char *title, GtkWidget *content)
     return sec;
 }
 
-static void show_note_wizard(AppState *app, int view, double bx, double by)
+/* edit_sid < 0: new note at (view, bx, by). Otherwise edit that note. */
+static void note_form_open(AppState *app, int view, double bx, double by,
+                           int edit_sid)
 {
     if (g_wizard_open) return;
+    int edit_idx = edit_sid >= 0 ? canvas_note_index_by_sid(app, edit_sid) : -1;
+    if (edit_sid >= 0 && edit_idx < 0) return;
     g_wizard_open = TRUE;
 
     WizardData *wd = g_malloc0(sizeof(WizardData));
     wd->app            = app;
+    wd->edit_sid       = edit_sid;
     wd->view           = view;
     wd->bx             = bx;
     wd->by             = by;
@@ -1502,7 +1579,12 @@ static void show_note_wizard(AppState *app, int view, double bx, double by)
     wd->window = gtk_window_new();
     gtk_widget_add_css_class(wd->window, "bodychart-app");
     gtk_widget_set_name(wd->window, "wiz-window");
-    gtk_window_set_title(GTK_WINDOW(wd->window), "Note");
+    char title[32];
+    if (edit_idx >= 0)
+        snprintf(title, sizeof(title), "Edit note (%d)", app->notes[edit_idx].number);
+    else
+        snprintf(title, sizeof(title), "Note");
+    gtk_window_set_title(GTK_WINDOW(wd->window), title);
     gtk_window_set_transient_for(GTK_WINDOW(wd->window),
                                  GTK_WINDOW(app->window));
     gtk_window_set_modal(GTK_WINDOW(wd->window), TRUE);
@@ -1538,9 +1620,52 @@ static void show_note_wizard(AppState *app, int view, double bx, double by)
         wiz_section("Intensity /10  (tap one, or low then high)",
                     wiz_intensity_row(wd)));
 
+    /* Editing: prefill from the note */
+    if (edit_idx >= 0) {
+        const NoteAnnotation *na = &app->notes[edit_idx];
+        wd->temporal = na->temporal;
+        wd->depth    = na->depth;
+        wiz_refresh_choice(wd->temporal_btns, wd->temporal);
+        wiz_refresh_choice(wd->depth_btns, wd->depth);
+        wd->quality_count = 0;
+        for (int i = 0; i < na->quality_count && i < 3; i++) {
+            int q = na->qualities[i];
+            if (q < 0 || q >= NOTE_QUALITY_COUNT) continue;
+            wd->qualities[wd->quality_count++] = q;
+            gtk_widget_set_name(wd->qual_btns[q], "wiz-qual-btn-active");
+        }
+        wd->low_int  = na->low_intensity;
+        wd->high_int = na->high_intensity;
+        wd->int_is_range = wd->low_int >= 0 && wd->low_int != wd->high_int;
+        wiz_refresh_intensity(wd);
+        gtk_editable_set_text(GTK_EDITABLE(wd->desc_entry), na->voice_note);
+
+        /* gpab's Brief text, when set, is what the chart shows instead of
+         * this form's description/descriptors — say so, or an edit here
+         * would look like it did nothing. */
+        if (na->chart_note_text[0]) {
+            GtkWidget *warn = gtk_label_new(
+                "Chart label is set by this note's Brief in gpab Subjective; "
+                "edit it there to change what the chart shows.");
+            gtk_widget_set_name(warn, "wiz-title");
+            gtk_label_set_wrap(GTK_LABEL(warn), TRUE);
+            gtk_label_set_max_width_chars(GTK_LABEL(warn), 60);
+            gtk_box_append(GTK_BOX(form), warn);
+        }
+    }
+
     /* Every field is optional — Save always works */
     GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    gtk_widget_set_halign(actions, GTK_ALIGN_END);
+    gtk_widget_set_halign(actions, GTK_ALIGN_FILL);
+    if (edit_idx >= 0) {
+        GtkWidget *del = gtk_button_new_with_label("Delete note");
+        gtk_widget_set_name(del, "wiz-cancel");
+        g_signal_connect(del, "clicked", G_CALLBACK(on_wiz_delete), wd);
+        gtk_box_append(GTK_BOX(actions), del);
+    }
+    GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer, TRUE);
+    gtk_box_append(GTK_BOX(actions), spacer);
     GtkWidget *cancel = gtk_button_new_with_label("Cancel");
     gtk_widget_set_name(cancel, "wiz-cancel");
     g_signal_connect(cancel, "clicked", G_CALLBACK(on_wiz_cancel), wd);
@@ -1553,6 +1678,16 @@ static void show_note_wizard(AppState *app, int view, double bx, double by)
 
     gtk_window_set_child(GTK_WINDOW(wd->window), form);
     gtk_window_present(GTK_WINDOW(wd->window));
+}
+
+static void show_note_wizard(AppState *app, int view, double bx, double by)
+{
+    note_form_open(app, view, bx, by, -1);
+}
+
+static void edit_note(AppState *app, int stable_id)
+{
+    note_form_open(app, 0, 0.0, 0.0, stable_id);
 }
 
 /* ── Build "Draw" tab content ────────────────────────────────────────────── */
@@ -2969,6 +3104,7 @@ void window_create(AppState *app, GtkApplication *gtk_app)
     g_app_ref = app;
     app->toolbar_update_cb    = update_toolbar_state;
     app->show_note_wizard_cb  = show_note_wizard;
+    app->edit_note_cb         = edit_note;
     app->show_ppt_entry_cb    = show_ppt_entry;
     app->request_clear_cb     = request_clear;
     apply_css();
