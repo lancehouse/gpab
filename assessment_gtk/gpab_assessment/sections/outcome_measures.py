@@ -35,10 +35,12 @@ from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from .. import intake_import
 from ..storage_bridge import pab_path_bootstrap  # noqa: F401  (sys.path side effect)
-from pab_assessment.sleep_screen import STOPBANG_ITEMS, sleep_screen_step3, stopbang_result  # noqa: E402
+from pab_assessment.sleep_screen import (  # noqa: E402
+    RLSDI_ITEMS, STOPBANG_ITEMS, rlsdi_result, sleep_screen_step3, stopbang_result,
+)
 from ..section_base import SectionBase
 from ..widgets import (
-    CheckButton, FlagButton, AutoTextView, TouchEntry, CycleField,
+    CheckButton, FlagButton, AutoTextView, TouchEntry, CycleField, RadioGroup,
     make_subsection_header as _header,
 )
 
@@ -138,8 +140,43 @@ _AUTO_INTERP = [
 _ALERT_CHECKS = [
     ("pcs_total_score", 20, "⚠ PCS ≥20 — clinically significant catastrophising: consider psychology referral"),
     ("pcl5_score", 33, "⚠ PCL-5 ≥33 — PTSD likely: document action above"),
-    ("isi_score", 10, "⚠ ISI ≥10 — clinically significant insomnia"),
+    # >15 = refer (Shepherd et al. 2026, JOSPT Open, Fig 1). Was ≥10 (from the
+    # TUI) until 2026-11-16, when the user asked for the alert above 15 only.
+    ("isi_score", 16, "⚠ ISI >15 — refer to physician for further sleep assessment"),
 ]
+
+# RLS-DI chip colours by score sign: a positive score points toward RLS.
+def _rlsdi_variant(score: int) -> str:
+    return "error" if score > 0 else ("success" if score < 0 else "default")
+
+
+_RLSDI_CHIP_PX = 120  # 4 chips = 480 px, each well under ¼ screen
+
+
+class _RlsdiRadio(RadioGroup):
+    """RLS-DI item chips show "Label (+n)"; the stored value is the bare label
+    ("Regular", "Definite", ...) so sleep_screen.rlsdi_result() scores it."""
+
+    def __init__(self, opts: tuple[tuple[str, int], ...], field_id: str) -> None:
+        self._to_chip = {lbl: f"{lbl} ({sc:+d})" if sc else f"{lbl} (0)" for lbl, sc in opts}
+        self._from_chip = {v: k for k, v in self._to_chip.items()}
+        super().__init__([(self._to_chip[lbl], _rlsdi_variant(sc)) for lbl, sc in opts], field_id)
+        for btn in self._buttons:  # room for "Occasional (+1)" without mid-word breaks
+            btn.set_size_request(_RLSDI_CHIP_PX, -1)
+
+    @property
+    def value(self) -> str | None:
+        chip = super().value
+        return self._from_chip.get(chip) if chip is not None else None
+
+    def set_value(self, label: str | None) -> None:
+        super().set_value(self._to_chip.get(label) if label is not None else None)
+
+    def _key_commit(self) -> None:
+        # RadioGroup's Enter on an unanswered gang picks the "normal" chip. On a
+        # scored index that would silently enter a score (e.g. item 10's green
+        # chip is "Definite (−4)"), so Enter here only moves on.
+        self.emit("navigate", "next")
 
 # STOP-BANG (added 2026-11-16 with the Subjective sleep dysfunction screen —
 # Step 3 points here). Ids/order come from sleep_screen.STOPBANG_ITEMS; the score and
@@ -173,6 +210,7 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
         self._entries: dict[str, TouchEntry] = {}
         self._texts: dict[str, AutoTextView] = {}
         self._cyclefields: dict[str, CycleField] = {}
+        self._radios: dict[str, "_RlsdiRadio"] = {}  # RLS-DI items (2026-11-16)
         self._hyp_entries: list[list[TouchEntry]] = []
         self._hyp_row_count = 0
 
@@ -286,10 +324,13 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
         self._cyclefields[field_id] = w
         return w
 
-    def _reference(self, text: str) -> Gtk.Label:
+    def _reference(self, text: str, wrap: bool = False) -> Gtk.Label:
         lbl = Gtk.Label(label=text)
         lbl.add_css_class("reference-note")
         lbl.set_halign(Gtk.Align.START)
+        if wrap:  # long notes: wrap rather than widen the whole tab
+            lbl.set_wrap(True)
+            lbl.set_xalign(0.0)
         return lbl
 
     def _labeled(self, text: str, widget: Gtk.Widget) -> Gtk.Box:
@@ -438,11 +479,34 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
         body.append(self.stopbang_result_label)
 
         body.append(self._reference(
-            "RLS-DI — Restless Legs Syndrome Diagnostic Index (total −22 to +20). "
-            "Consider whether another condition (e.g. neuropathy) explains RLS-like symptoms."))
+            "RLS-DI — Restless Legs Syndrome Diagnostic Index (Beneš, v3.2 2008); total −25 to +20. "
+            "Consider whether another condition (e.g. neuropathy) explains RLS-like symptoms.", wrap=True))
+        body.append(self._reference(
+            "Items 1–5: past 7 days — Regular = on ≥5 of 7 days, Occasional = 1–4 of 7 days.", wrap=True))
+        for i, (fid, question, opts) in enumerate(RLSDI_ITEMS):
+            if i == 5:
+                body.append(self._reference(
+                    "Items 6–10: clinician-assessed (questioning, records, findings). "
+                    "Not done = not assessable / not yet collected.", wrap=True))
+            q = Gtk.Label(label=f"{i + 1}. {question}")
+            q.set_xalign(0.0)
+            q.set_wrap(True)
+            body.append(q)
+            w = _RlsdiRadio(opts, fid)
+            w.set_halign(Gtk.Align.START)
+            w.connect("changed", self._field_changed)
+            self._radios[fid] = w
+            body.append(w)
         body.append(self._labeled(
-            "RLS-DI total score:",
-            self._entry("rlsdi_score", placeholder="−22…20", width_chars=7),
+            "If secondary RLS, specify cause:", self._entry("rlsdi_secondary_cause")))
+        self.rlsdi_result_label = Gtk.Label(label="RLS-DI: —")
+        self.rlsdi_result_label.set_xalign(0.0)
+        self.rlsdi_result_label.set_wrap(True)
+        self.rlsdi_result_label.add_css_class("rf-alert-slot")
+        body.append(self.rlsdi_result_label)
+        body.append(self._labeled(
+            "RLS-DI total (if scored on paper):",
+            self._entry("rlsdi_score", placeholder="−25…20", width_chars=7),
         ))
 
     def _build_additional(self, body: Gtk.Box) -> None:
@@ -622,10 +686,15 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
         else:
             self.stopbang_result_label.remove_css_class("rf-alert-warning")
 
+    def _update_rlsdi(self) -> None:
+        text = rlsdi_result({fid: w.value for fid, w in self._radios.items()})
+        self.rlsdi_result_label.set_label(f"RLS-DI: {text or '—'}")
+
     def _refresh_all_computed(self) -> None:
         self._update_auto_interp()
         self._update_alerts()
         self._update_stopbang()
+        self._update_rlsdi()
 
     # ------------------------------------------------------------------
     # Cross-reference badges — computed, not yet rendered per-field
@@ -697,6 +766,7 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
         self._update_auto_interp()
         self._update_alerts()
         self._update_stopbang()
+        self._update_rlsdi()
         if self._on_changed:
             self._on_changed()
 
@@ -717,6 +787,8 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
             data[fid] = w.text
         for fid, w in self._cyclefields.items():
             data[fid] = w.value
+        for fid, w in self._radios.items():
+            data[fid] = w.value
         for entries in self._hyp_entries:
             for col, e in zip(_HYP_COLS, entries):
                 data[e.field_id] = e.text
@@ -733,6 +805,8 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
             for fid, w in self._texts.items():
                 w.text = om.get(fid, "")
             for fid, w in self._cyclefields.items():
+                w.set_value(om.get(fid))
+            for fid, w in self._radios.items():
                 w.set_value(om.get(fid))
 
             max_hyp = -1

@@ -7,7 +7,9 @@
 # permission — see ../../../../CLAUDE.md "Maintaining the kb link").
 #
 # Keys are field ids. `url` adds an "Open article" link button to the panel
-# (kb_panel.py). Step text is taken from the article's Figure 1; nothing here
+# (kb_panel.py); `image` (relative to this file) shows a figure with a
+# "View figure full size" link. images/josptopen-0198-fig001.jpg is the
+# article's Figure 1 (open access), downscaled to 1600 px wide. Step text is taken from the article's Figure 1; nothing here
 # adds criteria the figure doesn't state.
 #
 # Primary source:
@@ -18,6 +20,7 @@
 
 _ref: &ref "Shepherd MH, Neilson BD, Siengsukon CF. The Pain of Poor Sleep: A Clinician's Guide to Assessing and Addressing Sleep Dysfunction in People With Musculoskeletal Pain Conditions. JOSPT Open 2026;4(1):12-22. doi:10.2519/josptopen.2025.0198"
 _url: &url "https://doi.org/10.2519/josptopen.2025.0198"
+_fig: &fig "images/josptopen-0198-fig001.jpg"
 
 _step1: &step1
   label: "Sleep screen — Step 1: General sleep screening"
@@ -33,6 +36,7 @@ _step1: &step1
   note: "gpab counts \"Sometimes\" well rested as not well rested (decided 2026-11-16)."
   reference: *ref
   url: *url
+  image: *fig
 
 _step2: &step2
   label: "Sleep screen — Step 2: Sleep dysfunction vs. pain condition?"
@@ -45,6 +49,7 @@ _step2: &step2
     to the sleep issues → move to Step 3.
   reference: *ref
   url: *url
+  image: *fig
 
 _step3: &step3
   label: "Sleep screen — Step 3: Screening for the \"big three\""
@@ -70,6 +75,7 @@ _step3: &step3
   note: "gpab triggers STOP-BANG on Q1 AND Q2 AND Q3 all Yes (the figure's \"Q1-3\" read literally, decided 2026-11-16)."
   reference: *ref
   url: *url
+  image: *fig
 
 sleep_hours_typical: *step1
 sleep_feels_rested: *step1
@@ -91,10 +97,11 @@ isi_score:
     administered when Step 3 Q1 and Q2 are both Yes.
   assess: ">15 = refer to physician for further sleep assessment (Shepherd et al. 2026, Fig 1)."
   note: >
-    The Outcome Measures alert/interpretation here still uses ≥10 =
-    clinically significant insomnia; the figure's referral threshold is >15.
+    gpab's alert fires above 15 (user decision 2026-11-16; it was ≥10,
+    carried over from the TUI).
   reference: *ref
   url: *url
+  image: *fig
 
 _stopbang: &stopbang
   label: "STOP-BANG — obstructive sleep apnea screen"
@@ -108,6 +115,7 @@ _stopbang: &stopbang
     >40 cm (16 in) or male (Shepherd et al. 2026, Fig 1).
   reference: "Shepherd et al. 2026 (JOSPT Open 4(1):12-22). Instrument: Chung F et al. STOP questionnaire: a tool to screen patients for obstructive sleep apnea. Anesthesiology 2008;108:812-821."
   url: *url
+  image: *fig
 
 stopbang_snoring: *stopbang
 stopbang_tired: *stopbang
@@ -118,19 +126,42 @@ stopbang_age: *stopbang
 stopbang_neck: *stopbang
 stopbang_male: *stopbang
 
-rlsdi_score:
+rlsdi_score: &rlsdi
   label: "RLS-DI — Restless Legs Syndrome Diagnostic Index"
   purpose: >
-    10 items covering the IRLSSG essential diagnostic criteria plus supportive
-    and associated features; total scored from −22 (no RLS) to +20 (definite
-    RLS). In the sleep screen it is administered when Step 3 Q4 is Yes.
+    10 items. Items 1-5 = essential criteria, asked of the patient for the
+    past 7 days (Regular = on ≥5 of 7 days, Occasional = 1-4 of 7 days).
+    Items 6-10 = associated and supportive criteria, assessed by the
+    clinician from questioning, records and findings (Not done = not
+    assessable / not yet collected, scores 0). Items 8-10 may use the
+    medical history unless a new sleep-lab or neurological examination is
+    indicated. Total −25 to +20 (sum of the sheet's item scores); gpab shows
+    the items 1-5 sum and the total. In the sleep screen it is administered
+    when Step 3 Q4 is Yes.
   assess: >
     Consider whether another condition (e.g. neuropathy) may explain the
     RLS-like symptoms. Refer to physician to determine whether it is RLS, or
     whether treating comorbid symptoms disrupting sleep is warranted.
   note: >
-    Cut-off ≥11 points reported in the validation study — from a secondary
-    database record, not yet checked against the original paper. Item sheet
-    not yet in gpab: enter the total only.
+    Items and scores from the RLS-DI sheet (Beneš, Somni bene Institute,
+    version 3.2, 03 June 2008). Item 10: score "No" (2) if the symptoms are
+    due to conditions that can cause a secondary RLS (e.g. anaemia), and
+    specify the cause. Item 9: PLM findings from polysomnography or
+    actigraphy by your own routine criteria. The sheet gives no cut-off; a
+    ≥11 cut-off is reported for the validation study (secondary source, not
+    checked against the paper), so gpab doesn't apply one.
   reference: "Shepherd et al. 2026 (JOSPT Open 4(1):12-22). Instrument: Beneš H, Kohnen R. Validation of an algorithm for the diagnosis of Restless Legs Syndrome: the Restless Legs Syndrome-Diagnostic Index (RLS-DI). Sleep Med 2009."
   url: *url
+  image: *fig
+
+rlsdi_1: *rlsdi
+rlsdi_2: *rlsdi
+rlsdi_3: *rlsdi
+rlsdi_4: *rlsdi
+rlsdi_5: *rlsdi
+rlsdi_6: *rlsdi
+rlsdi_7: *rlsdi
+rlsdi_8: *rlsdi
+rlsdi_9: *rlsdi
+rlsdi_10: *rlsdi
+rlsdi_secondary_cause: *rlsdi

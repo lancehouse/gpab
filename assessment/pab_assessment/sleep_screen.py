@@ -130,3 +130,93 @@ def stopbang_result(om: dict) -> str:
         text += f" ({8 - answered} unanswered)"
     return text
 
+
+
+# ---------------------------------------------------------------------------
+# RLS-DI — Restless Legs Syndrome Diagnostic Index (added 2026-11-16, from the
+# user's form sheet ~/Documents/STP/PROM/RLS-DI.jpg: Beneš, Somni bene
+# Institute, Version 3.2 / 03 June 2008). Item scores are copied from that
+# sheet. The sheet states no cut-off, so none is applied here.
+#
+# Items 1-5 (essential criteria): asked of the patient over the past 7 days.
+# Items 6-10 (associated/supportive): assessed by the clinician from questioning,
+# records and findings; "Not done" (not assessable) scores 0. Item 6 has no
+# "Not done" column on the sheet.
+# Stored value = the chip label.
+# ---------------------------------------------------------------------------
+
+_RLSDI_ESSENTIAL = (("Regular", 2), ("Occasional", 1))
+RLSDI_ITEMS: tuple[tuple[str, str, tuple[tuple[str, int], ...]], ...] = (
+    ("rlsdi_1", "Do you feel an urge to move your legs (arms)?",
+     _RLSDI_ESSENTIAL + (("Not present", -4),)),
+    ("rlsdi_2", "When feeling an urge to move, do you experience unpleasant sensations "
+                "in your legs (arms) such as tingling, burning, cramps, pain?",
+     _RLSDI_ESSENTIAL + (("Not present", -1),)),
+    ("rlsdi_3", "Does the urge to move / unpleasant sensations begin or worsen when you "
+                "are at rest (lying, sitting) or when you are inactive?",
+     _RLSDI_ESSENTIAL + (("Not present", -4),)),
+    ("rlsdi_4", "Does moving partially or completely relieve the urge to move / "
+                "unpleasant sensations (e.g. walking or stretching)?",
+     _RLSDI_ESSENTIAL + (("Not present", -4),)),
+    ("rlsdi_5", "Does the urge to move / unpleasant sensations increase in the evening or "
+                "at night compared to the day? (Worse at night than during the day, or occur "
+                "only in the evening or at night. In severe RLS this must have been "
+                "previously present.)",
+     _RLSDI_ESSENTIAL + (("Not present", -1),)),
+    ("rlsdi_6", "Sleep disturbance in the past 7 days (prolonged time to fall asleep and/or "
+                "sleep interrupted and/or shortened sleep duration)?",
+     (("Definite", 2), ("Uncertain", 1), ("No", -1))),
+    ("rlsdi_7", "A first-degree relative (parents, siblings, children) suffers from the "
+                "urge to move / unpleasant sensations (items 1-5)?",
+     (("Definite", 2), ("Uncertain", 1), ("No", 0), ("Not done", 0))),
+    ("rlsdi_8", "Urge to move / unpleasant sensations ever improved with dopaminergic "
+                "therapy (any previous or current L-dopa or dopamine agonist)?",
+     (("Definite", 2), ("Uncertain", 1), ("No", -4), ("Not done", 0))),
+    ("rlsdi_9", "Objective findings of PLM in PSG / actimetry and/or SIT (e.g. PLM/h >15 "
+                "and/or PLMS arousal index >5/h and/or PLMW/h >15)?",
+     (("Definite", 2), ("Uncertain", 1), ("No", -2), ("Not done", 0))),
+    ("rlsdi_10", "Can the urge to move / unpleasant sensations be satisfactorily explained "
+                 "by other medical factors / concomitant diseases (e.g. muscle cramps, "
+                 "positional discomfort, polyneuropathy)? Score \"No\" (2) if due to "
+                 "conditions that can cause a secondary RLS (e.g. anaemia).",
+     (("Definite", -4), ("Uncertain", -1), ("No", 2), ("Not done", 0))),
+)
+RLSDI_ITEM_IDS = tuple(fid for fid, _q, _opts in RLSDI_ITEMS)
+
+
+def rlsdi_result(om: dict) -> str:
+    """RLS-DI items 1-5 sum score + total (items 1-10), or "" with nothing answered.
+
+    Counts only answered items; when any are unanswered the line says how many
+    (a partial total is not comparable to a full one)."""
+    sums = [0, 0]
+    answered = [0, 0]
+    for i, (fid, _q, opts) in enumerate(RLSDI_ITEMS):
+        val = om.get(fid)
+        score = dict(opts).get(val) if isinstance(val, str) else None
+        if score is None:
+            continue
+        part = 0 if i < 5 else 1
+        sums[part] += score
+        answered[part] += 1
+    if not any(answered):
+        return ""
+    unanswered = 10 - sum(answered)
+    text = f"items 1–5 sum {sums[0]:+d}"
+    if answered[0] < 5:
+        text += f" ({5 - answered[0]} unanswered)"
+    text += f"; total (items 1–10) {sums[0] + sums[1]:+d}"
+    if unanswered:
+        text += f" — {unanswered} unanswered, partial"
+    return text
+
+
+def isi_referral(om: dict) -> str:
+    """ISI >15 → referral line (Shepherd et al. 2026, Fig 1), else "".
+
+    Sits alongside the isi_interp "Clinically significant (≥10)" band: the user
+    wants both in the reports (2026-11-16)."""
+    m = re.fullmatch(r"\s*(\d+)\s*", str(om.get("isi_score") or ""))
+    if m and int(m.group(1)) > 15:
+        return "ISI >15 — refer to physician for further sleep assessment"
+    return ""
