@@ -293,7 +293,11 @@ dynamically by the search index. They have IDs beginning with `rf_`, `cvd_`,
 | `isi_score` | ISI (Insomnia Severity Index) score |
 | `pbas_score` | PBAS score |
 | `stopbang_snoring` … `stopbang_male` | STOP-BANG items S/T/O/P/B/A/N/G (bool): `stopbang_snoring`, `_tired`, `_observed`, `_pressure`, `_bmi`, `_age`, `_neck`, `_male`. Total + referral rule computed by `sleep_screen.stopbang_result()`, not stored |
-| `rlsdi_score` | RLS-DI (Restless Legs Syndrome Diagnostic Index) total score, −22 to +20 |
+| `rlsdi_1` … `rlsdi_5` | RLS-DI essential criteria (past 7 days): `"Regular"` (+2) / `"Occasional"` (+1) / `"Not present"` (−4 for items 1, 3 and 4; −1 for items 2 and 5) / null |
+| `rlsdi_6` | RLS-DI sleep disturbance: `"Definite"` (+2) / `"Uncertain"` (+1) / `"No"` (−1) / null |
+| `rlsdi_7` … `rlsdi_10` | RLS-DI clinician items: `"Definite"` / `"Uncertain"` / `"No"` / `"Not done"` (0). Scores: item 7 +2/+1/0, item 8 +2/+1/−4, item 9 +2/+1/−2, item 10 −4/−1/+2. Scoring lives in `sleep_screen.rlsdi_result()` |
+| `rlsdi_secondary_cause` | RLS-DI: cause, if secondary RLS (free text) |
+| `rlsdi_score` | RLS-DI total entered by hand (paper form), −25 to +20; the item-based total is computed, not stored |
 | `add_audit` | AUDIT administered (bool) |
 | `add_dudit` | DUDIT administered (bool) |
 | `add_epoc` | EPOC / additional measures notes |

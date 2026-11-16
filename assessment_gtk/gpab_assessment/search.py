@@ -434,6 +434,7 @@ _FIELD_LABELS: dict[str, tuple[str, str | None, str]] = {
     "isi_score":     ("05_outcome_measures", "om_sleep",      "ISI score"),
     "stopbang_snoring": ("05_outcome_measures", "om_sleep",   "STOP-BANG"),
     "rlsdi_score":   ("05_outcome_measures", "om_sleep",      "RLS-DI score"),
+    "rlsdi_1":       ("05_outcome_measures", "om_sleep",      "RLS-DI restless legs diagnostic index items"),
     "pbas_score":    ("05_outcome_measures", "om_sleep",      "PBAS score"),
     "add_audit":     ("05_outcome_measures", "om_additional", "AUDIT administered"),
     "add_dudit":     ("05_outcome_measures", "om_additional", "DUDIT administered"),

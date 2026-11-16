@@ -19,6 +19,7 @@ from .cal_cp_model import Workup as _CalCpWorkup
 from .sleep_screen import (
     sleep_screen_step1 as _sleep_step1, sleep_screen_step2 as _sleep_step2,
     sleep_screen_step3 as _sleep_step3, stopbang_result as _stopbang_result,
+    rlsdi_result as _rlsdi_result, isi_referral as _isi_referral, RLSDI_ITEM_IDS as _RLSDI_ITEM_IDS,
     STOPBANG_ITEMS as _STOPBANG_ITEMS,
 )
 from .objective.ad_forms import load_form as _ad_load_form, report_positions as _ad_report_positions, form_has_data as _ad_form_has_data
@@ -4168,6 +4169,9 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     sub("Sleep Measures")
     f("isi_score",   om)
     f("isi_interp",  om)
+    _isi_ref = _isi_referral(om)  # >15 = refer (JOSPT sleep screen), 2026-11-16
+    if _isi_ref:
+        _emit(f"**{_isi_ref}**  " if clean else f"**{_isi_ref}**")
     f("pbas_score",  om)
     f("pbas_interp", om)
     # STOP-BANG + RLS-DI (2026-11-16). Items print only when answered in the
@@ -4177,6 +4181,13 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     _sb = _stopbang_result(om)
     if _sb or not clean:
         _line = f"**STOP-BANG:** {_md_text(_sb) if _sb else '*(not answered)*'}"
+        _emit(_line + "  " if clean else _line)
+    for _fid in _RLSDI_ITEM_IDS:  # RLS-DI items, 2026-11-16
+        f(_fid, om)
+    f("rlsdi_secondary_cause", om)
+    _rl = _rlsdi_result(om)
+    if _rl or not clean:
+        _line = f"**RLS-DI:** {_md_text(_rl) if _rl else '*(not answered)*'}"
         _emit(_line + "  " if clean else _line)
     f("rlsdi_score", om)
 
@@ -5028,7 +5039,18 @@ LABELS: dict[str, str] = {
     "stopbang_age":                     "STOP-BANG A: Age >50",
     "stopbang_neck":                    "STOP-BANG N: Neck circumference >40 cm",
     "stopbang_male":                    "STOP-BANG G: Male",
-    "rlsdi_score":                      "RLS-DI total score",
+    "rlsdi_score":                      "RLS-DI total (scored on paper)",
+    "rlsdi_1":                          "RLS-DI 1. Urge to move legs (arms)",
+    "rlsdi_2":                          "RLS-DI 2. Unpleasant sensations with the urge",
+    "rlsdi_3":                          "RLS-DI 3. Begins/worsens at rest",
+    "rlsdi_4":                          "RLS-DI 4. Relieved by movement",
+    "rlsdi_5":                          "RLS-DI 5. Worse evening/night",
+    "rlsdi_6":                          "RLS-DI 6. Sleep disturbance (past 7 days)",
+    "rlsdi_7":                          "RLS-DI 7. First-degree relative affected",
+    "rlsdi_8":                          "RLS-DI 8. Improved with dopaminergic therapy",
+    "rlsdi_9":                          "RLS-DI 9. Objective PLM findings",
+    "rlsdi_10":                         "RLS-DI 10. Explained by other medical factors",
+    "rlsdi_secondary_cause":            "RLS-DI secondary RLS cause",
     "add_audit":                        "AUDIT administered",
     "add_dudit":                        "DUDIT administered",
     "add_epoc":                         "EPPOC notes",
@@ -5904,6 +5926,9 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     sub("Sleep Measures")
     f("isi_score",   om)
     f("isi_interp",  om)
+    _isi_ref = _isi_referral(om)  # >15 = refer (JOSPT sleep screen), 2026-11-16
+    if _isi_ref:
+        _emit(f"  {_isi_ref}")
     f("pbas_score",  om)
     f("pbas_interp", om)
     for _fid in _STOPBANG_ITEMS:  # STOP-BANG + RLS-DI, 2026-11-16
@@ -5911,6 +5936,12 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     _sb = _stopbang_result(om)
     if _sb or not clean:
         _emit(f"  STOP-BANG: {_sb or '(not answered)'}")
+    for _fid in _RLSDI_ITEM_IDS:  # RLS-DI items, 2026-11-16
+        f(_fid, om)
+    f("rlsdi_secondary_cause", om)
+    _rl = _rlsdi_result(om)
+    if _rl or not clean:
+        _emit(f"  RLS-DI: {_rl or '(not answered)'}")
     f("rlsdi_score", om)
 
     sub("Additional Measures")

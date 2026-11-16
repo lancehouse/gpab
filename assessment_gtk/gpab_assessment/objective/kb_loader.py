@@ -225,6 +225,10 @@ class KBEntry:
     url: str = ""       # link to the source (e.g. a doi.org URL) — shown by
                          # kb_panel.py as an "Open article" button. YAML-only
                          # (sections/kb/sleep.yaml, added 2026-11-16).
+    image_path: str = ""  # absolute path to a figure bundled next to a YAML KB
+                           # file (`image:` key, relative to that file) — shown
+                           # by kb_panel.py with a "View full size" link. Empty
+                           # when unset or the file is missing (2026-11-16).
 
     def render_lines(self) -> list[str]:
         """Return display lines for the KB panel."""
@@ -277,6 +281,15 @@ def _wrap(text: str, width: int) -> str:
     return "\n".join(lines)
 
 
+def _yaml_image_path(yaml_path: Path, image) -> str:
+    """Resolve a YAML entry's `image:` (relative to the YAML file) to an
+    absolute path, or "" when unset or not a real file."""
+    if not image:
+        return ""
+    img = (yaml_path.parent / str(image)).resolve()
+    return str(img) if img.is_file() else ""
+
+
 def _load_yaml_file(path: Path) -> dict[str, KBEntry]:
     """Parse one YAML file into a flat dict of id → KBEntry."""
     entries: dict[str, KBEntry] = {}
@@ -303,6 +316,7 @@ def _load_yaml_file(path: Path) -> dict[str, KBEntry]:
             rank=str(data.get("rank", "")),
             reference=str(data.get("reference", "")),
             url=str(data.get("url", "")),
+            image_path=_yaml_image_path(path, data.get("image")),
         )
     return entries
 

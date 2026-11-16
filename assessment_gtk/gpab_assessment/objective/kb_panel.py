@@ -18,6 +18,8 @@ means the Picture stays hidden, not an error. DB-backed entries only
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -116,11 +118,28 @@ class KBPanel(Gtk.ScrolledWindow):
         self.link_button.set_visible(False)
         content.append(self.link_button)
 
+        # Full-size view of a bundled YAML figure (KBEntry.image_path) in the
+        # default image viewer — the panel copy is too small to read a whole
+        # flowchart. Hidden when the entry has no image_path.
+        self.image_link_button = Gtk.LinkButton(uri="file:///", label="View figure full size ↗")
+        self.image_link_button.set_halign(Gtk.Align.START)
+        self.image_link_button.set_visible(False)
+        content.insert_child_after(self.image_link_button, self.picture)
+
         self.set_child(content)
 
         self.show_placeholder()
 
-    def _set_image(self, image_filename: str) -> None:
+    def _set_image(self, image_filename: str, image_path: str = "") -> None:
+        # image_path (bundled YAML figure, absolute) wins over a DB image_filename.
+        self.image_link_button.set_visible(bool(image_path))
+        if image_path:
+            self.picture.set_filename(image_path)
+            self.picture.set_size_request(-1, 480)  # a tall flowchart: give it room
+            self.picture.set_visible(True)
+            self.image_link_button.set_uri(Path(image_path).as_uri())
+            return
+        self.picture.set_size_request(-1, 220)
         path = kb_db.resolve_image_path(image_filename)
         if path is None:
             self.picture.set_visible(False)
@@ -139,7 +158,7 @@ class KBPanel(Gtk.ScrolledWindow):
         if entry is None:
             return
         self.label.set_label(_render_entry(entry))
-        self._set_image(entry.image_filename)
+        self._set_image(entry.image_filename, entry.image_path)
         self._set_link(entry.url)
 
     def _set_link(self, url: str) -> None:
