@@ -34,9 +34,11 @@ gi.require_version("Gtk", "4.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from .. import intake_import
+from ..storage_bridge import pab_path_bootstrap  # noqa: F401  (sys.path side effect)
+from pab_assessment.sleep_screen import STOPBANG_ITEMS, sleep_screen_step3, stopbang_result  # noqa: E402
 from ..section_base import SectionBase
 from ..widgets import (
-    CheckButton, AutoTextView, TouchEntry, CycleField,
+    CheckButton, FlagButton, AutoTextView, TouchEntry, CycleField,
     make_subsection_header as _header,
 )
 
@@ -138,6 +140,20 @@ _ALERT_CHECKS = [
     ("pcl5_score", 33, "⚠ PCL-5 ≥33 — PTSD likely: document action above"),
     ("isi_score", 10, "⚠ ISI ≥10 — clinically significant insomnia"),
 ]
+
+# STOP-BANG (added 2026-11-16 with the Subjective sleep dysfunction screen —
+# Step 3 points here). Ids/order come from sleep_screen.STOPBANG_ITEMS; the score and
+# referral rule are sleep_screen.stopbang_result(), shared with the reports.
+_STOPBANG_LABELS = {
+    "stopbang_snoring":  "S — Snoring: snores loudly (louder than talking / heard through a closed door)?",
+    "stopbang_tired":    "T — Tired: often tired, fatigued or sleepy during the daytime?",
+    "stopbang_observed": "O — Observed: anyone observed you stop breathing, choking or gasping in sleep?",
+    "stopbang_pressure": "P — Pressure: have / being treated for high blood pressure?",
+    "stopbang_bmi":      "B — BMI >35 kg/m²?",
+    "stopbang_age":      "A — Age >50 years?",
+    "stopbang_neck":     "N — Neck circumference >40 cm (16 in)?",
+    "stopbang_male":     "G — Gender: male?",
+}
 
 _BPI_FIELDS = ["bpi_activity", "bpi_mood", "bpi_walking", "bpi_work",
                "bpi_relations", "bpi_sleep", "bpi_enjoyment"]
@@ -253,6 +269,13 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
 
     def _check(self, label: str, field_id: str) -> CheckButton:
         w = CheckButton(label, field_id)
+        w.connect("changed", self._field_changed)
+        self._toggles[field_id] = w
+        return w
+
+    def _flag(self, label: str, field_id: str) -> FlagButton:
+        # Risk-screen item: Yes = red (FlagButton), same value shape as _check.
+        w = FlagButton(label, field_id)
         w.connect("changed", self._field_changed)
         self._toggles[field_id] = w
         return w
@@ -390,6 +413,37 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
         ))
         row2.append(self._cycle("pbas_interp", _PBAS_OPTIONS))
         body.append(row2)
+
+        body.append(self._reference(
+            "STOP-BANG — obstructive sleep apnea screen. Refer: ≥5 yes, OR ≥2 yes on "
+            "S/T/O/P + BMI >35 / neck >40 cm / male (Shepherd et al. 2026, Fig 1)"))
+        # Compact letter button + the question as plain text beside it (a
+        # full-width button per item would break the ≤¼-screen button rule).
+        for fid in STOPBANG_ITEMS:
+            letter, _, question = _STOPBANG_LABELS[fid].partition(" — ")
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            btn = self._flag(letter, fid)
+            btn.set_halign(Gtk.Align.START)
+            row.append(btn)
+            q = Gtk.Label(label=question)
+            q.set_xalign(0.0)
+            q.set_wrap(True)
+            q.set_hexpand(True)
+            row.append(q)
+            body.append(row)
+        self.stopbang_result_label = Gtk.Label(label="STOP-BANG: —")
+        self.stopbang_result_label.set_xalign(0.0)
+        self.stopbang_result_label.set_wrap(True)
+        self.stopbang_result_label.add_css_class("rf-alert-slot")
+        body.append(self.stopbang_result_label)
+
+        body.append(self._reference(
+            "RLS-DI — Restless Legs Syndrome Diagnostic Index (total −22 to +20). "
+            "Consider whether another condition (e.g. neuropathy) explains RLS-like symptoms."))
+        body.append(self._labeled(
+            "RLS-DI total score:",
+            self._entry("rlsdi_score", placeholder="−22…20", width_chars=7),
+        ))
 
     def _build_additional(self, body: Gtk.Box) -> None:
         body.append(self._check("AUDIT (alcohol use) — administered?", "add_audit"))
@@ -560,9 +614,18 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
             else:
                 alert.set_visible(False)
 
+    def _update_stopbang(self) -> None:
+        text = stopbang_result({fid: self._toggles[fid].value for fid in STOPBANG_ITEMS})
+        self.stopbang_result_label.set_label(f"STOP-BANG: {text or '—'}")
+        if "REFER" in text:
+            self.stopbang_result_label.add_css_class("rf-alert-warning")
+        else:
+            self.stopbang_result_label.remove_css_class("rf-alert-warning")
+
     def _refresh_all_computed(self) -> None:
         self._update_auto_interp()
         self._update_alerts()
+        self._update_stopbang()
 
     # ------------------------------------------------------------------
     # Cross-reference badges — computed, not yet rendered per-field
@@ -606,14 +669,15 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
             lines.append("Subj: harm plan documented")
         refs["xref_om_pcl5"] = lines
 
+        # Sleep: the Subjective sleep dysfunction screen (2026-11-16) — the old
+        # sleep_difficulty/night_waking/total_sleep_hours keys were dropped
+        # with the YAML sleep pilot and no longer exist in any session.
         lines = []
-        if subj.get("sleep_difficulty") is True:
-            lines.append("Subj: sleep difficulty")
-        if subj.get("night_waking") is True:
-            lines.append("Subj: night waking")
-        total_sleep = (subj.get("total_sleep_hours") or "").strip()
-        if total_sleep:
-            lines.append(f"Subj: {total_sleep} hrs/night")
+        hours = (subj.get("sleep_hours_typical") or "").strip()
+        if hours:
+            lines.append(f"Subj: {hours} hrs sleep/night")
+        lines.extend(f"Subj: {t}" for t in sleep_screen_step3(subj)
+                     if t != "No screening tool indicated")
         refs["xref_om_sleep"] = lines
 
         lines = []
@@ -632,6 +696,7 @@ class OutcomeMeasuresSection(Gtk.Box, SectionBase):
             return
         self._update_auto_interp()
         self._update_alerts()
+        self._update_stopbang()
         if self._on_changed:
             self._on_changed()
 

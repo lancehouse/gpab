@@ -110,10 +110,22 @@ session holds data (`subjective.py` `_RETIRED_KEYS`; `storage.py` `_TRIPLET_LEGA
 
 These fields are defined in `pab_assessment/sections/yaml/subj_sleep_pilot.yaml`.
 
+Steps 1–3 follow the sleep dysfunction flowchart of Shepherd, Neilson & Siengsukon 2026
+(JOSPT Open 4(1):12–22, Fig 1), added 2026-11-16; results computed by `sleep_screen.sleep_screen_step1/2/3()`.
+
 | Key | Description |
 |---|---|
-| `sleep_overall_rating` | Overall sleep quality rating (Good / Tolerable / Poor) |
-| `sleep_feels_rested` | Feels rested on waking (Yes / Sometimes / No) |
+| `sleep_hours_typical` | Step 1 Q1 — typical hours of sleep (free text; first number used, <7 triggers Step 2) |
+| `sleep_feels_rested` | Step 1 Q2 — feels well rested during waking hours (`yes` / `no` / `sometimes`; no or sometimes triggers Step 2) |
+| `sleep_quality_4pt` | Step 1 Q3 — overall sleep quality (`very good` / `fairly good` / `fairly bad` / `very bad`) |
+| `sleep_overall_rating` | **Retired 2026-11-16** — old Good / Tolerable / Poor rating; kept and reported for older sessions only |
+| `sleep_pain_impacts` | Step 2 — pain condition impacting sleep (`yes` / `no`) |
+| `sleep_issues_before_pain` | Step 2 — sleep issues started before the pain condition (`yes` / `no` / `unsure`) |
+| `sleep_pain_contributing` | Step 2 — clinician: pain appears to contribute to sleep issues (`yes` / `no`) |
+| `sleep_s3_insomnia` | Step 3 Q1 — difficulty falling/returning to sleep or waking early ≥3 nights/wk for 3 months |
+| `sleep_s3_daily_function` | Step 3 Q2 — loss of sleep interferes with daily functioning |
+| `sleep_s3_apnea` | Step 3 Q3 — snores loudly/frequently or observed to stop breathing |
+| `sleep_s3_rls` | Step 3 Q4 — restless leg feelings in evening/night relieved by movement |
 | `sleep_time_to_bed` | Time to bed (TIB start — clock hh:mm) |
 | `sleep_time_attempt` | Time attempting to sleep (clock hh:mm) |
 | `sleep_onset_time` | Time of actual sleep onset — Sleep Onset Latency (SOL, clock hh:mm) |
@@ -280,6 +292,8 @@ dynamically by the search index. They have IDs beginning with `rf_`, `cvd_`,
 | `pcl5_action` | PCL-5 — action taken |
 | `isi_score` | ISI (Insomnia Severity Index) score |
 | `pbas_score` | PBAS score |
+| `stopbang_snoring` … `stopbang_male` | STOP-BANG items S/T/O/P/B/A/N/G (bool): `stopbang_snoring`, `_tired`, `_observed`, `_pressure`, `_bmi`, `_age`, `_neck`, `_male`. Total + referral rule computed by `sleep_screen.stopbang_result()`, not stored |
+| `rlsdi_score` | RLS-DI (Restless Legs Syndrome Diagnostic Index) total score, −22 to +20 |
 | `add_audit` | AUDIT administered (bool) |
 | `add_dudit` | DUDIT administered (bool) |
 | `add_epoc` | EPOC / additional measures notes |

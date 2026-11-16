@@ -177,6 +177,11 @@ def calc_sleep_efficiency(
     return f"{se}%"
 
 
+# Sleep dysfunction screen (2026-11-16): see sleep_screen.py — kept in its own
+# module (stdlib-only) so storage.py can import it without pulling in this
+# module's pydantic dependency via models.py.
+
+
 def get_bodychart_command(session_path: Path) -> list:
     """
     Generate command line to launch GTK body chart with this session.

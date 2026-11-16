@@ -20,24 +20,27 @@ subsections:
 
     fields:
 
-      # ── Overall ratings ───────────────────────────────────────────────────
-      - id: sleep_overall_rating
-        type: radio
-        label: "How would you rate your sleep overall?"
-        options:
-          - value: good
-            label: "Good"
-            variant: success
-          - value: tolerable
-            label: "Tolerable"
-            variant: warning
-          - value: poor
-            label: "Poor"
-            variant: error
+      # ── Sleep dysfunction screen (gpab, 2026-11-16) ──────────────────────
+      # The 3-step flowchart of Shepherd, Neilson & Siengsukon 2026, "The Pain
+      # of Poor Sleep", JOSPT Open 4(1):12-22, Figure 1 — in the figure's order.
+      # Step headers + live result lines are rendered by gpab's GTK renderer
+      # (assessment_gtk/.../yaml_subsection.py); the trigger rules live in
+      # sleep_screen.py's sleep_screen_step1/2/3() so the reports use the same rules.
+      #
+      # RETIRED 2026-11-16: sleep_overall_rating (Good/Tolerable/Poor) —
+      # replaced by Step 1 Q3's 4-point sleep_quality_4pt. Older sessions keep
+      # their value (passed through subjective.py's _RETIRED_KEYS) and it still
+      # prints in reports when present.
+
+      # Step 1 — general sleep screening
+      - id: sleep_hours_typical
+        type: input
+        label: "1. How many hours of sleep do you typically get?"
+        placeholder: "hours"
 
       - id: sleep_feels_rested
         type: radio
-        label: "Do you feel rested?"
+        label: "2. Do you feel well rested during waking hours?"
         options:
           - value: "yes"
             label: "Yes"
@@ -48,6 +51,105 @@ subsections:
           - value: "sometimes"
             label: "Sometimes"
             variant: warning
+
+      - id: sleep_quality_4pt
+        type: radio
+        label: "3. Would you say your overall sleep quality is:"
+        options:
+          - value: "very good"
+            label: "Very good"
+            variant: success
+          - value: "fairly good"
+            label: "Fairly good"
+            variant: success
+          - value: "fairly bad"
+            label: "Fairly bad"
+            variant: warning
+          - value: "very bad"
+            label: "Very bad"
+            variant: error
+
+      # Step 2 — sleep dysfunction vs pain condition
+      - id: sleep_pain_impacts
+        type: radio
+        label: "Is your pain condition impacting your sleep?"
+        options:
+          - value: "yes"
+            label: "Yes"
+            variant: warning
+          - value: "no"
+            label: "No"
+            variant: success
+
+      - id: sleep_issues_before_pain
+        type: radio
+        label: "Did the sleep issues start BEFORE the pain condition?"
+        options:
+          - value: "yes"
+            label: "Yes"
+            variant: warning
+          - value: "no"
+            label: "No"
+            variant: success
+          - value: "unsure"
+            label: "Unsure"
+            variant: default
+
+      - id: sleep_pain_contributing
+        type: radio
+        label: "Clinician: does the pain condition appear to be contributing to the sleep issues?"
+        options:
+          - value: "yes"
+            label: "Yes"
+            variant: warning
+          - value: "no"
+            label: "No"
+            variant: success
+
+      # Step 3 — screening for the "big three" (insomnia, sleep apnea, RLS)
+      - id: sleep_s3_insomnia
+        type: radio
+        label: "1. Do you have difficulty falling asleep, returning to sleep or waking up too early at least 3 nights/week for the past 3 months?"
+        options:
+          - value: "yes"
+            label: "Yes"
+            variant: error
+          - value: "no"
+            label: "No"
+            variant: success
+
+      - id: sleep_s3_daily_function
+        type: radio
+        label: "2. Does your loss of sleep at night interfere with your daily functioning?"
+        options:
+          - value: "yes"
+            label: "Yes"
+            variant: error
+          - value: "no"
+            label: "No"
+            variant: success
+
+      - id: sleep_s3_apnea
+        type: radio
+        label: "3. Do you snore loudly or frequently or has anyone observed you stop breathing while you sleep?"
+        options:
+          - value: "yes"
+            label: "Yes"
+            variant: error
+          - value: "no"
+            label: "No"
+            variant: success
+
+      - id: sleep_s3_rls
+        type: radio
+        label: "4. When you try to relax in the evening or sleep at night, do you ever have unpleasant, restless feelings in your legs that can be relieved by walking or movement?"
+        options:
+          - value: "yes"
+            label: "Yes"
+            variant: error
+          - value: "no"
+            label: "No"
+            variant: success
 
       # ── Sleep diary times (all 24-hour hh:mm) ────────────────────────────
       #

@@ -1,0 +1,136 @@
+# Sleep dysfunction screen KB content for the Ctrl+K side panel —
+# Subjective -> Sleep (Steps 1-3) and Outcome Measures -> Sleep (ISI, STOP-BANG,
+# RLS-DI). Added 2026-11-16.
+#
+# gpab-owned, same as pain_classification.yaml: NOT written into
+# clinical_kb.db / ~/Projects/kb (out of scope without explicit per-edit
+# permission — see ../../../../CLAUDE.md "Maintaining the kb link").
+#
+# Keys are field ids. `url` adds an "Open article" link button to the panel
+# (kb_panel.py). Step text is taken from the article's Figure 1; nothing here
+# adds criteria the figure doesn't state.
+#
+# Primary source:
+#   Shepherd MH, Neilson BD, Siengsukon CF. The Pain of Poor Sleep: A
+#   Clinician's Guide to Assessing and Addressing Sleep Dysfunction in People
+#   With Musculoskeletal Pain Conditions. JOSPT Open 2026;4(1):12-22.
+#   doi:10.2519/josptopen.2025.0198
+
+_ref: &ref "Shepherd MH, Neilson BD, Siengsukon CF. The Pain of Poor Sleep: A Clinician's Guide to Assessing and Addressing Sleep Dysfunction in People With Musculoskeletal Pain Conditions. JOSPT Open 2026;4(1):12-22. doi:10.2519/josptopen.2025.0198"
+_url: &url "https://doi.org/10.2519/josptopen.2025.0198"
+
+_step1: &step1
+  label: "Sleep screen — Step 1: General sleep screening"
+  purpose: >
+    Three questions, ideally on the intake form before the evaluation:
+    (1) How many hours of sleep do you typically get?
+    (2) Do you feel well rested during waking hours?
+    (3) Would you say your overall sleep quality is very good, fairly good,
+    fairly bad or very bad?
+  assess: >
+    Move to Step 2 if <7 hours of sleep, OR does NOT feel well rested, OR
+    rates sleep as fairly or very bad.
+  note: "gpab counts \"Sometimes\" well rested as not well rested (decided 2026-11-16)."
+  reference: *ref
+  url: *url
+
+_step2: &step2
+  label: "Sleep screen — Step 2: Sleep dysfunction vs. pain condition?"
+  purpose: >
+    During the subjective exam, verify the Step 1 answers and ask verbally
+    whether the person's pain condition is impacting their sleep.
+  assess: >
+    "No", OR "Yes" but the sleep issues appear to have started BEFORE the
+    pain condition, OR the pain condition does not appear to be contributing
+    to the sleep issues → move to Step 3.
+  reference: *ref
+  url: *url
+
+_step3: &step3
+  label: "Sleep screen — Step 3: Screening for the \"big three\""
+  purpose: >
+    Screen for insomnia, sleep apnea and restless legs syndrome:
+    (1) Difficulty falling asleep, returning to sleep or waking up too early
+    at least 3 nights/week for the past 3 months?
+    (2) Does loss of sleep at night interfere with daily functioning?
+    (3) Snore loudly or frequently, or has anyone observed you stop
+    breathing while you sleep?
+    (4) When trying to relax in the evening or sleep at night, unpleasant,
+    restless feelings in the legs that are relieved by walking or movement?
+  assess: >
+    Insomnia — Yes to Q1 and Q2 → administer the Insomnia Severity Index;
+    >15 = refer to physician for further sleep assessment.
+    Restless legs — Yes to Q4 → administer the RLS-DI; consider whether
+    another condition (e.g. neuropathy) may explain the Yes; refer to a
+    physician to determine whether it is RLS, or whether treating comorbid
+    symptoms disrupting sleep is warranted.
+    Sleep apnea — Yes to Q1-3 → administer STOP-BANG; ≥5 "yes", OR ≥2 "yes"
+    on STOP + BMI >35 kg/m², neck circumference >40 cm (16 in) or male =
+    REFER.
+  note: "gpab triggers STOP-BANG on Q1 AND Q2 AND Q3 all Yes (the figure's \"Q1-3\" read literally, decided 2026-11-16)."
+  reference: *ref
+  url: *url
+
+sleep_hours_typical: *step1
+sleep_feels_rested: *step1
+sleep_quality_4pt: *step1
+
+sleep_pain_impacts: *step2
+sleep_issues_before_pain: *step2
+sleep_pain_contributing: *step2
+
+sleep_s3_insomnia: *step3
+sleep_s3_daily_function: *step3
+sleep_s3_apnea: *step3
+sleep_s3_rls: *step3
+
+isi_score:
+  label: "Insomnia Severity Index (ISI)"
+  purpose: >
+    7-item insomnia severity measure, total /28. In the sleep screen it is
+    administered when Step 3 Q1 and Q2 are both Yes.
+  assess: ">15 = refer to physician for further sleep assessment (Shepherd et al. 2026, Fig 1)."
+  note: >
+    The Outcome Measures alert/interpretation here still uses ≥10 =
+    clinically significant insomnia; the figure's referral threshold is >15.
+  reference: *ref
+  url: *url
+
+_stopbang: &stopbang
+  label: "STOP-BANG — obstructive sleep apnea screen"
+  purpose: >
+    8 yes/no items: Snoring, Tired, Observed (stopped breathing / choking /
+    gasping), high blood Pressure, BMI >35 kg/m², Age >50, Neck circumference
+    >40 cm (16 in), Gender male. In the sleep screen it is administered when
+    Step 3 Q1-3 are Yes.
+  assess: >
+    REFER if ≥5 "yes", OR ≥2 "yes" on the STOP items + BMI >35 kg/m², neck
+    >40 cm (16 in) or male (Shepherd et al. 2026, Fig 1).
+  reference: "Shepherd et al. 2026 (JOSPT Open 4(1):12-22). Instrument: Chung F et al. STOP questionnaire: a tool to screen patients for obstructive sleep apnea. Anesthesiology 2008;108:812-821."
+  url: *url
+
+stopbang_snoring: *stopbang
+stopbang_tired: *stopbang
+stopbang_observed: *stopbang
+stopbang_pressure: *stopbang
+stopbang_bmi: *stopbang
+stopbang_age: *stopbang
+stopbang_neck: *stopbang
+stopbang_male: *stopbang
+
+rlsdi_score:
+  label: "RLS-DI — Restless Legs Syndrome Diagnostic Index"
+  purpose: >
+    10 items covering the IRLSSG essential diagnostic criteria plus supportive
+    and associated features; total scored from −22 (no RLS) to +20 (definite
+    RLS). In the sleep screen it is administered when Step 3 Q4 is Yes.
+  assess: >
+    Consider whether another condition (e.g. neuropathy) may explain the
+    RLS-like symptoms. Refer to physician to determine whether it is RLS, or
+    whether treating comorbid symptoms disrupting sleep is warranted.
+  note: >
+    Cut-off ≥11 points reported in the validation study — from a secondary
+    database record, not yet checked against the original paper. Item sheet
+    not yet in gpab: enter the total only.
+  reference: "Shepherd et al. 2026 (JOSPT Open 4(1):12-22). Instrument: Beneš H, Kohnen R. Validation of an algorithm for the diagnosis of Restless Legs Syndrome: the Restless Legs Syndrome-Diagnostic Index (RLS-DI). Sleep Med 2009."
+  url: *url

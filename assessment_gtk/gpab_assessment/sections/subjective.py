@@ -501,6 +501,9 @@ class SubjectiveSection(Gtk.Box, SectionBase):
     _RETIRED_KEYS = (
         "exercise_type_vigorous", "exercise_type_moderate", "exercise_type_strengthening",
         "exercise_type",
+        # Sleep Good/Tolerable/Poor rating — replaced 2026-11-16 by Step 1 Q3's
+        # 4-point sleep_quality_4pt (sleep dysfunction screen).
+        "sleep_overall_rating",
     )
 
     def _wire_change_events(self) -> None:
