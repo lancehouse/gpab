@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Optional
 
 from .cal_cp_model import Workup as _CalCpWorkup
+from .sleep_screen import (
+    sleep_screen_step1 as _sleep_step1, sleep_screen_step2 as _sleep_step2,
+    sleep_screen_step3 as _sleep_step3, stopbang_result as _stopbang_result,
+    STOPBANG_ITEMS as _STOPBANG_ITEMS,
+)
 from .objective.ad_forms import load_form as _ad_load_form, report_positions as _ad_report_positions, form_has_data as _ad_form_has_data
 
 
@@ -767,7 +772,9 @@ _CLEAN_NOTE_OWNER: dict[str, str] = {
     "behaviour_avoidance_text":   "behaviour_avoidance",
     "behaviour_endurance_text":   "behaviour_endurance",
     "behaviour_flareups_text":    "behaviour_flareups",
-    "sleep_overall_comments":     "sleep_overall_rating",
+    # sleep_overall_comments used to pair with sleep_overall_rating; that
+    # rating was retired 2026-11-16 and the comments now follow the sleep
+    # diary, so they keep their own label.
 }
 
 
@@ -3670,8 +3677,31 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     txt("current_duties",      s)
 
     sub("Sleep")
-    f("sleep_overall_rating",       s)
+    # Sleep dysfunction screen, Steps 1-3 (2026-11-16, Shepherd et al. 2026
+    # JOSPT Open Fig 1). Step result lines are computed by sleep_screen.py
+    # sleep_screen_step*() — the same rules the GTK tab shows live.
+    def _calc_line(label: str, text: str) -> None:
+        if clean and not text:
+            return
+        line = f"**{label}:** {_md_text(text) if text else '*(not answered)*'}"
+        _emit(line + "  " if clean else line)
+
+    f("sleep_hours_typical",        s)
     f("sleep_feels_rested",         s)
+    f("sleep_quality_4pt",          s)
+    if not _empty(s.get("sleep_overall_rating")):  # retired 2026-11-16 — data-only
+        f("sleep_overall_rating",   s)
+    _calc_line("Step 1 result", _sleep_step1(s))
+    f("sleep_pain_impacts",         s)
+    f("sleep_issues_before_pain",   s)
+    f("sleep_pain_contributing",    s)
+    _calc_line("Step 2 result", _sleep_step2(s))
+    f("sleep_s3_insomnia",          s)
+    f("sleep_s3_daily_function",    s)
+    f("sleep_s3_apnea",             s)
+    f("sleep_s3_rls",               s)
+    for _t in _sleep_step3(s) or ([] if clean else [""]):
+        _calc_line("Step 3 — indicated", _t)
     f("sleep_time_to_bed",          s)
     f("sleep_time_attempt",         s)
     f("sleep_onset_time",           s)
@@ -4140,6 +4170,15 @@ def export_session_report(session_file: str, clean: bool = False, dev: bool = Fa
     f("isi_interp",  om)
     f("pbas_score",  om)
     f("pbas_interp", om)
+    # STOP-BANG + RLS-DI (2026-11-16). Items print only when answered in the
+    # clean report (f() skips None); the total + referral rule is computed.
+    for _fid in _STOPBANG_ITEMS:
+        f(_fid, om)
+    _sb = _stopbang_result(om)
+    if _sb or not clean:
+        _line = f"**STOP-BANG:** {_md_text(_sb) if _sb else '*(not answered)*'}"
+        _emit(_line + "  " if clean else _line)
+    f("rlsdi_score", om)
 
     sub("Additional Measures")
     f("add_audit",  om)
@@ -4686,8 +4725,17 @@ LABELS: dict[str, str] = {
     "behaviour_avoidance":              "Behaviour: Avoidance",
     "behaviour_endurance":              "Behaviour: Endurance",
     "behaviour_flareups":               "Behaviour: Flare-ups",
-    "sleep_overall_rating":             "Sleep overall rating",
-    "sleep_feels_rested":               "Feels rested",
+    "sleep_overall_rating":             "Sleep overall rating (old Good/Tolerable/Poor scale)",
+    "sleep_hours_typical":              "Typical hours of sleep",
+    "sleep_feels_rested":               "Feels well rested during waking hours",
+    "sleep_quality_4pt":                "Overall sleep quality",
+    "sleep_pain_impacts":               "Pain condition impacting sleep",
+    "sleep_issues_before_pain":         "Sleep issues started before the pain condition",
+    "sleep_pain_contributing":          "Pain appears to contribute to sleep issues (clinician)",
+    "sleep_s3_insomnia":                "Difficulty falling/returning to sleep or waking too early ≥3 nights/wk for 3 months",
+    "sleep_s3_daily_function":          "Loss of sleep interferes with daily functioning",
+    "sleep_s3_apnea":                   "Snores loudly/frequently or observed to stop breathing in sleep",
+    "sleep_s3_rls":                     "Unpleasant restless leg feelings in evening/night, relieved by movement",
     "mood_influences":                  "Mood influences pain",
     "mood_text":                        "Mood / emotional context",
     "hr24_am":                          "24hr pattern — Morning",
@@ -4972,6 +5020,15 @@ LABELS: dict[str, str] = {
     "isi_interp":                       "ISI interpretation",
     "pbas_score":                       "PBAS score",
     "pbas_interp":                      "PBAS interpretation",
+    "stopbang_snoring":                 "STOP-BANG S: Snores loudly",
+    "stopbang_tired":                   "STOP-BANG T: Tired / sleepy in daytime",
+    "stopbang_observed":                "STOP-BANG O: Observed stopped breathing / choking / gasping",
+    "stopbang_pressure":                "STOP-BANG P: High blood pressure",
+    "stopbang_bmi":                     "STOP-BANG B: BMI >35 kg/m²",
+    "stopbang_age":                     "STOP-BANG A: Age >50",
+    "stopbang_neck":                    "STOP-BANG N: Neck circumference >40 cm",
+    "stopbang_male":                    "STOP-BANG G: Male",
+    "rlsdi_score":                      "RLS-DI total score",
     "add_audit":                        "AUDIT administered",
     "add_dudit":                        "DUDIT administered",
     "add_epoc":                         "EPPOC notes",
@@ -5384,8 +5441,29 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     txt("current_duties",     s)
 
     sub("Sleep")
-    f("sleep_overall_rating",        s)
+    # Sleep dysfunction screen, Steps 1-3 — see export_session_report's
+    # matching block (same fields, same sleep_screen.py result lines).
+    def _calc_raw(label: str, text: str) -> None:
+        if clean and not text:
+            return
+        _emit(f"  {label}: {text or '(not answered)'}")
+
+    f("sleep_hours_typical",         s)
     f("sleep_feels_rested",          s)
+    f("sleep_quality_4pt",           s)
+    if not _empty(s.get("sleep_overall_rating")):  # retired 2026-11-16 — data-only
+        f("sleep_overall_rating",    s)
+    _calc_raw("Step 1 result", _sleep_step1(s))
+    f("sleep_pain_impacts",          s)
+    f("sleep_issues_before_pain",    s)
+    f("sleep_pain_contributing",     s)
+    _calc_raw("Step 2 result", _sleep_step2(s))
+    f("sleep_s3_insomnia",           s)
+    f("sleep_s3_daily_function",     s)
+    f("sleep_s3_apnea",              s)
+    f("sleep_s3_rls",                s)
+    for _t in _sleep_step3(s) or ([] if clean else [""]):
+        _calc_raw("Step 3 — indicated", _t)
     f("sleep_time_to_bed",           s)
     f("sleep_time_attempt",          s)
     f("sleep_onset_time",            s)
@@ -5828,6 +5906,12 @@ def export_raw_report(session_data: dict, clean: bool = False) -> str:  # noqa: 
     f("isi_interp",  om)
     f("pbas_score",  om)
     f("pbas_interp", om)
+    for _fid in _STOPBANG_ITEMS:  # STOP-BANG + RLS-DI, 2026-11-16
+        f(_fid, om)
+    _sb = _stopbang_result(om)
+    if _sb or not clean:
+        _emit(f"  STOP-BANG: {_sb or '(not answered)'}")
+    f("rlsdi_score", om)
 
     sub("Additional Measures")
     f("add_audit",    om)

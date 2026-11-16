@@ -108,6 +108,14 @@ class KBPanel(Gtk.ScrolledWindow):
         self.label.set_selectable(True)
         content.append(self.label)
 
+        # Source link (KBEntry.url, YAML entries only — e.g. the sleep screen's
+        # JOSPT Open article, added 2026-11-16). Gtk.LinkButton opens it in the
+        # default browser; hidden when the entry has no url.
+        self.link_button = Gtk.LinkButton(uri="https://doi.org", label="Open article")
+        self.link_button.set_halign(Gtk.Align.START)
+        self.link_button.set_visible(False)
+        content.append(self.link_button)
+
         self.set_child(content)
 
         self.show_placeholder()
@@ -132,12 +140,22 @@ class KBPanel(Gtk.ScrolledWindow):
             return
         self.label.set_label(_render_entry(entry))
         self._set_image(entry.image_filename)
+        self._set_link(entry.url)
+
+    def _set_link(self, url: str) -> None:
+        if url:
+            self.link_button.set_uri(url)
+            self.link_button.set_label(f"Open article ↗  {url.removeprefix('https://')}")
+            self.link_button.set_tooltip_text(url)
+        self.link_button.set_visible(bool(url))
 
     def show_raw(self, text: str) -> None:
         """Set panel content directly, bypassing the KB registry lookup."""
         self.label.set_label(text)
         self._set_image("")
+        self._set_link("")
 
     def show_placeholder(self) -> None:
         self.label.set_label("Knowledge Base\n\nFocus a test or field to see info.")
         self._set_image("")
+        self._set_link("")

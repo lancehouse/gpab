@@ -29,12 +29,21 @@ _KB_DIR = (
 # the registry under their own pseudo-region key alongside _KB_DIR's regions.
 # Added 2026-10-11: Pain Classification's Shraim 2026 rank/weight content
 # (sections/kb/pain_classification.yaml) had been authored but never loaded.
+# Sleep (2026-11-16): the sleep dysfunction screen (Subjective -> Sleep) and
+# the ISI/STOP-BANG/RLS-DI rows in Outcome Measures, sections/kb/sleep.yaml.
 PAIN_CLASSIFICATION_KB = "pain_classification"
+SLEEP_KB = "sleep"
 _ASSESSMENT_KB_FILES = {
     PAIN_CLASSIFICATION_KB: (
         Path(__file__).resolve().parents[1] / "sections" / "kb" / "pain_classification.yaml"
     ),
+    SLEEP_KB: (
+        Path(__file__).resolve().parents[1] / "sections" / "kb" / "sleep.yaml"
+    ),
 }
+# Keys the assessment-side (non-Objective) Ctrl+K lookup searches, in order.
+# Field ids are unique across these files, so the first hit wins.
+ASSESSMENT_KB_KEYS = tuple(_ASSESSMENT_KB_FILES)
 
 _STRIP_SUFFIXES = ("_l", "_r", "_left", "_right")
 
@@ -213,6 +222,9 @@ class KBEntry:
                          # "Shraim et al. 2026, Pain 167:1669-1682" or, for legacy/
                          # supplementary fields that predate that paper, the original
                          # source (e.g. "Smart et al. 2010").
+    url: str = ""       # link to the source (e.g. a doi.org URL) — shown by
+                         # kb_panel.py as an "Open article" button. YAML-only
+                         # (sections/kb/sleep.yaml, added 2026-11-16).
 
     def render_lines(self) -> list[str]:
         """Return display lines for the KB panel."""
@@ -290,6 +302,7 @@ def _load_yaml_file(path: Path) -> dict[str, KBEntry]:
             weight=str(data.get("weight", "")),
             rank=str(data.get("rank", "")),
             reference=str(data.get("reference", "")),
+            url=str(data.get("url", "")),
         )
     return entries
 
